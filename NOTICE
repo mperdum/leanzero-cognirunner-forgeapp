@@ -1,0 +1,54 @@
+CogniRunner
+Copyright (C) 2025 LeanZero
+
+This product is licensed under the GNU Affero General Public License v3.0.
+See the LICENSE file for the full license text.
+
+================================================================================
+TRADEMARK NOTICE
+================================================================================
+
+"CogniRunner" is a trademark of LeanZero. The name "CogniRunner", the
+CogniRunner logo, and associated branding are NOT covered by the AGPL-3.0
+license and may NOT be used by third parties without explicit written permission.
+
+If you create a derivative work based on this software, you MUST:
+  1. Use a different name for your product
+  2. Use different branding and logos
+  3. Clearly indicate that your product is a derivative work and not the
+     original CogniRunner
+
+This requirement exists to prevent confusion between the original product
+and derivative works.
+
+================================================================================
+ATTRIBUTION
+================================================================================
+
+This project was created and is maintained by Mihai Perdum.
+
+When redistributing this software or derivative works, you must:
+  - Retain this NOTICE file
+  - Retain all copyright headers in source files
+  - Include the full text of the AGPL-3.0 license
+
+================================================================================
+THIRD-PARTY DEPENDENCIES
+================================================================================
+
+This software uses the following third-party libraries:
+
+Backend (Forge Runtime):
+  - @forge/api - Atlassian Forge API (Atlassian Pty Ltd)
+  - @forge/resolver - Atlassian Forge Resolver (Atlassian Pty Ltd)
+
+Frontend (Custom UI):
+  - React - MIT License (Meta Platforms, Inc.)
+  - @forge/bridge - Atlassian Forge Bridge (Atlassian Pty Ltd)
+  - @forge/jira-bridge - Atlassian Forge Jira Bridge (Atlassian Pty Ltd)
+  - Webpack - MIT License (JS Foundation)
+  - Babel - MIT License (Sebastian McKenzie and other contributors)
+
+External Services:
+  - OpenAI API - Used for AI-powered validation (OpenAI, Inc.)
+  - Atlassian Jira REST API - Used for issue and field data (Atlassian Pty Ltd)

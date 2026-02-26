@@ -1,0 +1,172 @@
+/*
+ * CogniRunner - AI-powered workflow validation for Jira
+ * Copyright (C) 2025 LeanZero
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/* CSS Custom Properties - Light theme (default) */
+:root {
+  --bg-color: transparent;
+  --text-color: #172B4D;
+  --text-secondary: #5E6C84;
+  --text-muted: #7A869A;
+  --primary-color: #0052CC;
+  --error-color: #DE350B;
+  --success-color: #006644;
+  --border-color: #DFE1E6;
+  --card-bg: #FFFFFF;
+  --input-bg: #FAFBFC;
+  --code-bg: #F4F5F7;
+  --icon-bg: #DEEBFF;
+  --hover-bg: #F4F5F7;
+}
+
+/* Dark theme */
+html[data-color-mode="dark"] {
+  --bg-color: transparent;
+  --text-color: #B6C2CF;
+  --text-secondary: #9FADBC;
+  --text-muted: #8C9BAB;
+  --primary-color: #579DFF;
+  --error-color: #F87168;
+  --success-color: #4BCE97;
+  --border-color: #454F59;
+  --card-bg: #22272B;
+  --input-bg: #1D2125;
+  --code-bg: #1D2125;
+  --icon-bg: #1C2B41;
+  --hover-bg: #2C333A;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  background: var(--bg-color);
+  color: var(--text-color);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+#root {
+  min-height: 100%;
+}
+
+.workflow-info {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.workflow-name {
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.transition-info {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.no-workflow-info {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: italic;
+}
+
+.btn-edit {
+  color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+.btn-edit:hover {
+  background: rgba(0, 82, 204, 0.1);
+}
+
+.row-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.row-disabled td {
+  opacity: 0.55;
+}
+
+.row-disabled td:last-child {
+  opacity: 1;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.status-disabled {
+  background: rgba(222, 53, 11, 0.1);
+  color: var(--error-color);
+}
+
+.btn-enable {
+  color: var(--success-color);
+  border-color: var(--success-color);
+}
+
+.btn-enable:hover {
+  background: rgba(0, 102, 68, 0.1);
+}
+
+.alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 4px;
+  font-size: 13px;
+  margin-bottom: 16px;
+  border: 1px solid;
+}
+
+.alert-error {
+  background: rgba(222, 53, 11, 0.08);
+  border-color: var(--error-color);
+  color: var(--error-color);
+}
+
+.alert-warning {
+  background: rgba(255, 153, 31, 0.08);
+  border-color: #FF991F;
+  color: #FF991F;
+}
+
+html[data-color-mode="dark"] .alert-warning {
+  color: #F5CD47;
+  border-color: #F5CD47;
+}
+
+.alert-dismiss {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+  opacity: 0.7;
+}
+
+.alert-dismiss:hover {
+  opacity: 1;
+}

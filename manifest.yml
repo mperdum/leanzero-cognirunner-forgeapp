@@ -1,0 +1,91 @@
+modules:
+  # Workflow Validator - validates on transition using AI
+  jira:workflowValidator:
+    - key: ai-text-field-validator
+      name: CogniRunner Field Validator
+      description:
+        Validates a text field value against a custom AI prompt on workflow
+        transition.
+      function: validate
+      resolver:
+        function: resolver
+      create:
+        resource: config-ui-resource
+      edit:
+        resource: config-ui-resource
+      view:
+        resource: config-view-resource
+      projectTypes:
+        - company-managed
+        - team-managed
+
+  # Workflow Condition - controls visibility of transition based on AI
+  jira:workflowCondition:
+    - key: ai-text-field-condition
+      name: CogniRunner Field Condition
+      description: Shows transition only if a text field value passes AI validation.
+      function: validate
+      resolver:
+        function: resolver
+      expression: "true"
+      create:
+        resource: config-ui-resource
+      edit:
+        resource: config-ui-resource
+      view:
+        resource: config-view-resource
+      projectTypes:
+        - company-managed
+        - team-managed
+
+  # Admin page - global overview of all app usages
+  jira:adminPage:
+    - key: cognirunner-admin-panel
+      resource: admin-panel-resource
+      title: CogniRunner Admin
+      resolver:
+        function: resolver
+
+  # Lambda function for validation logic
+  function:
+    - key: validate
+      handler: index.validate
+    - key: resolver
+      handler: index.handler
+
+resources:
+  - key: config-ui-resource
+    path: static/config-ui/build
+
+  - key: config-view-resource
+    path: static/config-view/build
+
+  - key: admin-panel-resource
+    path: static/admin-panel/build
+
+permissions:
+  content:
+    styles:
+      - "unsafe-inline"
+  scopes:
+    - read:jira-work
+    - read:workflow:jira
+    - read:project:jira
+    - storage:app
+    - read:issue-type-screen-scheme:jira
+    - read:screen-scheme:jira
+    - read:screen-tab:jira
+    - read:screenable-field:jira
+  external:
+    fetch:
+      client:
+        - address: https://api.openai.com
+      backend:
+        - address: https://api.openai.com
+
+app:
+  runtime:
+    name: nodejs22.x
+  id: ari:cloud:ecosystem::app/36415848-6868-4697-9554-3c3ad87b8da9
+  licensing:
+    enabled: true

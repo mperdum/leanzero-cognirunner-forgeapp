@@ -1,0 +1,247 @@
+/*
+ * CogniRunner - AI-powered workflow validation for Jira
+ * Copyright (C) 2025 LeanZero
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/* CSS Custom Properties - Light theme (default) */
+:root {
+  --bg-color: transparent;
+  --text-color: #172B4D;
+  --text-secondary: #5E6C84;
+  --text-muted: #7A869A;
+  --primary-color: #0052CC;
+  --code-bg: #F4F5F7;
+  --success-color: #006644;
+  --error-color: #DE350B;
+}
+
+/* Dark theme */
+html[data-color-mode="dark"] {
+  --bg-color: transparent;
+  --text-color: #B6C2CF;
+  --text-secondary: #9FADBC;
+  --text-muted: #8C9BAB;
+  --primary-color: #579DFF;
+  --code-bg: #1D2125;
+  --success-color: #4BCE97;
+  --error-color: #F87168;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  background: var(--bg-color);
+  color: var(--text-color);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+#root {
+  min-height: 100%;
+}
+
+.container {
+  padding: 8px 12px;
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+}
+
+.config-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.config-item:last-child {
+  margin-bottom: 0;
+}
+
+.label {
+  font-weight: 600;
+  font-size: 12px;
+  flex-shrink: 0;
+  min-width: 50px;
+  color: var(--text-secondary);
+}
+
+.value {
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+  background-color: var(--code-bg);
+  color: var(--primary-color);
+}
+
+.prompt-value {
+  font-size: 12px;
+  word-break: break-word;
+  color: var(--text-color);
+}
+
+.loading-text {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.license-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  margin-bottom: 10px;
+  border: 1px solid;
+}
+
+.license-active {
+  background: rgba(0, 102, 68, 0.1);
+  border-color: var(--success-color);
+  color: var(--success-color);
+}
+
+.license-inactive {
+  background: rgba(222, 53, 11, 0.1);
+  border-color: var(--error-color);
+  color: var(--error-color);
+}
+
+.rule-status-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  margin-bottom: 10px;
+  border: 1px solid;
+}
+
+.status-disabled-banner {
+  border-color: var(--error-color);
+  background: rgba(222, 53, 11, 0.08);
+  color: var(--error-color);
+}
+
+.status-active-banner {
+  border-color: var(--success-color);
+  background: rgba(0, 102, 68, 0.08);
+  color: var(--success-color);
+}
+
+.rule-status-content {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-enable {
+  color: var(--success-color);
+  border-color: var(--success-color);
+  flex-shrink: 0;
+}
+
+.btn-enable:hover {
+  background: rgba(0, 102, 68, 0.1);
+}
+
+.btn-danger {
+  color: var(--error-color);
+  border-color: var(--error-color);
+  flex-shrink: 0;
+}
+
+.btn-danger:hover {
+  background: rgba(222, 53, 11, 0.1);
+}
+
+.alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  margin-bottom: 10px;
+  border: 1px solid;
+}
+
+.alert-error {
+  background: rgba(222, 53, 11, 0.08);
+  border-color: var(--error-color);
+  color: var(--error-color);
+}
+
+.alert-warning {
+  background: rgba(255, 153, 31, 0.08);
+  border-color: #FF991F;
+  color: #FF991F;
+}
+
+html[data-color-mode="dark"] .alert-warning {
+  color: #F5CD47;
+  border-color: #F5CD47;
+}
+
+.alert-dismiss {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  opacity: 0.7;
+}
+
+.alert-dismiss:hover {
+  opacity: 1;
+}
+
+.log-tools {
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.log-tools-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  background: rgba(0, 82, 204, 0.1);
+  color: var(--primary-color);
+  margin-right: 6px;
+}
+
+html[data-color-mode="dark"] .log-tools-badge {
+  background: rgba(87, 157, 255, 0.15);
+}
+
+.log-queries {
+  margin-top: 3px;
+  padding: 3px 6px;
+  background: var(--code-bg);
+  border-radius: 3px;
+  font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 10px;
+  word-break: break-all;
+  color: var(--text-secondary);
+}

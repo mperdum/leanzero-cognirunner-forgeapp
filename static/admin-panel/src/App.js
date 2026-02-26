@@ -1,0 +1,834 @@
+/*
+ * CogniRunner - AI-powered workflow validation for Jira
+ * Copyright (C) 2025 LeanZero
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+import React, { useState, useEffect } from "react";
+
+const injectStyles = () => {
+  if (document.getElementById("app-styles")) return;
+
+  const style = document.createElement("style");
+  style.id = "app-styles";
+  style.textContent = `
+    :root {
+      --bg-color: transparent;
+      --text-color: #172B4D;
+      --text-secondary: #5E6C84;
+      --text-muted: #7A869A;
+      --primary-color: #0052CC;
+      --error-color: #DE350B;
+      --success-color: #006644;
+      --border-color: #DFE1E6;
+      --card-bg: #FFFFFF;
+      --input-bg: #FAFBFC;
+      --code-bg: #F4F5F7;
+      --icon-bg: #DEEBFF;
+      --hover-bg: #F4F5F7;
+    }
+
+    html[data-color-mode="dark"] {
+      --bg-color: transparent;
+      --text-color: #B6C2CF;
+      --text-secondary: #9FADBC;
+      --text-muted: #8C9BAB;
+      --primary-color: #579DFF;
+      --error-color: #F87168;
+      --success-color: #4BCE97;
+      --border-color: #454F59;
+      --card-bg: #22272B;
+      --input-bg: #1D2125;
+      --code-bg: #1D2125;
+      --icon-bg: #1C2B41;
+      --hover-bg: #2C333A;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: var(--bg-color);
+      color: var(--text-color);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .container { padding: 24px; max-width: 960px; margin: 0 auto; }
+
+    .header {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .icon-wrapper {
+      padding: 10px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      background-color: var(--icon-bg);
+      color: var(--primary-color);
+    }
+
+    .title {
+      margin: 0 0 4px 0;
+      font-size: 20px;
+      font-weight: 600;
+      line-height: 1.25;
+      color: var(--text-color);
+    }
+
+    .subtitle {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.4;
+      color: var(--text-secondary);
+    }
+
+    .license-banner {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 14px;
+      border-radius: 4px;
+      font-size: 13px;
+      margin-bottom: 20px;
+      border: 1px solid;
+    }
+
+    .license-active {
+      background: rgba(0, 102, 68, 0.1);
+      border-color: var(--success-color);
+      color: var(--success-color);
+    }
+
+    .license-inactive {
+      background: rgba(222, 53, 11, 0.1);
+      border-color: var(--error-color);
+      color: var(--error-color);
+    }
+
+    .section {
+      margin-bottom: 24px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .section-title {
+      font-weight: 600;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+    }
+
+    .section-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-small {
+      padding: 6px 12px;
+      font-size: 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      background: var(--card-bg);
+      color: var(--text-color);
+      cursor: pointer;
+    }
+
+    .btn-small:hover:not(:disabled) { background: var(--hover-bg); }
+    .btn-small:disabled { opacity: 0.6; cursor: default; }
+
+    .btn-danger {
+      color: var(--error-color);
+      border-color: var(--error-color);
+    }
+
+    .btn-danger:hover {
+      background: rgba(222, 53, 11, 0.1);
+    }
+
+    .card {
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      background-color: var(--card-bg);
+      overflow: hidden;
+    }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .table th {
+      text-align: left;
+      padding: 10px 14px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      background: var(--code-bg);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .table td {
+      padding: 10px 14px;
+      font-size: 13px;
+      border-bottom: 1px solid var(--border-color);
+      vertical-align: top;
+    }
+
+    .table tr:last-child td { border-bottom: none; }
+    .table tr:hover td { background: var(--hover-bg); }
+
+    .workflow-info {
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .workflow-name {
+      font-weight: 600;
+      color: var(--text-color);
+    }
+
+    .transition-info {
+      color: var(--text-muted);
+      font-size: 11px;
+      margin-top: 2px;
+    }
+
+    .no-workflow-info {
+      color: var(--text-muted);
+      font-size: 11px;
+      font-style: italic;
+    }
+
+    .btn-edit {
+      color: var(--primary-color);
+      border-color: var(--primary-color);
+    }
+
+    .btn-edit:hover {
+      background: rgba(0, 82, 204, 0.1);
+    }
+
+    .row-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .row-disabled td {
+      opacity: 0.55;
+    }
+
+    .row-disabled td:last-child {
+      opacity: 1;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+
+    .status-disabled {
+      background: rgba(222, 53, 11, 0.1);
+      color: var(--error-color);
+    }
+
+    .btn-enable {
+      color: var(--success-color);
+      border-color: var(--success-color);
+    }
+
+    .btn-enable:hover {
+      background: rgba(0, 102, 68, 0.1);
+    }
+
+    .type-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .type-validator {
+      background: rgba(0, 82, 204, 0.1);
+      color: var(--primary-color);
+    }
+
+    .type-condition {
+      background: rgba(0, 102, 68, 0.1);
+      color: var(--success-color);
+    }
+
+    .field-id {
+      font-family: SFMono-Regular, Consolas, monospace;
+      font-size: 12px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      background: var(--code-bg);
+      color: var(--primary-color);
+    }
+
+    .prompt-text {
+      color: var(--text-color);
+      word-break: break-word;
+    }
+
+    .timestamp {
+      font-size: 11px;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .empty-state {
+      padding: 32px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    .log-entry {
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 12px;
+    }
+
+    .log-entry:last-child { border-bottom: none; }
+
+    .log-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .log-status {
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .log-status.valid {
+      background: rgba(0, 102, 68, 0.1);
+      color: var(--success-color);
+    }
+
+    .log-status.invalid {
+      background: rgba(222, 53, 11, 0.1);
+      color: var(--error-color);
+    }
+
+    .log-time {
+      color: var(--text-muted);
+      font-size: 10px;
+    }
+
+    .log-issue {
+      font-weight: 600;
+      color: var(--primary-color);
+    }
+
+    .log-details { color: var(--text-secondary); }
+
+    .log-reason {
+      margin-top: 4px;
+      padding: 4px 8px;
+      background: var(--code-bg);
+      border-radius: 3px;
+      color: var(--text-color);
+    }
+
+    .logs-list {
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .loading-spinner {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+    }
+
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid var(--border-color);
+      border-top-color: var(--primary-color);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    .loading-text {
+      margin-top: 12px;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .alert {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 4px;
+      font-size: 13px;
+      margin-bottom: 16px;
+      border: 1px solid;
+    }
+
+    .alert-error {
+      background: rgba(222, 53, 11, 0.08);
+      border-color: var(--error-color);
+      color: var(--error-color);
+    }
+
+    .alert-warning {
+      background: rgba(255, 153, 31, 0.08);
+      border-color: #FF991F;
+      color: #FF991F;
+    }
+
+    html[data-color-mode="dark"] .alert-warning {
+      color: #F5CD47;
+      border-color: #F5CD47;
+    }
+
+    .alert-dismiss {
+      margin-left: auto;
+      background: none;
+      border: none;
+      color: inherit;
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+      padding: 0 2px;
+      opacity: 0.7;
+    }
+
+    .alert-dismiss:hover { opacity: 1; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+  `;
+  document.head.appendChild(style);
+};
+
+let invoke;
+let router;
+
+function App() {
+  const [configs, setConfigs] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
+  const [licenseActive, setLicenseActive] = useState(null);
+
+  const fetchConfigs = async (showLoading = false) => {
+    if (!invoke) return;
+    if (showLoading) setRefreshingConfigs(true);
+    try {
+      const result = await invoke("getConfigs");
+      if (result.success) {
+        setConfigs(result.configs || []);
+        if (result.removedCount > 0) {
+          setRemovedCount(result.removedCount);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to fetch configs:", e);
+    }
+    if (showLoading) setRefreshingConfigs(false);
+  };
+
+  const fetchLogs = async () => {
+    if (!invoke) return;
+    setLogsLoading(true);
+    try {
+      const result = await invoke("getLogs");
+      if (result.success) {
+        setLogs(result.logs || []);
+      }
+    } catch (e) {
+      console.error("Failed to fetch logs:", e);
+    }
+    setLogsLoading(false);
+  };
+
+  const clearLogs = async () => {
+    if (!invoke) return;
+    setClearingLogs(true);
+    try {
+      await invoke("clearLogs");
+      setLogs([]);
+    } catch (e) {
+      console.error("Failed to clear logs:", e);
+    }
+    setClearingLogs(false);
+  };
+
+  const [removedCount, setRemovedCount] = useState(0);
+  const [refreshingConfigs, setRefreshingConfigs] = useState(false);
+  const [clearingLogs, setClearingLogs] = useState(false);
+  const [toggling, setToggling] = useState(null);
+  const [toggleError, setToggleError] = useState(null);
+  const [toggleWarning, setToggleWarning] = useState(null);
+
+  const toggleRule = async (id, currentlyDisabled) => {
+    if (!invoke) return;
+    setToggling(id);
+    setToggleError(null);
+    setToggleWarning(null);
+    try {
+      const action = currentlyDisabled ? "enableRule" : "disableRule";
+      const result = await invoke(action, { id });
+      if (result.success) {
+        setConfigs((prev) =>
+          prev.map((c) =>
+            c.id === id ? { ...c, disabled: result.disabled, updatedAt: new Date().toISOString() } : c
+          )
+        );
+        if (result.warning) {
+          setToggleWarning(result.warning);
+        }
+      } else {
+        setToggleError(result.error || "Failed to update rule. Please try again.");
+      }
+    } catch (e) {
+      console.error("Failed to toggle rule:", e);
+      setToggleError("Failed to communicate with the server. Please try again.");
+    }
+    setToggling(null);
+  };
+
+  const formatTime = (timestamp) => {
+    try {
+      return new Date(timestamp).toLocaleString();
+    } catch {
+      return timestamp;
+    }
+  };
+
+  useEffect(() => {
+    injectStyles();
+
+    const init = async () => {
+      try {
+        const bridge = await import("@forge/bridge");
+        invoke = bridge.invoke;
+        router = bridge.router;
+
+        if (bridge.view && bridge.view.theme && bridge.view.theme.enable) {
+          await bridge.view.theme.enable();
+        }
+
+        // Check license
+        const context = await bridge.view.getContext();
+        const ctxLicense = context?.license?.active;
+        if (ctxLicense !== undefined) {
+          setLicenseActive(ctxLicense);
+        }
+
+        try {
+          const licenseResult = await invoke("checkLicense");
+          if (licenseResult?.isActive !== undefined) {
+            setLicenseActive(licenseResult.isActive);
+          }
+        } catch (e) {
+          console.log("Could not check license:", e);
+        }
+      } catch (e) {
+        console.log("Bridge not available:", e);
+      }
+
+      await fetchConfigs();
+      setLoading(false);
+    };
+    init();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="container">
+        <div className="loading-spinner">
+          <div className="spinner"></div>
+          <p className="loading-text">Loading admin panel...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const licenseBanner = licenseActive === false ? (
+    <div className="license-banner license-inactive">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="12" cy="12" r="10" />
+        <line x1="12" y1="8" x2="12" y2="12" />
+        <line x1="12" y1="16" x2="12.01" y2="16" />
+      </svg>
+      <span>License inactive — AI validation is disabled. Transitions will pass through without checks.</span>
+    </div>
+  ) : licenseActive === true ? (
+    <div className="license-banner license-active">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M20 6L9 17l-5-5" />
+      </svg>
+      <span>License active</span>
+    </div>
+  ) : null;
+
+  return (
+    <div className="container">
+      <div className="header">
+        <div className="icon-wrapper">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5z" />
+            <path d="M2 17l10 5 10-5" />
+            <path d="M2 12l10 5 10-5" />
+          </svg>
+        </div>
+        <div>
+          <h2 className="title">CogniRunner Admin</h2>
+          <p className="subtitle">Overview of all AI validators and conditions configured across your workflows</p>
+        </div>
+      </div>
+
+      {licenseBanner}
+
+      {toggleError && (
+        <div className="alert alert-error">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <span>{toggleError}</span>
+          <button className="alert-dismiss" onClick={() => setToggleError(null)}>&times;</button>
+        </div>
+      )}
+
+      {toggleWarning && (
+        <div className="alert alert-warning">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+          <span>{toggleWarning}</span>
+          <button className="alert-dismiss" onClick={() => setToggleWarning(null)}>&times;</button>
+        </div>
+      )}
+
+      {removedCount > 0 && (
+        <div className="alert alert-warning">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+          </svg>
+          <span>Cleaned up {removedCount} orphaned rule{removedCount > 1 ? "s" : ""} no longer present in any workflow.</span>
+          <button className="alert-dismiss" onClick={() => setRemovedCount(0)}>&times;</button>
+        </div>
+      )}
+
+      {/* Configured Rules Section */}
+      <div className="section">
+        <div className="section-header">
+          <span className="section-title">Configured Rules</span>
+          <div className="section-actions">
+            <button className="btn-small" onClick={() => fetchConfigs(true)} disabled={refreshingConfigs}>
+              {refreshingConfigs ? "Refreshing..." : "Refresh"}
+            </button>
+          </div>
+        </div>
+        <div className="card">
+          {configs.length === 0 ? (
+            <div className="empty-state">
+              No validators or conditions configured yet. Add one from a workflow transition.
+            </div>
+          ) : (
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Workflow / Transition</th>
+                  <th>Field</th>
+                  <th>Prompt</th>
+                  <th>Updated</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {configs.map((config) => {
+                  const wf = config.workflow || {};
+                  const hasWorkflow = wf.workflowName || wf.workflowId;
+                  const editUrl = wf.workflowId && wf.siteUrl
+                    ? `${wf.siteUrl}/jira/settings/issues/workflows/${wf.workflowId}`
+                    : null;
+                  const isDisabled = config.disabled === true;
+
+                  return (
+                    <tr key={config.id} className={isDisabled ? "row-disabled" : ""}>
+                      <td>
+                        <span className={`type-badge type-${config.type}`}>
+                          {config.type}
+                        </span>
+                        {isDisabled && (
+                          <span className="status-badge status-disabled">Disabled</span>
+                        )}
+                      </td>
+                      <td>
+                        {hasWorkflow ? (
+                          <div className="workflow-info">
+                            <div className="workflow-name">
+                              {wf.workflowName || wf.workflowId}
+                            </div>
+                            {(wf.transitionFromName || wf.transitionToName) && (
+                              <div className="transition-info">
+                                {wf.transitionFromName || "Any"} &rarr; {wf.transitionToName || "Any"}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="no-workflow-info">
+                            Re-save rule to capture workflow info
+                          </span>
+                        )}
+                      </td>
+                      <td><code className="field-id">{config.fieldId}</code></td>
+                      <td>
+                        <span className="prompt-text">
+                          {config.prompt && config.prompt.length > 80
+                            ? config.prompt.substring(0, 80) + "..."
+                            : config.prompt}
+                        </span>
+                      </td>
+                      <td><span className="timestamp">{formatTime(config.updatedAt)}</span></td>
+                      <td>
+                        <div className="row-actions">
+                          {editUrl && (
+                            <button
+                              className="btn-small btn-edit"
+                              onClick={() => router && router.open(editUrl)}
+                              title="Open workflow editor"
+                            >
+                              Edit
+                            </button>
+                          )}
+                          <button
+                            className={`btn-small ${isDisabled ? "btn-enable" : "btn-danger"}`}
+                            onClick={() => toggleRule(config.id, isDisabled)}
+                            disabled={toggling === config.id}
+                            title={isDisabled ? "Re-enable rule in workflow" : "Disable rule in workflow"}
+                          >
+                            {toggling === config.id
+                              ? (isDisabled ? "Enabling..." : "Disabling...")
+                              : (isDisabled ? "Enable" : "Disable")}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      {/* Validation Logs Section */}
+      <div className="section">
+        <div className="section-header">
+          <span className="section-title">Validation Logs</span>
+          <div className="section-actions">
+            <button
+              className="btn-small"
+              onClick={() => {
+                setShowLogs(!showLogs);
+                if (!showLogs) fetchLogs();
+              }}
+            >
+              {showLogs ? "Hide Logs" : "Show Logs"}
+            </button>
+            {showLogs && logs.length > 0 && (
+              <button className="btn-small btn-danger" onClick={clearLogs} disabled={clearingLogs}>
+                {clearingLogs ? "Clearing..." : "Clear All"}
+              </button>
+            )}
+            {showLogs && (
+              <button className="btn-small" onClick={fetchLogs} disabled={logsLoading}>
+                {logsLoading ? "Refreshing..." : "Refresh"}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {showLogs && (
+          <div className="card">
+            {logsLoading ? (
+              <div className="empty-state">Loading logs...</div>
+            ) : logs.length === 0 ? (
+              <div className="empty-state">No validation logs yet</div>
+            ) : (
+              <div className="logs-list">
+                {logs.map((log) => (
+                  <div key={log.id} className="log-entry">
+                    <div className="log-header">
+                      <span className={`log-status ${log.isValid ? "valid" : "invalid"}`}>
+                        {log.isValid ? "PASS" : "FAIL"}
+                      </span>
+                      <span className="log-issue">{log.issueKey}</span>
+                      <span className="log-time">{formatTime(log.timestamp)}</span>
+                    </div>
+                    <div className="log-details">
+                      Field: <code className="field-id">{log.fieldId}</code>
+                    </div>
+                    <div className="log-reason">{log.reason}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default App;
