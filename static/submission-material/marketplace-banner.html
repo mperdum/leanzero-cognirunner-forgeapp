@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=960">
+<title>CogniRunner Banner</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap');
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 960px;
+    height: 600px;
+    overflow: hidden;
+    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #080E1A;
+  }
+
+  .banner {
+    position: relative;
+    width: 960px;
+    height: 600px;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ── Left branding panel ── */
+  .brand {
+    position: relative;
+    width: 420px;
+    min-width: 420px;
+    height: 100%;
+    background: linear-gradient(165deg, #0D1B2E 0%, #091422 40%, #0A1628 100%);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 56px 48px;
+    z-index: 2;
+  }
+
+  /* Dot grid overlay */
+  .brand::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle, rgba(99,148,210,0.07) 1px, transparent 1px);
+    background-size: 24px 24px;
+    pointer-events: none;
+  }
+
+  /* Diagonal accent line */
+  .brand::after {
+    content: '';
+    position: absolute;
+    top: -40px;
+    right: -60px;
+    width: 200px;
+    height: 700px;
+    background: linear-gradient(180deg, rgba(0,82,204,0.06) 0%, rgba(0,82,204,0.02) 100%);
+    transform: rotate(8deg);
+    pointer-events: none;
+  }
+
+  /* Soft glow at the seam */
+  .glow {
+    position: absolute;
+    top: 0;
+    right: -80px;
+    width: 160px;
+    height: 100%;
+    background: radial-gradient(ellipse at center, rgba(0,101,255,0.10) 0%, transparent 70%);
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  .brand-content {
+    position: relative;
+    z-index: 3;
+  }
+
+  .logo-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+
+  .logo-icon {
+    width: 52px;
+    height: 52px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .logo-icon svg {
+    width: 30px;
+    height: 30px;
+  }
+
+  .app-name {
+    font-size: 32px;
+    font-weight: 700;
+    color: #FFFFFF;
+    letter-spacing: -0.5px;
+    line-height: 1.1;
+  }
+
+  .tagline {
+    font-size: 15.5px;
+    font-weight: 400;
+    color: #7B9ABF;
+    line-height: 1.5;
+    margin-bottom: 32px;
+    max-width: 300px;
+  }
+
+  /* Feature pills */
+  .features {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 40px;
+  }
+
+  .feature {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #9BB3CE;
+  }
+
+  .feature-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #0065FF;
+    flex-shrink: 0;
+  }
+
+  /* Forge badge */
+  .forge-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 20px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: #6B8DB3;
+    letter-spacing: 0.3px;
+  }
+
+  .forge-badge svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* ── Right mockup panel ── */
+  .mockup-area {
+    position: relative;
+    flex: 1;
+    height: 100%;
+    background: linear-gradient(165deg, #101C2E 0%, #0B1520 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  /* Subtle radial behind the card */
+  .mockup-area::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 40%;
+    transform: translate(-50%, -50%);
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, rgba(0,82,204,0.08) 0%, transparent 65%);
+    pointer-events: none;
+  }
+
+  .mockup-card {
+    position: relative;
+    width: 480px;
+    background: #FFFFFF;
+    border-radius: 12px;
+    box-shadow:
+      0 2px 4px rgba(0,0,0,0.06),
+      0 8px 24px rgba(0,0,0,0.12),
+      0 24px 60px rgba(0,0,0,0.18),
+      0 0 0 1px rgba(255,255,255,0.05);
+    transform: perspective(1200px) rotateY(-4deg) rotateX(1.5deg) translateX(-20px);
+    z-index: 2;
+    overflow: hidden;
+  }
+
+  /* Top accent bar */
+  .card-accent {
+    height: 3px;
+    background: linear-gradient(90deg, #0052CC 0%, #2684FF 50%, #4C9AFF 100%);
+  }
+
+  .card-body {
+    padding: 24px 28px 28px;
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 22px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #EBECF0;
+  }
+
+  .card-icon {
+    width: 36px;
+    height: 36px;
+    background: #DEEBFF;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .card-icon svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .card-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #172B4D;
+    line-height: 1.2;
+  }
+
+  .card-subtitle {
+    font-size: 11.5px;
+    color: #5E6C84;
+    margin-top: 2px;
+  }
+
+  /* Form elements */
+  .form-group {
+    margin-bottom: 18px;
+  }
+
+  .form-group:last-child {
+    margin-bottom: 0;
+  }
+
+  .form-label {
+    display: block;
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #5E6C84;
+    margin-bottom: 6px;
+  }
+
+  .form-label .req {
+    color: #DE350B;
+  }
+
+  .mock-select {
+    width: 100%;
+    padding: 9px 12px;
+    font-size: 13px;
+    font-family: inherit;
+    color: #172B4D;
+    background: #FAFBFC;
+    border: 2px solid #DFE1E6;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .mock-select .chevron {
+    color: #7A869A;
+    font-size: 10px;
+  }
+
+  .mock-textarea {
+    width: 100%;
+    padding: 9px 12px;
+    font-size: 12.5px;
+    font-family: inherit;
+    color: #172B4D;
+    background: #FAFBFC;
+    border: 2px solid #DFE1E6;
+    border-radius: 4px;
+    line-height: 1.55;
+    min-height: 72px;
+    resize: none;
+    display: block;
+  }
+
+  .mock-select-active {
+    border-color: #4C9AFF;
+  }
+
+  .form-hint {
+    font-size: 11px;
+    color: #7A869A;
+    margin-top: 5px;
+    line-height: 1.4;
+  }
+
+  /* Floating transition badge */
+  .transition-badge {
+    position: absolute;
+    top: 36px;
+    right: -16px;
+    background: #FFFFFF;
+    border-radius: 8px;
+    padding: 10px 16px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.06);
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11.5px;
+    color: #172B4D;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .transition-badge .status {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+
+  .status-new {
+    background: #DEEBFF;
+    color: #0052CC;
+  }
+
+  .status-ready {
+    background: #E3FCEF;
+    color: #006644;
+  }
+
+  .transition-arrow {
+    color: #7A869A;
+    font-size: 12px;
+  }
+
+  /* Floating validation result */
+  .validation-result {
+    position: absolute;
+    bottom: 40px;
+    right: -8px;
+    background: #FFFFFF;
+    border-radius: 8px;
+    padding: 10px 14px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.06);
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11.5px;
+    white-space: nowrap;
+  }
+
+  .validation-check {
+    width: 20px;
+    height: 20px;
+    background: #E3FCEF;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .validation-check svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .validation-text {
+    color: #172B4D;
+    font-weight: 500;
+  }
+
+  .validation-text span {
+    color: #006644;
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+<div class="banner">
+
+  <!-- Left branding -->
+  <div class="brand">
+    <div class="glow"></div>
+    <div class="brand-content">
+      <div class="logo-row">
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+            <circle cx="12" cy="12" r="3" fill="white" stroke="none"/>
+          </svg>
+        </div>
+        <div class="app-name">CogniRunner</div>
+      </div>
+
+      <div class="tagline">AI-Powered Workflow Validation for Jira</div>
+
+      <div class="features">
+        <div class="feature">
+          <div class="feature-dot"></div>
+          Validate fields with custom AI prompts
+        </div>
+        <div class="feature">
+          <div class="feature-dot"></div>
+          Block or hide transitions automatically
+        </div>
+        <div class="feature">
+          <div class="feature-dot"></div>
+          Full audit trail with AI reasoning
+        </div>
+      </div>
+
+      <div class="forge-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+        </svg>
+        Built on Atlassian Forge
+      </div>
+    </div>
+  </div>
+
+  <!-- Right mockup -->
+  <div class="mockup-area">
+
+    <!-- Floating transition badge -->
+    <div class="transition-badge">
+      <span class="status status-new">NEW</span>
+      <span class="transition-arrow">→</span>
+      <span class="status status-ready">READY FOR ESTIMATING</span>
+    </div>
+
+    <div class="mockup-card">
+      <div class="card-accent"></div>
+      <div class="card-body">
+        <div class="card-header">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#0052CC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+              <path d="M2 17l10 5 10-5"/>
+              <path d="M2 12l10 5 10-5"/>
+              <circle cx="12" cy="12" r="3" fill="#0052CC" stroke="none"/>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">AI Validator Configuration</div>
+            <div class="card-subtitle">Configure AI-powered field validation for this workflow transition</div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Field to Validate <span class="req">*</span></label>
+          <div class="mock-select">
+            <span>Description</span>
+            <span class="chevron">▾</span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Validation Prompt <span class="req">*</span></label>
+          <div class="mock-textarea">Check for similar issues and do not allow if it appears to be duplicated description meanings. You will need to compare the meaning of descriptions that resemble the same meaning...</div>
+          <div class="form-hint">Describe the validation criteria in natural language. The AI will evaluate if the field content meets these requirements.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Jira Search (JQL)</label>
+          <div class="mock-select mock-select-active">
+            <span>Auto-detect from prompt</span>
+            <span class="chevron">▾</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Floating validation result -->
+    <div class="validation-result">
+      <div class="validation-check">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#006644" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 6L9 17l-5-5"/>
+        </svg>
+      </div>
+      <div class="validation-text">Validation <span>passed</span> — content is unique</div>
+    </div>
+
+  </div>
+
+</div>
+</body>
+</html>

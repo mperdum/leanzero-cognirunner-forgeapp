@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CogniRunner Documentation — AI-Powered Workflow Validation for Jira</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --text: #172B4D;
+    --text-secondary: #44546F;
+    --text-muted: #626F86;
+    --primary: #0052CC;
+    --primary-light: #DEEBFF;
+    --surface: #FFFFFF;
+    --bg: #F7F8F9;
+    --border: #E2E4E9;
+    --code-bg: #F1F2F4;
+    --success: #216E4E;
+    --success-bg: #DCFFF1;
+    --warning: #974F0C;
+    --warning-bg: #FFF7D6;
+    --danger: #AE2E24;
+    --danger-bg: #FFECEB;
+    --radius: 8px;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 16px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 48px 24px 96px;
+  }
+
+  .hero {
+    text-align: center;
+    padding: 64px 0 48px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 48px;
+  }
+
+  .hero-logo {
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 24px;
+    background: var(--primary-light);
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .hero-logo svg {
+    width: 40px;
+    height: 40px;
+  }
+
+  .hero h1 {
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 12px;
+    color: var(--text);
+  }
+
+  .hero .tagline {
+    font-size: 18px;
+    color: var(--text-secondary);
+    max-width: 540px;
+    margin: 0 auto 24px;
+  }
+
+  .hero-badges {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-secondary);
+  }
+
+  .badge svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .toc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px 28px;
+    margin-bottom: 48px;
+  }
+
+  .toc h2 {
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+  }
+
+  .toc ol {
+    list-style: none;
+    counter-reset: toc;
+  }
+
+  .toc li {
+    counter-increment: toc;
+    margin-bottom: 6px;
+  }
+
+  .toc li::before {
+    content: counter(toc) ".";
+    color: var(--text-muted);
+    font-weight: 500;
+    margin-right: 8px;
+    font-size: 14px;
+  }
+
+  .toc a {
+    color: var(--primary);
+    text-decoration: none;
+    font-size: 15px;
+    font-weight: 500;
+  }
+
+  .toc a:hover {
+    text-decoration: underline;
+  }
+
+  section {
+    margin-bottom: 56px;
+  }
+
+  h2 {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    margin-bottom: 16px;
+    padding-top: 8px;
+    color: var(--text);
+  }
+
+  h3 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-top: 32px;
+    margin-bottom: 12px;
+    color: var(--text);
+  }
+
+  h4 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-top: 24px;
+    margin-bottom: 8px;
+    color: var(--text);
+  }
+
+  p {
+    margin-bottom: 16px;
+    color: var(--text-secondary);
+  }
+
+  .screenshot {
+    margin: 24px 0;
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .screenshot img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .screenshot figcaption {
+    padding: 12px 16px;
+    font-size: 13px;
+    color: var(--text-muted);
+    border-top: 1px solid var(--border);
+    background: var(--code-bg);
+  }
+
+  ul, ol {
+    margin-bottom: 16px;
+    padding-left: 24px;
+  }
+
+  li {
+    margin-bottom: 6px;
+    color: var(--text-secondary);
+  }
+
+  li strong {
+    color: var(--text);
+  }
+
+  code {
+    font-family: 'JetBrains Mono', SFMono-Regular, Consolas, monospace;
+    font-size: 13.5px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: var(--code-bg);
+    color: var(--text);
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    margin: 16px 0 24px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  thead {
+    background: var(--code-bg);
+  }
+
+  th {
+    text-align: left;
+    padding: 10px 16px;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+  }
+
+  td {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-secondary);
+    vertical-align: top;
+  }
+
+  tr:last-child td {
+    border-bottom: none;
+  }
+
+  .callout {
+    padding: 16px 20px;
+    border-radius: var(--radius);
+    margin: 20px 0;
+    font-size: 14px;
+    line-height: 1.6;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .callout-icon {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    margin-top: 1px;
+  }
+
+  .callout p {
+    margin: 0;
+    font-size: 14px;
+  }
+
+  .callout-info {
+    background: var(--primary-light);
+    border: 1px solid #B3D4FF;
+    color: #0747A6;
+  }
+
+  .callout-info p { color: #0747A6; }
+
+  .callout-warning {
+    background: var(--warning-bg);
+    border: 1px solid #F5CD47;
+    color: var(--warning);
+  }
+
+  .callout-warning p { color: var(--warning); }
+
+  .callout-success {
+    background: var(--success-bg);
+    border: 1px solid #7EE2B8;
+    color: var(--success);
+  }
+
+  .callout-success p { color: var(--success); }
+
+  .steps {
+    counter-reset: step;
+    list-style: none;
+    padding-left: 0;
+  }
+
+  .steps li {
+    counter-increment: step;
+    position: relative;
+    padding-left: 44px;
+    margin-bottom: 24px;
+    min-height: 32px;
+  }
+
+  .steps li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: white;
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .steps li strong {
+    display: block;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 48px 0;
+  }
+
+  .footer {
+    text-align: center;
+    padding-top: 32px;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+
+  .footer a {
+    color: var(--primary);
+    text-decoration: none;
+  }
+
+  .footer a:hover {
+    text-decoration: underline;
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <header class="hero">
+    <div class="hero-logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#0052CC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+        <path d="M2 17l10 5 10-5"/>
+        <path d="M2 12l10 5 10-5"/>
+        <circle cx="12" cy="12" r="3" fill="#0052CC" stroke="none"/>
+      </svg>
+    </div>
+    <h1>CogniRunner</h1>
+    <p class="tagline">AI-powered workflow validation for Jira. Validate any field — including attachments — with custom AI prompts during workflow transitions.</p>
+    <div class="hero-badges">
+      <span class="badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        Built on Atlassian Forge
+      </span>
+      <span class="badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Open Source (AGPL-3.0)
+      </span>
+      <span class="badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        Powered by OpenAI
+      </span>
+    </div>
+  </header>
+
+  <nav class="toc">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#getting-started">Getting Started</a></li>
+      <li><a href="#configuration">Configuring a Validator or Condition</a></li>
+      <li><a href="#field-selector">Field Selector</a></li>
+      <li><a href="#validation-prompt">Writing Validation Prompts</a></li>
+      <li><a href="#jql-search">JQL Search &amp; Duplicate Detection</a></li>
+      <li><a href="#attachments">Attachment Content Analysis</a></li>
+      <li><a href="#validation-in-action">Validation in Action</a></li>
+      <li><a href="#rule-management">Rule Management (Enable / Disable)</a></li>
+      <li><a href="#admin-panel">Admin Panel</a></li>
+      <li><a href="#validation-logs">Validation Logs</a></li>
+      <li><a href="#supported-fields">Supported Jira Field Types</a></li>
+      <li><a href="#supported-attachments">Supported Attachment Formats</a></li>
+      <li><a href="#limits">Limits &amp; Constraints</a></li>
+      <li><a href="#environment">Environment Variables</a></li>
+    </ol>
+  </nav>
+
+  <section id="overview">
+    <h2>Overview</h2>
+    <p>CogniRunner adds AI-powered <strong>validators</strong> and <strong>conditions</strong> to Jira workflow transitions. Instead of writing complex rules or scripts, you describe your validation criteria in plain English — and the AI evaluates field content against your prompt every time an issue transitions.</p>
+    <ul>
+      <li><strong>Validators</strong> block a transition if validation fails, showing the user a clear error message with the AI's reasoning.</li>
+      <li><strong>Conditions</strong> hide a transition entirely if validation fails — the user won't even see the transition button.</li>
+    </ul>
+    <p>CogniRunner works across company-managed and team-managed Jira projects, supports all standard and custom Jira field types, and can even analyze the content of attached files and images.</p>
+  </section>
+
+  <section id="getting-started">
+    <h2>Getting Started</h2>
+    <p>CogniRunner integrates into Jira's native workflow editor. To add a validator or condition:</p>
+
+    <ol class="steps">
+      <li>
+        <strong>Open your workflow in the Jira workflow editor</strong>
+        Select a transition and click the <strong>Rules</strong> panel on the right side. You'll see rule categories: Restrict transition, Request input, Validate details, and Perform actions.
+      </li>
+      <li>
+        <strong>Add a new rule</strong>
+        Click the <code>+</code> button next to "Validate details" (for validators) or "Restrict transition" (for conditions). In the "Add rule" dialog, find <strong>CogniRunner Field Validator</strong> under the Marketplace Rules section.
+      </li>
+      <li>
+        <strong>Configure the validator</strong>
+        Select the field to validate, write your AI prompt, and optionally configure JQL search for duplicate detection. Click Update to save.
+      </li>
+    </ol>
+
+    <figure class="screenshot">
+      <img src="Screenshot 2026-02-27 at 00.06.58.jpg" alt="Add rule dialog showing CogniRunner Field Validator selected">
+      <figcaption>The "Add rule" dialog in Jira's workflow editor. CogniRunner Field Validator appears under Marketplace Rules alongside other installed validators.</figcaption>
+    </figure>
+
+    <figure class="screenshot">
+      <img src="Screenshot 2026-02-27 at 00.07.17.jpg" alt="Workflow diagram with CogniRunner validator on a transition">
+      <figcaption>A Jira workflow with CogniRunner attached to the "Move in ready for estimating" transition. The Rules panel shows it under "Validate details".</figcaption>
+    </figure>
+  </section>
+
+  <section id="configuration">
+    <h2>Configuring a Validator or Condition</h2>
+    <p>When you add or edit a CogniRunner rule, you'll see the configuration form with three settings:</p>
+    <ol>
+      <li><strong>Field to Validate</strong> — Which Jira field the AI should evaluate</li>
+      <li><strong>Validation Prompt</strong> — Your criteria described in natural language</li>
+      <li><strong>Jira Search (JQL)</strong> — Optional duplicate detection via JQL queries</li>
+    </ol>
+
+    <figure class="screenshot">
+      <img src="Screenshot 2026-02-27 at 00.08.06.jpg" alt="CogniRunner configuration form with field selector, prompt, and JQL options">
+      <figcaption>The AI Validator Configuration form. Pick a field, describe your validation criteria in the prompt, and optionally enable JQL-based duplicate detection.</figcaption>
+    </figure>
+  </section>
+
+  <section id="field-selector">
+    <h2>Field Selector</h2>
+    <p>The field selector dropdown shows all fields available on your project's edit/view screens, grouped by system fields and custom fields. Each entry shows the field name, its internal ID, and its type.</p>
+
+    <figure class="screenshot">
+      <img src="Screenshot 2026-02-27 at 00.07.42.jpg" alt="Field selector dropdown open showing system fields">
+      <figcaption>The field selector dropdown with system fields listed — Attachment, Description, Fix versions, Parent, Priority, Reporter — each showing their type badge.</figcaption>
+    </figure>
+
+    <p>You can search for fields by name using the search box at the top of the dropdown. The selected field determines what content the AI receives for validation.</p>
+
+    <div class="callout callout-info">
+      <span class="callout-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+      </span>
+      <p>When you select <strong>Attachment</strong>, CogniRunner downloads and analyzes the actual content of attached files — not just the filename. See <a href="#attachments">Attachment Content Analysis</a> for supported formats.</p>
+    </div>
+  </section>
+
+  <section id="validation-prompt">
+    <h2>Writing Validation Prompts</h2>
+    <p>The validation prompt is where you describe your quality criteria in natural language. The AI evaluates the field content against this prompt and returns a pass/fail result with reasoning.</p>
+    <p>Good prompts are specific and describe what the content should or should not contain:</p>
+    <ul>
+      <li><em>"Check for similar issues and do not allow if it appears to be a duplicated description meaning."</em></li>
+      <li><em>"Make sure that no Atlassian migration is found in this attachment. Explain clearly to the user the rejection."</em></li>
+      <li><em>"Verify that this person is not Romanian."</em></li>
+      <li><em>"The components are not allowed if they're not pretty."</em></li>
+      <li><em>"Make sure the due date is not an odd day."</em></li>
+    </ul>
+
+    <div class="callout callout-success">
+      <span class="callout-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      </span>
+      <p>The AI's response is always shown to the user when validation fails, so writing prompts that ask the AI to "explain clearly" will produce better error messages.</p>
+    </div>
+  </section>
+
+  <section id="jql-search">
+    <h2>JQL Search &amp; Duplicate Detection</h2>
+    <p>CogniRunner can search Jira for similar or related issues during validation — enabling AI-powered duplicate detection. The JQL Search setting has three modes:</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Mode</th><th>Behavior</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Auto-detect from prompt</strong></td>
+            <td>CogniRunner analyzes your prompt text and automatically enables JQL search if it mentions duplicates, similarity, existing issues, or cross-referencing. This is the recommended setting.</td>
+          </tr>
+          <tr>
+            <td><strong>Always enabled</strong></td>
+            <td>JQL search is always active, regardless of prompt wording. The AI can run up to 3 rounds of JQL queries to find related issues.</td>
+          </tr>
+          <tr>
+            <td><strong>Always disabled</strong></td>
+            <td>No JQL search is performed. Validation is based solely on the field content and prompt. Fastest option.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>When JQL search is active, the AI generates and executes JQL queries against your Jira instance to find related issues. It can run up to 3 rounds of queries, each returning up to 10 results. The AI then uses these results to inform its validation decision.</p>
+
+    <figure class="screenshot">
+      <img src="Screenshot 2026-02-27 at 00.09.43.jpg" alt="Validation log showing JQL queries used during duplicate detection">
+      <figcaption>A validation log entry showing the JQL queries the AI executed during duplicate detection — searching for issues with related keywords across the project.</figcaption>
+    </figure>
+
+    <div class="callout callout-warning">
+      <span class="callout-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      </span>
+      <p>JQL search adds latency to the validation (up to 22 seconds in the worst case). For simple validations that don't need cross-referencing, use "Always disabled" for the fastest response.</p>
+    </div>
+  </section>
+
+  <section id="attachments">
+    <h2>Attachment Content Analysis</h2>
+    <p>When you select <strong>Attachment</strong> as the field to validate, CogniRunner downloads and analyzes the actual content of attached files. The AI can read documents, spreadsheets, presentations, and understand images — going far beyond simple filename checks.</p>
+
+    <h3>Supported Document Formats</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Format</th><th>Extensions</th><th>Processing</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>PDF</td><td><code>.pdf</code></td><td>Full text extraction and analysis</td></tr>
+          <tr><td>Word</td><td><code>.docx</code>, <code>.doc</code></td><td>Full text extraction and analysis</td></tr>
+          <tr><td>Rich Text</td><td><code>.rtf</code>, <code>.odt</code></td><td>Full text extraction and analysis</td></tr>
+          <tr><td>Excel</td><td><code>.xlsx</code>, <code>.xls</code></td><td>Spreadsheet data extraction</td></tr>
+          <tr><td>CSV / TSV</td><td><code>.csv</code>, <code>.tsv</code></td><td>Tabular data extraction</td></tr>
+          <tr><td>PowerPoint</td><td><code>.pptx</code>, <code>.ppt</code></td><td>Slide content extraction</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Supported Image Formats</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Format</th><th>Extensions</th><th>Processing</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>PNG</td><td><code>.png</code></td><td>AI vision — understands image content</td></tr>
+          <tr><td>JPEG</td><td><code>.jpg</code>, <code>.jpeg</code></td><td>AI vision — understands image content</td></tr>
+          <tr><td>GIF</td><td><code>.gif</code></td><td>AI vision — understands image content</td></tr>
+          <tr><td>WebP</td><td><code>.webp</code></td><td>AI vision — understands image content</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Unsupported file types are gracefully skipped — the AI receives metadata about skipped files (filename, size, type) so it can still reference them in its reasoning.</p>
+
+    <figure class="screenshot">
+      <img src="marketplace-highlight-2.png" alt="AI validation analyzing an attached image and rejecting the transition">
+      <figcaption>CogniRunner analyzed an attached image and determined it contained Atlassian migration content — blocking the transition with a detailed explanation of what was found in the image.</figcaption>
+    </figure>
+  </section>
+
+  <section id="validation-in-action">
+    <h2>Validation in Action</h2>
+    <p>When a user attempts a workflow transition, CogniRunner evaluates the configured field against your prompt. If validation fails, the transition is blocked and the AI's reasoning is displayed as an error message directly on the transition screen.</p>
+
+    <figure class="screenshot">
+      <img src="marketplace-highlight-1.png" alt="Jira transition blocked by CogniRunner AI validation">
+      <figcaption>A transition blocked by CogniRunner. The AI detected the description is identical to issue WFH-302, identifying it as a duplicate. The error message includes the specific reasoning and the blocking issue key.</figcaption>
+    </figure>
+
+    <p>The error message always includes:</p>
+    <ul>
+      <li>A clear statement that AI Validation failed</li>
+      <li>The specific reason for the failure</li>
+      <li>When JQL search was used: references to related issue keys</li>
+      <li>Enough context for the user to understand what needs to change</li>
+    </ul>
+  </section>
+
+  <section id="rule-management">
+    <h2>Rule Management (Enable / Disable)</h2>
+    <p>Each CogniRunner rule can be enabled or disabled without removing it from the workflow. This is useful for temporarily pausing validation during migrations, bulk updates, or troubleshooting.</p>
+
+    <h3>Active Rule</h3>
+    <figure class="screenshot">
+      <img src="Screenshot 2026-02-27 at 00.07.27.jpg" alt="Rule summary showing active state">
+      <figcaption>A rule in active state. The summary shows the configured field, prompt preview, and tools status. Click "Disable" to pause it, or "Edit" to change the configuration.</figcaption>
+    </figure>
+
+    <h3>Disabled Rule</h3>
+    <figure class="screenshot">
+      <img src="Screenshot 2026-02-27 at 00.08.18.jpg" alt="Rule summary showing disabled state">
+      <figcaption>A disabled rule. It will not run on transitions until re-enabled. The configuration is preserved — click "Enable" to reactivate it.</figcaption>
+    </figure>
+  </section>
+
+  <section id="admin-panel">
+    <h2>Admin Panel</h2>
+    <p>The CogniRunner Admin panel provides a centralized view of all AI validators and conditions configured across your Jira workflows. Access it from the Jira Apps menu.</p>
+
+    <figure class="screenshot">
+      <img src="marketplace-highlight-3.png" alt="CogniRunner Admin panel showing all configured rules and validation logs">
+      <figcaption>The Admin panel showing all configured rules across multiple workflows and projects. Each row shows the rule type (Validator/Condition), workflow and transition, field, prompt preview, last update, and quick Edit/Disable actions.</figcaption>
+    </figure>
+
+    <p>The admin panel shows:</p>
+    <ul>
+      <li><strong>Configured Rules table</strong> — All validators and conditions across every workflow, with type badges, workflow/transition names, field, prompt preview, and last update timestamp.</li>
+      <li><strong>Quick actions</strong> — Edit or Disable any rule directly from the table without opening the workflow editor.</li>
+      <li><strong>Validation Logs</strong> — A scrollable history of all validation results, including pass/fail status, issue key, field, AI reasoning, and JQL queries used.</li>
+    </ul>
+  </section>
+
+  <section id="validation-logs">
+    <h2>Validation Logs</h2>
+    <p>Every validation — whether it passes or fails — is logged with full context. Logs are available in both the Admin panel and the individual rule summary view.</p>
+
+    <figure class="screenshot">
+      <img src="Screenshot 2026-02-27 at 00.09.04.jpg" alt="Validation logs showing two failed validations with AI reasoning">
+      <figcaption>Validation logs showing two failed validations on issue WFH-326. The first rejected an attachment based on its image content, the second blocked a duplicate description referencing WFH-302.</figcaption>
+    </figure>
+
+    <p>Each log entry includes:</p>
+    <ul>
+      <li><strong>Status</strong> — PASS or FAIL badge</li>
+      <li><strong>Issue key</strong> — Links to the Jira issue (e.g., WFH-326)</li>
+      <li><strong>Timestamp</strong> — When the validation occurred</li>
+      <li><strong>Field</strong> — Which field was validated (e.g., attachment, description)</li>
+      <li><strong>AI reasoning</strong> — The full explanation from the AI</li>
+      <li><strong>JQL queries</strong> — If agentic search was used, the queries that were executed (visible in expanded log view)</li>
+    </ul>
+
+    <p>Logs are stored in Forge storage with a maximum of 50 entries (FIFO — oldest entries are removed when the limit is reached). Use the "Clear All" button to reset the log history.</p>
+  </section>
+
+  <section id="supported-fields">
+    <h2>Supported Jira Field Types</h2>
+    <p>CogniRunner extracts readable text from any Jira field type and sends it to the AI for validation. All field values are converted to plain text before evaluation.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Category</th><th>Field Types</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>Text</strong></td><td>Single-line text, Multi-line text, URL</td></tr>
+          <tr><td><strong>Rich Text</strong></td><td>Description, Comments, and other ADF (Atlassian Document Format) fields — full text extraction from rich content</td></tr>
+          <tr><td><strong>Select</strong></td><td>Select list (single), Select list (multi), Radio buttons, Checkboxes, Cascading select</td></tr>
+          <tr><td><strong>People</strong></td><td>User picker (single), User picker (multi), Group picker (single), Group picker (multi), Reporter, Assignee</td></tr>
+          <tr><td><strong>Date &amp; Time</strong></td><td>Date picker, Date/Time picker</td></tr>
+          <tr><td><strong>Numeric</strong></td><td>Number, Time tracking (original estimate, remaining estimate, time spent)</td></tr>
+          <tr><td><strong>System</strong></td><td>Priority, Status, Resolution, Issue type, Labels, Components, Versions (fix/affects), Sprint</td></tr>
+          <tr><td><strong>Reference</strong></td><td>Issue links, Parent issue, Project picker</td></tr>
+          <tr><td><strong>Files</strong></td><td>Attachments — with full content analysis (see <a href="#attachments">supported formats</a>)</td></tr>
+          <tr><td><strong>Custom</strong></td><td>Any custom field with a readable value — custom types are extracted generically</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="supported-attachments">
+    <h2>Supported Attachment Formats</h2>
+    <p>When validating the Attachment field, CogniRunner downloads and processes files in these formats:</p>
+
+    <h3>Documents (text extraction)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Format</th><th>MIME Type</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>PDF</td><td><code>application/pdf</code></td></tr>
+          <tr><td>Word (DOCX)</td><td><code>application/vnd.openxmlformats-officedocument.wordprocessingml.document</code></td></tr>
+          <tr><td>Word (DOC)</td><td><code>application/msword</code></td></tr>
+          <tr><td>Rich Text (RTF)</td><td><code>application/rtf</code></td></tr>
+          <tr><td>OpenDocument Text (ODT)</td><td><code>application/vnd.oasis.opendocument.text</code></td></tr>
+          <tr><td>Excel (XLSX)</td><td><code>application/vnd.openxmlformats-officedocument.spreadsheetml.sheet</code></td></tr>
+          <tr><td>Excel (XLS)</td><td><code>application/vnd.ms-excel</code></td></tr>
+          <tr><td>CSV</td><td><code>text/csv</code></td></tr>
+          <tr><td>TSV</td><td><code>text/tab-separated-values</code></td></tr>
+          <tr><td>PowerPoint (PPTX)</td><td><code>application/vnd.openxmlformats-officedocument.presentationml.presentation</code></td></tr>
+          <tr><td>PowerPoint (PPT)</td><td><code>application/vnd.ms-powerpoint</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Images (AI vision analysis)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Format</th><th>MIME Type</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>PNG</td><td><code>image/png</code></td></tr>
+          <tr><td>JPEG</td><td><code>image/jpeg</code></td></tr>
+          <tr><td>GIF</td><td><code>image/gif</code></td></tr>
+          <tr><td>WebP</td><td><code>image/webp</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="limits">
+    <h2>Limits &amp; Constraints</h2>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Limit</th><th>Value</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Max attachment size (per file)</td><td>10 MB</td><td>Files larger than 10 MB are skipped</td></tr>
+          <tr><td>Max total attachment size</td><td>20 MB</td><td>Combined size across all attachments per validation</td></tr>
+          <tr><td>Validation timeout</td><td>25 seconds</td><td>Forge function time limit; agentic mode budgets 22 seconds</td></tr>
+          <tr><td>JQL search rounds</td><td>3 rounds max</td><td>Each round can execute multiple JQL queries</td></tr>
+          <tr><td>JQL results per query</td><td>10 issues</td><td>Top 10 matching issues returned per query</td></tr>
+          <tr><td>Validation log history</td><td>50 entries</td><td>Oldest entries removed when limit is reached (FIFO)</td></tr>
+          <tr><td>Prompt log truncation</td><td>200 characters</td><td>Field values stored in logs are truncated for storage</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout-info">
+      <span class="callout-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+      </span>
+      <p>Attachments that exceed the size limit or use unsupported formats are gracefully skipped. The AI still receives metadata about skipped files and can reference them in its reasoning.</p>
+    </div>
+  </section>
+
+  <section id="environment">
+    <h2>Environment Variables</h2>
+    <p>CogniRunner requires an OpenAI API key to function. Set environment variables using the Forge CLI:</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Variable</th><th>Required</th><th>Default</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>OPENAI_API_KEY</code></td><td>Yes</td><td>—</td><td>Your OpenAI API key for authentication</td></tr>
+          <tr><td><code>OPENAI_MODEL</code></td><td>No</td><td><code>gpt-5-mini</code></td><td>The OpenAI model used for validation</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout-warning">
+      <span class="callout-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      </span>
+      <p>You are responsible for your own OpenAI API costs. Each validation makes one API call (or multiple if using JQL search mode). Using attachment analysis with large files or images will consume more tokens.</p>
+    </div>
+  </section>
+
+  <hr>
+
+  <footer class="footer">
+    <p>CogniRunner is open source under the <a href="https://www.gnu.org/licenses/agpl-3.0.html">AGPL-3.0 license</a>.</p>
+    <p>Copyright &copy; 2025 LeanZero</p>
+  </footer>
+
+</div>
+
+</body>
+</html>
