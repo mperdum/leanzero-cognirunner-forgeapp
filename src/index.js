@@ -19,6 +19,8 @@
 import api, { route, fetch } from "@forge/api";
 import { storage } from "@forge/api";
 import Resolver from "@forge/resolver";
+import { JIRA_PROMPTS, matchPrompt, getPromptById, buildJqlFromIntent, loadPrompts, storePrompts, searchPrompts, getAllCategories, getPromptsByCategory } from "./jira-prompts.js";
+import { executeJiraEndpoint, executePrompt, executePaginated, buildQueryParams } from "./jira-tool-executor.js";
 
 const resolver = new Resolver();
 
@@ -84,6 +86,59 @@ const storeLog = async (logEntry) => {
  * Used by the frontend to display license state and by the validator
  * to decide whether to run AI validation.
  */
+resolver.define("getJiraPrompts", async () => {
+  try {
+    const prompts = await loadPrompts();
+    return { success: true, prompts };
+  } catch (error) {
+    console.error("Failed to get JIRA prompts:", error);
+    return { success: false, error: error.message, prompts: {} };
+  }
+});
+
+resolver.define("searchJiraPrompts", async ({ payload }) => {
+  try {
+    const { query, category } = payload || {};
+    const allPrompts = await loadPrompts();
+    
+    let results = searchPrompts(query, allPrompts);
+    
+    if (category && category !== 'all') {
+      results = results.filter(p => p.category === category);
+    }
+    
+    return { success: true, results };
+  } catch (error) {
+    console.error("Failed to search JIRA prompts:", error);
+    return { success: false, error: error.message, results: [] };
+  }
+});
+
+resolver.define("getJiraPromptById", async ({ payload }) => {
+  try {
+    const { promptId } = payload || {};
+    const allPrompts = await loadPrompts();
+    const prompt = getPromptById(promptId, allPrompts);
+    
+    return { success: !!prompt, prompt };
+  } catch (error) {
+    console.error("Failed to get JIRA prompt by ID:", error);
+    return { success: false, error: error.message, prompt: null };
+  }
+});
+
+resolver.define("getJiraCategories", async () => {
+  try {
+    const allPrompts = await loadPrompts();
+    const categories = getAllCategories(allPrompts);
+    
+    return { success: true, categories };
+  } catch (error) {
+    console.error("Failed to get JIRA prompt categories:", error);
+    return { success: false, error: error.message, categories: [] };
+  }
+});
+
 resolver.define("checkLicense", ({ context }) => {
   // If no license property at all (development/unlisted), return null (unknown)
   // Only return false when a license explicitly exists but is inactive
