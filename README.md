@@ -4,6 +4,8 @@
 
 Part of the [LeanZero](https://leanzero.atlascrafted.com) ecosystem.
 
+**[Live on the Atlassian Marketplace](https://marketplace.atlassian.com/apps/298437877/cognirunner?hosting=cloud&tab=overview)** -- install it directly into your Jira Cloud instance.
+
 CogniRunner is the **first open-source Atlassian Forge app**, licensed under [AGPL-3.0](LICENSE). It brings semantic intelligence to Jira workflows -- what was previously impossible to assess (the actual meaning of a text field, the content of an attached document, the quality of a description) is now child's play. Write a plain-English prompt, pick a field, and CogniRunner handles the rest.
 
 > **Status: Early / Raw.** This codebase was built in one week. It works, it's deployed on the Atlassian Marketplace, and it does its job -- but it needs a refactor. The backend is a single monolithic file, there are no tests, and the frontend CSS is triple-defined due to Forge iframe quirks. There's a massive appetite from the author to improve and maintain this project. Contributions are welcome. Expect rough edges, and expect them to get smoothed out.
@@ -213,7 +215,7 @@ The tool registry is designed for extensibility. Planned additions:
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/YourUsername/CogniRunner.git
+git clone https://github.com/mperdum/leanzero-cognirunner-forgeapp.git
 cd CogniRunner
 npm install
 cd static/config-ui && npm install && cd ../..
