@@ -455,12 +455,18 @@ const initBridges = async () => {
 let currentFieldId = "";
 let currentPrompt = "";
 let currentEnableTools = null; // null = auto-detect, true = always on, false = always off
+let currentConditionPrompt = "";
+let currentActionPrompt = "";
+let currentCode = "";
+let currentActionFieldId = ""; // For semantic post functions: the field to modify
 let currentContext = null;
 
 function App() {
   const [fieldId, setFieldId] = useState("");
   const [prompt, setPrompt] = useState("");
   const [enableTools, setEnableTools] = useState(null); // null = auto, true = on, false = off
+  const [postFunctionType, setPostFunctionType] = useState(null); // null, "semantic", "static"
+  
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [fields, setFields] = useState([]);
@@ -468,9 +474,30 @@ function App() {
   const [fieldsError, setFieldsError] = useState(null);
   const [fieldsSource, setFieldsSource] = useState(null);
   const [isCreateTransition, setIsCreateTransition] = useState(false);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [dropdownSearch, setDropdownSearch] = useState("");
-  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  
+  // Field selection dropdown state (main field - for validation)
+  const [fieldDropdownOpen, setFieldDropdownOpen] = useState(false);
+  const [fieldSearch, setFieldSearch] = useState("");
+  const [highlightedFieldIndex, setHighlightedFieldIndex] = useState(-1);
+  
+  // Action field dropdown state (for semantic post function modification target)
+  const [actionFieldDropdownOpen, setActionFieldDropdownOpen] = useState(false);
+  const [actionFieldSearch, setActionFieldSearch] = useState("");
+  const [highlightedActionFieldIndex, setHighlightedActionFieldIndex] = useState(-1);
+  
+  // Post function type specific state
+  const [conditionPrompt, setConditionPrompt] = useState("");
+  const [actionPrompt, setActionPrompt] = useState("");
+  const [code, setCode] = useState("");
+
+  // Post function type options
+  const postFunctionTypeOptions = [
+    { id: null, label: "Standard Validator / Condition", description: "Validate or conditionally control transitions" },
+    { id: "semantic", label: "Semantic Post Function", description: "AI-driven field modification with condition checks" },
+    { id: "static", label: "Static Post Function", description: "Custom JavaScript for complex operations" },
+  ];
+
+  const postFunctionTypeRef = useRef(null);
   const dropdownRef = useRef(null);
   const searchInputRef = useRef(null);
   const listRef = useRef(null);
@@ -488,77 +515,231 @@ function App() {
     currentEnableTools = enableTools;
   }, [enableTools]);
 
-  // Close dropdown on outside click
+  useEffect(() => {
+    currentConditionPrompt = conditionPrompt;
+  }, [conditionPrompt]);
+
+  useEffect(() => {
+    currentActionPrompt = actionPrompt;
+  }, [actionPrompt]);
+
+  useEffect(() => {
+    currentCode = code;
+  }, [code]);
+
+  useEffect(() => {
+    currentActionFieldId = actionFieldId;
+  }, [actionFieldId]);
+
+  // Keep refs in sync with state for main field dropdown
+  const fieldDropdownRef = useRef(null);
+  const fieldSearchInputRef = useRef(null);
+  const fieldListRef = useRef(null);
+
+  // Keep refs in sync with state for action field dropdown  
+  const actionFieldDropdownRef = useRef(null);
+  const actionFieldSearchInputRef = useRef(null);
+  const actionFieldListRef = useRef(null);
+
+  // Close post function type dropdown on outside click
   useEffect(() => {
     const handleClickOutside = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setDropdownOpen(false);
+      if (postFunctionTypeRef.current && !postFunctionTypeRef.current.contains(e.target)) {
+        setPostFunctionTypeOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Focus search input when dropdown opens
+  // Close main field selection dropdown on outside click
   useEffect(() => {
-    if (dropdownOpen && searchInputRef.current) {
-      searchInputRef.current.focus();
+    const handleClickOutside = (e) => {
+      if (fieldDropdownRef.current && !fieldDropdownRef.current.contains(e.target)) {
+        setFieldDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [fieldDropdownOpen]);
+
+  // Close action field selection dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (actionFieldDropdownRef.current && !actionFieldDropdownRef.current.contains(e.target)) {
+        setActionFieldDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [actionFieldDropdownOpen]);
+
+  // Focus search input when main field dropdown opens
+  useEffect(() => {
+    if (fieldDropdownOpen && fieldSearchInputRef.current) {
+      fieldSearchInputRef.current.focus();
     }
-  }, [dropdownOpen]);
+  }, [fieldDropdownOpen]);
 
-  // Reset highlight when search changes
+  // Focus search input when action field dropdown opens
   useEffect(() => {
-    setHighlightedIndex(0);
-  }, [dropdownSearch]);
+    if (actionFieldDropdownOpen && actionFieldSearchInputRef.current) {
+      actionFieldSearchInputRef.current.focus();
+    }
+  }, [actionFieldDropdownOpen]);
 
-  // Compute filtered + grouped fields for dropdown
+  // Reset highlight when main field search changes
+  useEffect(() => {
+    setHighlightedFieldIndex(0);
+  }, [fieldSearch]);
+
+  // Reset highlight when action field search changes
+  useEffect(() => {
+    setHighlightedActionFieldIndex(0);
+  }, [actionFieldSearch]);
+
+  // Post function type dropdown open state
+  const [postFunctionTypeOpen, setPostFunctionTypeOpen] = useState(false);
+
+  // Keep refs in sync with state for post function type dropdown
+  const postFunctionTypeHighlightedIndexRef = useRef(-1);
+
+  // Scroll highlighted item into view for post function type dropdown
+  useEffect(() => {
+    if (!postFunctionTypeOpen || postFunctionTypeHighlightedIndexRef.current < 0) return;
+    const item = document.querySelector(`[data-index="${postFunctionTypeHighlightedIndexRef.current}"]`);
+    if (item) item.scrollIntoView({ block: "nearest" });
+  }, [postFunctionTypeHighlightedIndexRef.current, postFunctionTypeOpen]);
+
+  // Filter fields for main field selection (validation)
   const filteredFields = fields.filter((f) => {
-    if (!dropdownSearch) return true;
-    const q = dropdownSearch.toLowerCase();
+    if (!fieldSearch) return true;
+    const q = fieldSearch.toLowerCase();
     return f.name.toLowerCase().includes(q)
       || f.id.toLowerCase().includes(q)
       || f.type.toLowerCase().includes(q);
   });
   const systemFields = filteredFields.filter((f) => !f.custom);
   const customFields = filteredFields.filter((f) => f.custom);
-  // Flat list for keyboard navigation (group labels excluded)
   const flatFiltered = [...systemFields, ...customFields];
 
-  const handleDropdownKeyDown = (e) => {
-    if (!dropdownOpen) {
+  // Filter fields for action field selection (semantic post function modification target)
+  const semanticFields = fields.filter((f) => {
+    if (!actionFieldSearch) return true;
+    const q = actionFieldSearch.toLowerCase();
+    return f.name.toLowerCase().includes(q)
+      || f.id.toLowerCase().includes(q)
+      || f.type.toLowerCase().includes(q);
+  });
+  const systemSemanticFields = semanticFields.filter((f) => !f.custom);
+  const customSemanticFields = semanticFields.filter((f) => f.custom);
+  const flatSemanticFiltered = [...systemSemanticFields, ...customSemanticFields];
+
+  // Post function type keyboard navigation
+  const handlePostFunctionTypeKeyDown = (e) => {
+    if (!postFunctionTypeOpen) {
       if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
         e.preventDefault();
-        setDropdownOpen(true);
+        setPostFunctionTypeOpen(true);
       }
       return;
     }
     if (e.key === "Escape") {
       e.preventDefault();
-      setDropdownOpen(false);
+      setPostFunctionTypeOpen(false);
       return;
     }
+    const options = postFunctionTypeOptions.filter((opt) => true);
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setHighlightedIndex((prev) => Math.min(prev + 1, flatFiltered.length - 1));
+      postFunctionTypeHighlightedIndexRef.current = Math.min(postFunctionTypeHighlightedIndexRef.current + 1, options.length - 1);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setHighlightedIndex((prev) => Math.max(prev - 1, 0));
+      postFunctionTypeHighlightedIndexRef.current = Math.max(postFunctionTypeHighlightedIndexRef.current - 1, 0);
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (highlightedIndex >= 0 && highlightedIndex < flatFiltered.length) {
-        setFieldId(flatFiltered[highlightedIndex].id);
-        setDropdownOpen(false);
-        setDropdownSearch("");
+      const options = postFunctionTypeOptions.filter((opt) => true);
+      if (postFunctionTypeHighlightedIndexRef.current >= 0 && postFunctionTypeHighlightedIndexRef.current < options.length) {
+        setPostFunctionType(options[postFunctionTypeHighlightedIndexRef.current].id);
+        setPostFunctionTypeOpen(false);
+        postFunctionTypeHighlightedIndexRef.current = -1;
       }
     }
   };
 
-  // Scroll highlighted item into view
+  // Main field selection keyboard navigation
+  const handleFieldKeyDown = (e) => {
+    if (!fieldDropdownOpen) {
+      if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
+        e.preventDefault();
+        setFieldDropdownOpen(true);
+      }
+      return;
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setFieldDropdownOpen(false);
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightedFieldIndex((prev) => Math.min(prev + 1, flatFiltered.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightedFieldIndex((prev) => Math.max(prev - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (highlightedFieldIndex >= 0 && highlightedFieldIndex < flatFiltered.length) {
+        setFieldId(flatFiltered[highlightedFieldIndex].id);
+        setFieldDropdownOpen(false);
+        setFieldSearch("");
+      }
+    }
+  };
+
+  // Action field selection keyboard navigation
+  const handleActionFieldKeyDown = (e) => {
+    if (!actionFieldDropdownOpen) {
+      if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
+        e.preventDefault();
+        setActionFieldDropdownOpen(true);
+      }
+      return;
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setActionFieldDropdownOpen(false);
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightedActionFieldIndex((prev) => Math.min(prev + 1, flatSemanticFiltered.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightedActionFieldIndex((prev) => Math.max(prev - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (highlightedActionFieldIndex >= 0 && highlightedActionFieldIndex < flatSemanticFiltered.length) {
+        setActionFieldId(flatSemanticFiltered[highlightedActionFieldIndex].id);
+        setActionFieldDropdownOpen(false);
+        setActionFieldSearch("");
+      }
+    }
+  };
+
+  // Scroll main field item into view
   useEffect(() => {
-    if (!dropdownOpen || highlightedIndex < 0) return;
-    const item = listRef.current?.querySelector(`[data-index="${highlightedIndex}"]`);
+    if (!fieldDropdownOpen || highlightedFieldIndex < 0) return;
+    const item = fieldListRef.current?.querySelector(`[data-index="${highlightedFieldIndex}"]`);
     if (item) item.scrollIntoView({ block: "nearest" });
-  }, [highlightedIndex, dropdownOpen]);
+  }, [highlightedFieldIndex, fieldDropdownOpen]);
+
+  // Scroll action field item into view
+  useEffect(() => {
+    if (!actionFieldDropdownOpen || highlightedActionFieldIndex < 0) return;
+    const item = actionFieldListRef.current?.querySelector(`[data-index="${highlightedActionFieldIndex}"]`);
+    if (item) item.scrollIntoView({ block: "nearest" });
+  }, [highlightedActionFieldIndex, actionFieldDropdownOpen]);
 
   useEffect(() => {
     // Inject styles immediately
@@ -598,6 +779,35 @@ function App() {
             currentFieldId = existingFieldId;
             currentPrompt = config.prompt || "";
             currentEnableTools = config.enableTools ?? null;
+
+            // Set post function type if present
+            if (config.type === "semantic") {
+              setPostFunctionType("semantic");
+            } else if (config.type === "static") {
+              setPostFunctionType("static");
+            }
+
+            // For semantic, load condition and action prompts
+            if (config.conditionPrompt) {
+              setConditionPrompt(config.conditionPrompt);
+              currentConditionPrompt = config.conditionPrompt;
+            }
+            if (config.actionPrompt) {
+              setActionPrompt(config.actionPrompt);
+              currentActionPrompt = config.actionPrompt;
+            }
+            if (config.code) {
+              setCode(config.code);
+              currentCode = config.code;
+            }
+            // For semantic, also load the action field
+            if (config.actionFieldId) {
+              setActionFieldId(config.actionFieldId);
+              currentActionFieldId = config.actionFieldId;
+            } else if (existingFieldId) {
+              setActionFieldId(existingFieldId);
+              currentActionFieldId = existingFieldId;
+            }
           }
         } catch (e) {
           console.log("Could not load existing config:", e);
@@ -643,13 +853,11 @@ function App() {
       }
 
       // Register the onConfigure callback - this is called when user clicks Add/Update button
-      // The callback should return the current form state as JSON string
       if (workflowRules) {
         try {
           await workflowRules.onConfigure(async () => {
             // Validate before saving
             if (!currentFieldId.trim() || !currentPrompt.trim()) {
-              // Return undefined to prevent form submission
               return undefined;
             }
 
@@ -657,18 +865,37 @@ function App() {
               fieldId: currentFieldId.trim(),
               prompt: currentPrompt.trim(),
             };
-            // Only include enableTools if explicitly set (keep config clean for auto-detect default)
             if (currentEnableTools !== null) {
               config.enableTools = currentEnableTools;
             }
+            
+            // Include post function type if selected
+            if (postFunctionType) {
+              config.type = postFunctionType;
+            }
+            
+            // Include post function specific fields
+            if (postFunctionType === "semantic") {
+              config.conditionPrompt = currentConditionPrompt || "";
+              config.actionPrompt = currentActionPrompt || "";
+              config.actionFieldId = currentActionFieldId || currentFieldId;
+            } else if (postFunctionType === "static") {
+              config.code = currentCode || "";
+            }
+            
             console.log("Saving configuration:", config);
 
             // Register this config in the admin registry with workflow context
             try {
               const ext = currentContext?.extension || {};
-              const moduleType = ext.type === "jira:workflowCondition" ? "condition" : "validator";
+              
+              let moduleType = "validator";
+              if (ext.type === "jira:workflowCondition") {
+                moduleType = "condition";
+              } else if (ext.type === "jira:workflowPostFunction") {
+                moduleType = postFunctionType ? `postfunction-${postFunctionType}` : "postfunction-semantic";
+              }
 
-              // Capture workflow context (available in new workflow editor)
               const workflowContext = {};
               if (ext.workflowId) workflowContext.workflowId = ext.workflowId;
               if (ext.workflowName) workflowContext.workflowName = ext.workflowName;
@@ -680,17 +907,22 @@ function App() {
               }
               if (currentContext?.siteUrl) workflowContext.siteUrl = currentContext.siteUrl;
 
-              // Build a stable ID from workflow context so create/edit use the same ID.
-              // ext.entryPoint changes between "create" and "edit" modes, causing duplicates.
               const ruleId = (workflowContext.workflowName && workflowContext.transitionId)
                 ? `${workflowContext.workflowName}::${workflowContext.transitionId}`
                 : ext.entryPoint || ext.key || Date.now().toString();
 
-              await invoke("registerConfig", {
+              const resolverFunction = moduleType.includes("postfunction") 
+                ? "registerPostFunction" 
+                : "registerConfig";
+
+              await invoke(resolverFunction, {
                 id: ruleId,
                 type: moduleType,
                 fieldId: config.fieldId,
                 prompt: config.prompt,
+                conditionPrompt: config.conditionPrompt || "",
+                actionPrompt: config.actionPrompt || "",
+                code: currentCode || "",
                 workflow: workflowContext,
               });
             } catch (e) {
@@ -722,214 +954,454 @@ function App() {
     );
   }
 
+  const postFunctionTypeOptionsVisible = postFunctionTypeOptions.filter((opt) => {
+    if (!fieldSearch) return true;
+    const q = fieldSearch.toLowerCase();
+    return opt.label.toLowerCase().includes(q) || opt.description.toLowerCase().includes(q);
+  });
+
   return (
     <div className="container">
-      <div className="header">
-        <div className="icon-wrapper">
-          <svg width="20" height="20" viewBox="0 0 128 128" fill="none">
-            <defs><linearGradient id="uiBg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#0065FF"/><stop offset="100%" stopColor="#4C9AFF"/></linearGradient></defs>
-            <rect x="4" y="4" width="120" height="120" rx="24" ry="24" fill="url(#uiBg)"/>
-            <path d="M44 42C44 34 52 28 58 28C62 28 64 30 64 34L64 64" stroke="white" strokeWidth="5" strokeLinecap="round"/>
-            <path d="M38 52C32 52 28 58 28 64C28 72 34 78 42 78L64 78" stroke="white" strokeWidth="5" strokeLinecap="round"/>
-            <path d="M48 36C48 36 42 42 42 50" stroke="white" strokeWidth="4" strokeLinecap="round"/>
-            <path d="M84 42C84 34 76 28 70 28C66 28 64 30 64 34" stroke="white" strokeWidth="5" strokeLinecap="round"/>
-            <path d="M90 52C96 52 100 58 100 64C100 72 94 78 86 78L64 78" stroke="white" strokeWidth="5" strokeLinecap="round"/>
-            <path d="M80 36C80 36 86 42 86 50" stroke="white" strokeWidth="4" strokeLinecap="round"/>
-            <circle cx="44" cy="50" r="3.5" fill="white" opacity="0.9"/><circle cx="84" cy="50" r="3.5" fill="white" opacity="0.9"/><circle cx="64" cy="34" r="3.5" fill="white" opacity="0.9"/><circle cx="42" cy="78" r="3.5" fill="white" opacity="0.9"/><circle cx="86" cy="78" r="3.5" fill="white" opacity="0.9"/>
-            <circle cx="64" cy="58" r="10" stroke="white" strokeWidth="4" fill="none"/><circle cx="64" cy="58" r="4" fill="white"/>
-            <path d="M56 92L72 92L72 86L88 96L72 106L72 100L56 100Z" fill="white" opacity="0.95"/>
-          </svg>
-        </div>
-        <div>
-          <h3 className="title">AI Validator Configuration</h3>
-          <p className="subtitle">
-            Configure AI-powered field validation for this workflow transition
-          </p>
-        </div>
-      </div>
-
+      {/* Step 1: Post Function Type Selection (at the top) */}
       <div className="card">
         <div className="form-group">
-          <label className="label">
-            Field to Validate <span className="required">*</span>
-          </label>
-          {fieldsLoading ? (
-            <div className="fields-loading">
-              <div className="spinner-small"></div>
-              <span>Loading available fields...</span>
-            </div>
-          ) : fieldsError ? (
-            <>
-              <input
-                type="text"
-                value={fieldId}
-                onChange={(e) => setFieldId(e.target.value)}
-                placeholder="e.g., summary, description, customfield_10001"
-                className={`input ${error && !fieldId.trim() ? "input-error" : ""}`}
-              />
-              <p className="hint" style={{ color: "var(--error-color)" }}>
-                Could not load fields: {fieldsError}. Enter field ID manually.
-              </p>
-            </>
-          ) : (
-            <div className="dropdown" ref={dropdownRef} onKeyDown={handleDropdownKeyDown}>
-              <button
-                type="button"
-                className={`dropdown-trigger${dropdownOpen ? " dropdown-open" : ""}${error && !fieldId.trim() ? " dropdown-error" : ""}`}
-                onClick={() => { setDropdownOpen((o) => !o); setDropdownSearch(""); }}
-              >
-                {fieldId && fields.find((f) => f.id === fieldId) ? (
-                  <span>{fields.find((f) => f.id === fieldId).name}</span>
-                ) : (
-                  <span className="dropdown-placeholder">Select a field...</span>
-                )}
-                <span className="dropdown-chevron">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
-                </span>
-              </button>
-              {dropdownOpen && (
-                <div className="dropdown-panel">
-                  <div className="dropdown-search">
-                    <input
-                      ref={searchInputRef}
-                      type="text"
-                      value={dropdownSearch}
-                      onChange={(e) => setDropdownSearch(e.target.value)}
-                      placeholder="Search fields..."
-                    />
-                  </div>
-                  <div className="dropdown-list" ref={listRef}>
-                    {flatFiltered.length === 0 ? (
-                      <div className="dropdown-empty">No fields match your search</div>
-                    ) : (
-                      <>
-                        {systemFields.length > 0 && (
-                          <>
-                            <div className="dropdown-group-label">System Fields</div>
-                            {systemFields.map((f) => {
-                              const idx = flatFiltered.indexOf(f);
-                              return (
-                                <div
-                                  key={f.id}
-                                  data-index={idx}
-                                  className={`dropdown-item${f.id === fieldId ? " dropdown-selected" : ""}${idx === highlightedIndex ? " dropdown-highlighted" : ""}`}
-                                  onClick={() => { setFieldId(f.id); setDropdownOpen(false); setDropdownSearch(""); }}
-                                  onMouseEnter={() => setHighlightedIndex(idx)}
-                                >
-                                  <span className="dropdown-item-name">{f.name}</span>
-                                  <span className="dropdown-item-meta">{f.id}</span>
-                                  <span className="dropdown-item-type">{f.type.replace(/^System \(|\)$/g, "")}</span>
-                                </div>
-                              );
-                            })}
-                          </>
-                        )}
-                        {customFields.length > 0 && (
-                          <>
-                            <div className="dropdown-group-label">Custom Fields</div>
-                            {customFields.map((f) => {
-                              const idx = flatFiltered.indexOf(f);
-                              return (
-                                <div
-                                  key={f.id}
-                                  data-index={idx}
-                                  className={`dropdown-item${f.id === fieldId ? " dropdown-selected" : ""}${idx === highlightedIndex ? " dropdown-highlighted" : ""}`}
-                                  onClick={() => { setFieldId(f.id); setDropdownOpen(false); setDropdownSearch(""); }}
-                                  onMouseEnter={() => setHighlightedIndex(idx)}
-                                >
-                                  <span className="dropdown-item-name">{f.name}</span>
-                                  <span className="dropdown-item-meta">{f.id}</span>
-                                  <span className="dropdown-item-type">{f.type.replace(/^Custom \(|\)$/g, "")}</span>
-                                </div>
-                              );
-                            })}
-                          </>
-                        )}
-                      </>
-                    )}
-                  </div>
+          <label className="label">Function Type</label>
+          <div ref={postFunctionTypeRef} onKeyDown={handlePostFunctionTypeKeyDown}>
+            <button
+              type="button"
+              className={`dropdown-trigger${postFunctionTypeOpen ? " dropdown-open" : ""}`}
+              onClick={() => { setPostFunctionTypeOpen((o) => !o); }}
+            >
+              {postFunctionTypeOptionsVisible.find((opt) => opt.id === postFunctionType)?.label || "Select a function type..."}
+              <span className="dropdown-chevron">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+              </span>
+            </button>
+            {postFunctionTypeOpen && (
+              <div className="dropdown-panel">
+                <div className="dropdown-search">
+                  <input
+                    type="text"
+                    value={fieldSearch}
+                    onChange={(e) => setFieldSearch(e.target.value)}
+                    placeholder="Filter types..."
+                  />
                 </div>
-              )}
-            </div>
-          )}
-          {fieldsSource === "screen" && (
-            <p className="hint" style={{ color: "var(--success-color)" }}>
-              Showing fields from the {isCreateTransition ? "create" : "edit/view"} screen for this project.
-            </p>
-          )}
-          {fieldsSource === "fallback" && (
-            <p className="hint">
-              Showing available fields{isCreateTransition ? " (filtered for issue creation)" : ""}.
-            </p>
-          )}
-          {fieldsSource === "all" && (
-            <p className="hint">
-              Showing all available fields.
-            </p>
-          )}
-          {!fieldsSource && (
-            <p className="hint">
-              Select the field whose value will be validated by AI during workflow
-              transitions.
-            </p>
-          )}
-        </div>
-
-        <div className="form-group">
-          <label className="label">
-            Validation Prompt <span className="required">*</span>
-          </label>
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Describe what makes the field value valid. Example: The description must include steps to reproduce, expected behavior, and actual behavior."
-            className={`textarea ${error && !prompt.trim() ? "input-error" : ""}`}
-            rows={5}
-          />
+                <div className="dropdown-list" style={{ overflowY: 'auto', flex: 1 }}>
+                  {postFunctionTypeOptionsVisible.length === 0 ? (
+                    <div className="dropdown-empty">No function types match your search</div>
+                  ) : (
+                    postFunctionTypeOptionsVisible.map((opt, idx) => {
+                      return (
+                        <div
+                          key={opt.id}
+                          data-index={idx}
+                          className={`dropdown-item${postFunctionType === opt.id ? " dropdown-selected" : ""}${idx === postFunctionTypeHighlightedIndexRef.current ? " dropdown-highlighted" : ""}`}
+                          onClick={() => { setPostFunctionType(opt.id); setPostFunctionTypeOpen(false); }}
+                          onMouseEnter={() => { postFunctionTypeHighlightedIndexRef.current = idx; }}
+                        >
+                          <span className="dropdown-item-name">{opt.label}</span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
           <p className="hint">
-            Describe the validation criteria in natural language. The AI will
-            evaluate if the field content meets these requirements.
-          </p>
-        </div>
-
-        <div className="form-group">
-          <label className="label">Jira Search (JQL)</label>
-          <select
-            value={enableTools === null ? "auto" : enableTools ? "on" : "off"}
-            onChange={(e) => {
-              const v = e.target.value;
-              setEnableTools(v === "auto" ? null : v === "on");
-            }}
-            className="input"
-            style={{ cursor: "pointer" }}
-          >
-            <option value="auto">Auto-detect from prompt</option>
-            <option value="on">Always enabled</option>
-            <option value="off">Always disabled</option>
-          </select>
-          <p className="hint">
-            When enabled, the AI can search Jira for similar or related issues during
-            validation (e.g. duplicate detection). Auto-detect activates this when your
-            prompt mentions duplicates, similarity, or existing issues. Adds latency.
+            Choose how this rule behaves:
+            • <strong>Standard Validator/Condition</strong>: Validates field values or controls transition visibility
+            • <strong>Semantic Post Function</strong>: AI-driven conditional execution + field modification (uses 2 prompts)
+            • <strong>Static Post Function</strong>: Custom JavaScript for complex multi-field operations
           </p>
         </div>
       </div>
 
-      {error && (
-        <div className="alert alert-error">
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <circle cx="12" cy="12" r="10" />
-            <line x1="12" y1="8" x2="12" y2="12" />
-            <line x1="12" y1="16" x2="12.01" y2="16" />
-          </svg>
-          <span>{error}</span>
+      {/* Standard Validator / Condition Configuration */}
+      {(postFunctionType === null || postFunctionType === undefined) && (
+        <>
+          <div className="card">
+            <div className="form-group">
+              <label className="label">
+                Field to Validate <span className="required">*</span>
+              </label>
+              {fieldsLoading ? (
+                <div className="fields-loading">
+                  <div className="spinner-small"></div>
+                  <span>Loading available fields...</span>
+                </div>
+              ) : fieldsError ? (
+                <>
+                  <input
+                    type="text"
+                    value={fieldId}
+                    onChange={(e) => setFieldId(e.target.value)}
+                    placeholder="e.g., summary, description, customfield_10001"
+                    className={`input ${error && !fieldId.trim() ? "input-error" : ""}`}
+                  />
+                  <p className="hint" style={{ color: "var(--error-color)" }}>
+                    Could not load fields: {fieldsError}. Enter field ID manually.
+                  </p>
+                </>
+              ) : (
+                <div className="dropdown" ref={fieldDropdownRef}>
+                  <button
+                    type="button"
+                    className={`dropdown-trigger${fieldDropdownOpen ? " dropdown-open" : ""}${error && !fieldId.trim() ? " dropdown-error" : ""}`}
+                    onClick={() => { setFieldDropdownOpen((o) => !o); setFieldSearch(""); }}
+                  >
+                    {fieldId && fields.find((f) => f.id === fieldId) ? (
+                      <span>{fields.find((f) => f.id === fieldId).name}</span>
+                    ) : (
+                      <span className="dropdown-placeholder">Select a field...</span>
+                    )}
+                    <span className="dropdown-chevron">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+                    </span>
+                  </button>
+                  {fieldDropdownOpen && (
+                    <div className="dropdown-panel">
+                      <div className="dropdown-search">
+                        <input
+                          ref={fieldSearchInputRef}
+                          type="text"
+                          value={fieldSearch}
+                          onChange={(e) => setFieldSearch(e.target.value)}
+                          placeholder="Search fields..."
+                          onKeyDown={handleFieldKeyDown}
+                        />
+                      </div>
+                      <div className="dropdown-list" ref={fieldListRef}>
+                        {flatFiltered.length === 0 ? (
+                          <div className="dropdown-empty">No fields match your search</div>
+                        ) : (
+                          <>
+                            {systemFields.length > 0 && (
+                              <>
+                                <div className="dropdown-group-label">System Fields</div>
+                                {systemFields.map((f, idx) => {
+                                  const flatIdx = flatFiltered.indexOf(f);
+                                      return (
+                                        <div
+                                          key={f.id}
+                                          data-index={flatIdx}
+                                          className={`dropdown-item${f.id === fieldId ? " dropdown-selected" : ""}${flatIdx === highlightedFieldIndex ? " dropdown-highlighted" : ""}`}
+                                          onClick={() => { setFieldId(f.id); setFieldDropdownOpen(false); setFieldSearch(""); }}
+                                          onMouseEnter={() => setHighlightedFieldIndex(flatIdx)}
+                                        >
+                                          <span className="dropdown-item-name">{f.name}</span>
+                                          <span className="dropdown-item-meta">{f.id}</span>
+                                          <span className="dropdown-item-type">{f.type.replace(/^System \(|\)$/g, "")}</span>
+                                        </div>
+                                      );
+                                  })}
+                              </>
+                            )}
+                            {customFields.length > 0 && (
+                              <>
+                                <div className="dropdown-group-label">Custom Fields</div>
+                                {customFields.map((f, idx) => {
+                                  const flatIdx = flatFiltered.indexOf(f);
+                                  return (
+                                    <div
+                                      key={f.id}
+                                      data-index={flatIdx}
+                                      className={`dropdown-item${f.id === fieldId ? " dropdown-selected" : ""}${flatIdx === highlightedFieldIndex ? " dropdown-highlighted" : ""}`}
+                                      onClick={() => { setFieldId(f.id); setFieldDropdownOpen(false); setFieldSearch(""); }}
+                                      onMouseEnter={() => setHighlightedFieldIndex(flatIdx)}
+                                    >
+                                      <span className="dropdown-item-name">{f.name}</span>
+                                      <span className="dropdown-item-meta">{f.id}</span>
+                                      <span className="dropdown-item-type">{f.type.replace(/^Custom \(|\)$/g, "")}</span>
+                                    </div>
+                                  );
+                                })}
+                              </>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              {fieldsSource === "screen" && (
+                <p className="hint" style={{ color: "var(--success-color)" }}>
+                  Showing fields from the {isCreateTransition ? "create" : "edit/view"} screen for this project.
+                </p>
+              )}
+              {fieldsSource === "fallback" && (
+                <p className="hint">
+                  Showing available fields{isCreateTransition ? " (filtered for issue creation)" : ""}.
+                </p>
+              )}
+              {!fieldsSource && (
+                <p className="hint">
+                  Select the field whose value will be validated by AI during workflow
+                  transitions.
+                </p>
+              )}
+            </div>
+
+            <div className="form-group">
+              <label className="label">
+                Validation Prompt <span className="required">*</span>
+              </label>
+              <textarea
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder="Describe what makes the field value valid. Example: The description must include steps to reproduce, expected behavior, and actual behavior."
+                className={`textarea ${error && !prompt.trim() ? "input-error" : ""}`}
+                rows={5}
+              />
+              <p className="hint">
+                Describe the validation criteria in natural language. The AI will
+                evaluate if the field content meets these requirements.
+              </p>
+            </div>
+
+            <div className="form-group">
+              <label className="label">Jira Search (JQL)</label>
+              <select
+                value={enableTools === null ? "auto" : enableTools ? "on" : "off"}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setEnableTools(v === "auto" ? null : v === "on");
+                }}
+                className="input"
+                style={{ cursor: "pointer" }}
+              >
+                <option value="auto">Auto-detect from prompt</option>
+                <option value="on">Always enabled</option>
+                <option value="off">Always disabled</option>
+              </select>
+              <p className="hint">
+                When enabled, the AI can search Jira for similar or related issues during
+                validation (e.g. duplicate detection). Auto-detect activates this when your
+                prompt mentions duplicates, similarity, or existing issues. Adds latency.
+              </p>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Semantic Post Function Configuration */}
+      {postFunctionType === "semantic" && (
+        <div className="card">
+          <div className="form-group">
+            <label className="label">Condition Prompt <span className="required">*</span></label>
+            <textarea
+              value={conditionPrompt}
+              onChange={(e) => { setConditionPrompt(e.target.value); }}
+              placeholder="Describe when this post function should run. Example: Only execute if the issue priority is High or Critical."
+              className={`textarea ${error && !conditionPrompt.trim() ? "input-error" : ""}`}
+              rows={4}
+            />
+            <p className="hint">
+              The AI will evaluate if this condition is met. Returns true (run) or false (skip).
+              No message required - just a boolean decision.
+            </p>
+          </div>
+
+          <div className="form-group">
+            <label className="label">Action Prompt</label>
+            <textarea
+              value={actionPrompt}
+              onChange={(e) => { setActionPrompt(e.target.value); }}
+              placeholder="Describe what field changes to make. Example: Set the resolution to 'Won't Fix' and add a comment explaining why."
+              className={`textarea ${error && !actionPrompt.trim() ? "input-error" : ""}`}
+              rows={6}
+            />
+            <p className="hint">
+              The AI will modify the specified field(s) based on this prompt.
+              Supports Jira write access for single or multiple fields.
+            </p>
+          </div>
+
+          {/* Field Selection - for semantic post functions: the field to be modified by action */}
+          <div className="form-group">
+            <label className="label">Field to Modify</label>
+            {fieldsLoading ? (
+              <div className="fields-loading">
+                <div className="spinner-small"></div>
+                <span>Loading available fields...</span>
+              </div>
+            ) : fieldsError ? (
+              <>
+                <input
+                  type="text"
+                  value={actionFieldId}
+                  onChange={(e) => setActionFieldId(e.target.value)}
+                  placeholder="e.g., summary, description, customfield_10001"
+                  className={`input ${error && !actionFieldId.trim() ? "input-error" : ""}`}
+                />
+                <p className="hint" style={{ color: "var(--error-color)" }}>
+                  Could not load fields: {fieldsError}. Enter field ID manually.
+                </p>
+              </>
+            ) : (
+              <div className="dropdown" ref={actionFieldDropdownRef}>
+                <button
+                  type="button"
+                  className={`dropdown-trigger${actionFieldDropdownOpen ? " dropdown-open" : ""}${error && !actionFieldId.trim() ? " dropdown-error" : ""}`}
+                  onClick={() => { setActionFieldDropdownOpen((o) => !o); setActionFieldSearch(""); }}
+                >
+                  {actionFieldId && fields.find((f) => f.id === actionFieldId) ? (
+                    <span>{fields.find((f) => f.id === actionFieldId).name}</span>
+                  ) : (
+                    <span className="dropdown-placeholder">Select a field...</span>
+                  )}
+                  <span className="dropdown-chevron">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+                  </span>
+                </button>
+                {actionFieldDropdownOpen && (
+                  <div className="dropdown-panel">
+                    <div className="dropdown-search">
+                      <input
+                        ref={actionFieldSearchInputRef}
+                        type="text"
+                        value={actionFieldSearch}
+                        onChange={(e) => setActionFieldSearch(e.target.value)}
+                        placeholder="Search fields..."
+                        onKeyDown={handleActionFieldKeyDown}
+                      />
+                    </div>
+                    <div className="dropdown-list" ref={actionFieldListRef}>
+                      {flatSemanticFiltered.length === 0 ? (
+                        <div className="dropdown-empty">No fields match your search</div>
+                      ) : (
+                        <>
+                          {systemSemanticFields.length > 0 && (
+                            <>
+                              <div className="dropdown-group-label">System Fields</div>
+                              {systemSemanticFields.map((f, idx) => {
+                                const flatIdx = flatSemanticFiltered.indexOf(f);
+                                return (
+                                  <div
+                                    key={f.id}
+                                    data-index={flatIdx}
+                                    className={`dropdown-item${f.id === actionFieldId ? " dropdown-selected" : ""}${flatIdx === highlightedActionFieldIndex ? " dropdown-highlighted" : ""}`}
+                                    onClick={() => { setActionFieldId(f.id); setActionFieldDropdownOpen(false); setActionFieldSearch(""); }}
+                                    onMouseEnter={() => setHighlightedActionFieldIndex(flatIdx)}
+                                  >
+                                    <span className="dropdown-item-name">{f.name}</span>
+                                    <span className="dropdown-item-meta">{f.id}</span>
+                                    <span className="dropdown-item-type">{f.type.replace(/^System \(|\)$/g, "")}</span>
+                                  </div>
+                                );
+                              })}
+                            </>
+                          )}
+                          {customSemanticFields.length > 0 && (
+                            <>
+                              <div className="dropdown-group-label">Custom Fields</div>
+                              {customSemanticFields.map((f, idx) => {
+                                const flatIdx = flatSemanticFiltered.indexOf(f);
+                                return (
+                                  <div
+                                    key={f.id}
+                                    data-index={flatIdx}
+                                    className={`dropdown-item${f.id === actionFieldId ? " dropdown-selected" : ""}${flatIdx === highlightedActionFieldIndex ? " dropdown-highlighted" : ""}`}
+                                    onClick={() => { setActionFieldId(f.id); setActionFieldDropdownOpen(false); setActionFieldSearch(""); }}
+                                    onMouseEnter={() => setHighlightedActionFieldIndex(flatIdx)}
+                                  >
+                                    <span className="dropdown-item-name">{f.name}</span>
+                                    <span className="dropdown-item-meta">{f.id}</span>
+                                    <span className="dropdown-item-type">{f.type.replace(/^Custom \(|\)$/g, "")}</span>
+                                  </div>
+                                );
+                              })}
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            <p className="hint">
+              Select the field to be modified by the AI action.
+            </p>
+          </div>
+
+          {/* Disclaimer Card */}
+          <div className="card" style={{ backgroundColor: "var(--alert-success-bg)", borderColor: "var(--alert-success-border)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <div>
+                <p style={{ margin: 0, fontSize: "12px", fontWeight: "600" }}>For Best Results with Text Fields</p>
+                <p style={{ margin: "4px 0 0 0", fontSize: "12px", color: "var(--text-color)" }}>
+                  Semantic post functions work best with text-based fields (summary, description, comments) where
+                  AI can intelligently rephrase, expand, or refine content. The result is predictable yet automatic.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Static Post Function Configuration */}
+      {postFunctionType === "static" && (
+        <div className="card">
+          <div className="form-group">
+            <label className="label">Post Function Code (JavaScript)</label>
+            <textarea
+              value={code}
+              onChange={(e) => { setCode(e.target.value); }}
+              placeholder={`// AI will generate this code based on your prompt
+// You can modify it manually before locking it in place
+
+export default async function(context) {
+  // context contains issue, workflowInfo, jqlSearch and other utilities
+  
+  // Example: Modify a field
+  await context.jira.updateIssue(context.issue.key, {
+    fields: {
+      summary: "Updated by AI post function"
+    }
+  });
+  
+  // Example: Search and transition subtasks
+  const subtasks = await context.jqlSearch("parent = " + context.issue.key);
+  for (const subtask of subtasks) {
+    await context.jira.transitionIssue(subtask.key, { transition: { id: "21" } });
+  }
+}`}
+              className={`textarea ${error && !code.trim() ? "input-error" : ""}`}
+              rows={12}
+            />
+            <p className="hint">
+              Write JavaScript code for static post functions. This runs on every transition.
+              Supports <code>context.jira</code>, <code>context.jqlSearch</code>, and other utilities.
+              Use dry-run mode to test your function before committing.
+            </p>
+          </div>
+
+          {/* Disclaimer Card */}
+          <div className="card" style={{ backgroundColor: "var(--alert-success-bg)", borderColor: "var(--alert-success-border)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <div>
+                <p style={{ margin: 0, fontSize: "12px", fontWeight: "600" }}>Static Post Function Features</p>
+                <p style={{ margin: "4px 0 0 0", fontSize: "12px", color: "var(--text-color)" }}>
+                  Static post functions allow complex operations like modifying multiple fields,
+                  transitioning subtasks, and implementing AI-augmented decision points. Write
+                  your JavaScript logic here and test with dry-run before committing.
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

@@ -369,6 +369,25 @@ const injectStyles = () => {
     }
 
     .alert-dismiss:hover { opacity: 1; }
+
+    /* Post Function Type Badges */
+    .post-function-badge {
+      display: inline-block;
+      padding: 1px 5px;
+      font-size: 9px;
+      border-radius: 3px;
+      font-weight: 600;
+    }
+
+    .post-function-semantic {
+      background: rgba(0, 102, 68, 0.1);
+      color: #006644;
+    }
+
+    .post-function-static {
+      background: rgba(255, 153, 31, 0.1);
+      color: #FF991F;
+    }
   `;
   document.head.appendChild(style);
 };
@@ -469,6 +488,7 @@ function App() {
         const possibleConfig =
           context?.extension?.validatorConfig ||
           context?.extension?.conditionConfig ||
+          context?.extension?.postFunctionConfig ||
           context?.extension?.configuration ||
           context?.extension?.config;
 
@@ -647,21 +667,171 @@ function App() {
     </>
   );
 
-  if (!config || (!config.fieldId && !config.prompt)) {
+  // Post Function Type Badges
+  const postFunctionBadge = () => {
+    // Check both the saved type ("semantic"/"static") and internal name ("postfunction-semantic")
+    if (config.type === "semantic" || config.type?.startsWith("postfunction")) {
+      return (
+        <span className="post-function-badge post-function-semantic">
+          Semantic Post Function
+        </span>
+      );
+    }
+    if (config.type === "static") {
+      return (
+        <span className="post-function-badge post-function-static">
+          Static Post Function
+        </span>
+      );
+    }
+    return null;
+  };
+
+  // Render Post Function specific fields
+  const renderPostFunctionFields = () => {
+    if (!config.type?.startsWith("postfunction") && !["semantic", "static"].includes(config.type)) {
+      return null;
+    }
+
+    // Semantic Post Function Fields
+    if (config.type === "semantic" || config.type?.startsWith("postfunction")) {
+      return (
+        <>
+          <div className="config-item">
+            <span className="label">Condition:</span>
+            <span className="prompt-value" style={{ wordBreak: "break-word", fontSize: "11px" }}>
+              {config.conditionPrompt?.length > 80
+                ? config.conditionPrompt.substring(0, 80) + "..."
+                : (config.conditionPrompt || "(none)")}
+            </span>
+          </div>
+          <div className="config-item">
+            <span className="label">Action:</span>
+            <span className="prompt-value" style={{ wordBreak: "break-word", fontSize: "11px" }}>
+              {config.actionPrompt?.length > 80
+                ? config.actionPrompt.substring(0, 80) + "..."
+                : (config.actionPrompt || "(none)")}
+            </span>
+          </div>
+          <div className="config-item">
+            <span className="label">Action Field:</span>
+            <code className="value">{config.actionFieldId || config.fieldId}</code>
+          </div>
+        </>
+      );
+    }
+
+    // Static Post Function Fields
+    if (config.type === "static") {
+      return (
+        <>
+          <div className="config-item">
+            <span className="label">Code:</span>
+            <span className="prompt-value" style={{ wordBreak: "break-word", fontSize: "10px", fontFamily: "SFMono-Regular, Consolas, monospace" }}>
+              {config.code?.length > 80
+                ? config.code.substring(0, 80) + "..."
+                : (config.code || "(none)")}
+            </span>
+          </div>
+        </>
+      );
+    }
+
+    return null;
+  };
+
+  // Render standard Validator/Condition fields
+  const renderStandardFields = () => {
+    if (config.type?.startsWith("postfunction")) {
+      return null;
+    }
+
+    return (
+      <>
+        <div className="config-item">
+          <span className="label">Prompt:</span>
+          <span className="prompt-value">
+            {config.prompt.length > 100
+              ? config.prompt.substring(0, 100) + "..."
+              : config.prompt}
+          </span>
+        </div>
+        {config.enableTools === true && (
+          <div className="config-item">
+            <span className="label">Tools:</span>
+            <span className="prompt-value">JQL Search (always enabled)</span>
+          </div>
+        )}
+        {config.enableTools === false && (
+          <div className="config-item">
+            <span className="label">Tools:</span>
+            <span className="prompt-value">Disabled</span>
+          </div>
+        )}
+      </>
+    );
+  };
+
+  // Render log entry with post function support
+  const renderLogEntry = (log) => {
+    return (
+      <div key={log.id} className="log-entry">
+        <div className="log-header">
+          <span className={`log-status ${log.isValid ? "valid" : "invalid"}`}>
+            {log.isValid ? "PASS" : "FAIL"}
+          </span>
+          <span className="log-issue">{log.issueKey}</span>
+          <span className="log-time">{formatTime(log.timestamp)}</span>
+        </div>
+        <div className="log-details">
+          Field: <code>{log.fieldId || "(post-function)"}</code>
+          {log.postFunctionType && (
+            <span
+              style={{
+                marginLeft: "8px",
+                padding: "1px 5px",
+                fontSize: "9px",
+                background:
+                  log.postFunctionType === "Semantic Post Function"
+                    ? "rgba(0,102,68,0.1)"
+                    : "rgba(255,153,31,0.1)",
+                color:
+                  log.postFunctionType === "Semantic Post Function"
+                    ? "#006644"
+                    : "#FF991F",
+                borderRadius: "3px",
+              }}
+            >
+              {log.postFunctionType}
+            </span>
+          )}
+        </div>
+        <div className="log-reason">{log.reason}</div>
+        {log.toolMeta?.toolsUsed && (
+          <div className="log-tools">
+            <span className="log-tools-badge">JQL</span>
+            {log.toolMeta.toolRounds} round{log.toolMeta.toolRounds !== 1 ? "s" : ""},{" "}
+            {log.toolMeta.totalResults} result{log.toolMeta.totalResults !== 1 ? "s" : ""}
+            {log.toolMeta.queries?.length > 0 && (
+              <div className="log-queries">
+                {log.toolMeta.queries.map((q, i) => <div key={i}>{q}</div>)}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Render config view
+  if (!config || (!config.fieldId && !config.prompt && !config.type)) {
     return (
       <div className="container">
         {licenseBanner}
         {statusBanner}
         {toggleAlerts}
         <div className="empty">
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="10" />
             <line x1="12" y1="8" x2="12" y2="12" />
             <line x1="12" y1="16" x2="12.01" y2="16" />
@@ -703,36 +873,7 @@ function App() {
               ) : logs.length === 0 ? (
                 <div className="no-logs">No validation logs yet</div>
               ) : (
-                logs.map((log) => (
-                  <div key={log.id} className="log-entry">
-                    <div className="log-header">
-                      <span
-                        className={`log-status ${log.isValid ? "valid" : "invalid"}`}
-                      >
-                        {log.isValid ? "PASS" : "FAIL"}
-                      </span>
-                      <span className="log-issue">{log.issueKey}</span>
-                      <span className="log-time">
-                        {formatTime(log.timestamp)}
-                      </span>
-                    </div>
-                    <div className="log-details">
-                      Field: <code>{log.fieldId}</code>
-                    </div>
-                    <div className="log-reason">{log.reason}</div>
-                    {log.toolMeta?.toolsUsed && (
-                      <div className="log-tools">
-                        <span className="log-tools-badge">JQL</span>
-                        {log.toolMeta.toolRounds} round{log.toolMeta.toolRounds !== 1 ? "s" : ""}, {log.toolMeta.totalResults} result{log.toolMeta.totalResults !== 1 ? "s" : ""}
-                        {log.toolMeta.queries?.length > 0 && (
-                          <div className="log-queries">
-                            {log.toolMeta.queries.map((q, i) => <div key={i}>{q}</div>)}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))
+                logs.map(renderLogEntry)
               )}
             </div>
           )}
@@ -746,30 +887,18 @@ function App() {
       {licenseBanner}
       {statusBanner}
       {toggleAlerts}
+
+      {/* Post Function Type Indicator */}
+      {postFunctionBadge()}
+
       <div className="config-item">
         <span className="label">Field:</span>
         <code className="value">{config.fieldId}</code>
       </div>
-      <div className="config-item">
-        <span className="label">Prompt:</span>
-        <span className="prompt-value">
-          {config.prompt.length > 100
-            ? config.prompt.substring(0, 100) + "..."
-            : config.prompt}
-        </span>
-      </div>
-      {config.enableTools === true && (
-        <div className="config-item">
-          <span className="label">Tools:</span>
-          <span className="prompt-value">JQL Search (always enabled)</span>
-        </div>
-      )}
-      {config.enableTools === false && (
-        <div className="config-item">
-          <span className="label">Tools:</span>
-          <span className="prompt-value">Disabled</span>
-        </div>
-      )}
+
+      {/* Render either Post Function fields or Standard fields */}
+      {renderPostFunctionFields()}
+      {renderStandardFields()}
 
       {/* Logs section */}
       <div className="logs-section">
@@ -805,36 +934,7 @@ function App() {
             ) : logs.length === 0 ? (
               <div className="no-logs">No validation logs yet</div>
             ) : (
-              logs.map((log) => (
-                <div key={log.id} className="log-entry">
-                  <div className="log-header">
-                    <span
-                      className={`log-status ${log.isValid ? "valid" : "invalid"}`}
-                    >
-                      {log.isValid ? "PASS" : "FAIL"}
-                    </span>
-                    <span className="log-issue">{log.issueKey}</span>
-                    <span className="log-time">
-                      {formatTime(log.timestamp)}
-                    </span>
-                  </div>
-                  <div className="log-details">
-                    Field: <code>{log.fieldId}</code>
-                  </div>
-                  <div className="log-reason">{log.reason}</div>
-                  {log.toolMeta?.toolsUsed && (
-                    <div className="log-tools">
-                      <span className="log-tools-badge">JQL</span>
-                      {log.toolMeta.toolRounds} round{log.toolMeta.toolRounds !== 1 ? "s" : ""}, {log.toolMeta.totalResults} result{log.toolMeta.totalResults !== 1 ? "s" : ""}
-                      {log.toolMeta.queries?.length > 0 && (
-                        <div className="log-queries">
-                          {log.toolMeta.queries.map((q, i) => <div key={i}>{q}</div>)}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))
+              logs.map(renderLogEntry)
             )}
           </div>
         )}

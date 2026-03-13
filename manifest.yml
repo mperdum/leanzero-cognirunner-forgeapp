@@ -38,6 +38,48 @@ modules:
         - company-managed
         - team-managed
 
+  # Post Function - Semantic (single-field AI modification)
+  jira:workflowPostFunction:
+    - key: ai-semantic-post-function
+      name: CogniRunner Semantic Post Function
+      description:
+        Modifies a single field using AI during workflow transitions.
+        Uses a condition prompt to decide whether to run, then an action prompt
+        to modify the specified field.
+      function: executePostFunction
+      resolver:
+        function: resolver
+      create:
+        resource: config-ui-postfunction-resource
+      edit:
+        resource: config-ui-postfunction-resource
+      view:
+        resource: config-view-postfunction-resource
+      projectTypes:
+        - company-managed
+        - team-managed
+
+  # Post Function - Static (AI-generated JavaScript)
+  jira:workflowPostFunction:
+    - key: ai-static-post-function
+      name: CogniRunner Static Post Function
+      description:
+        Executes AI-generated JavaScript code during workflow transitions.
+        Supports complex multi-field modifications, bulk operations, and
+        custom decision logic with AI augmentation.
+      function: executePostFunction
+      resolver:
+        function: resolver
+      create:
+        resource: config-ui-postfunction-resource
+      edit:
+        resource: config-ui-postfunction-resource
+      view:
+        resource: config-view-postfunction-resource
+      projectTypes:
+        - company-managed
+        - team-managed
+
   # Admin page - global overview of all app usages
   jira:adminPage:
     - key: cognirunner-admin-panel
@@ -46,10 +88,12 @@ modules:
       resolver:
         function: resolver
 
-  # Lambda function for validation logic
+  # Lambda function for validation and post function logic
   function:
     - key: validate
       handler: index.validate
+    - key: executePostFunction
+      handler: index.executePostFunction
     - key: resolver
       handler: index.handler
 

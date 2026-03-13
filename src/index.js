@@ -243,6 +243,145 @@ resolver.define("enableRule", async ({ payload }) => {
 });
 
 /**
+ * Resolver: Register a post function config in the registry
+ */
+resolver.define("registerPostFunction", async ({ payload }) => {
+  try {
+    const { id, type, fieldId, conditionPrompt, actionPrompt, code, workflow } = payload;
+    if (!id || !type) {
+      return { success: false, error: "Missing required fields" };
+    }
+
+    let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    const now = new Date().toISOString();
+
+    const wf = workflow || {};
+    const workflowData = {};
+    if (wf.workflowId) workflowData.workflowId = wf.workflowId;
+    if (wf.workflowName) workflowData.workflowName = wf.workflowName;
+    if (wf.projectId) workflowData.projectId = wf.projectId;
+    if (wf.transitionId) workflowData.transitionId = wf.transitionId;
+    if (wf.transitionFromName) workflowData.transitionFromName = wf.transitionFromName;
+    if (wf.transitionToName) workflowData.transitionToName = wf.transitionToName;
+    if (wf.siteUrl) workflowData.siteUrl = wf.siteUrl;
+
+    let existingIndex = configs.findIndex((c) => c.id === id);
+    if (existingIndex < 0 && workflowData.workflowName && workflowData.transitionId) {
+      existingIndex = configs.findIndex((c) =>
+        c.workflow?.workflowName === workflowData.workflowName
+        && String(c.workflow?.transitionId) === String(workflowData.transitionId)
+      );
+    }
+
+    if (existingIndex >= 0) {
+      configs[existingIndex] = {
+        ...configs[existingIndex],
+        id,
+        type: type || configs[existingIndex].type,
+        fieldId,
+        conditionPrompt: (conditionPrompt || "").substring(0, 500),
+        actionPrompt: (actionPrompt || "").substring(0, 500),
+        code: (code || "").substring(0, 10000),
+        workflow: Object.keys(workflowData).length > 0 ? workflowData : configs[existingIndex].workflow,
+        updatedAt: now,
+      };
+    } else {
+      configs.push({
+        id,
+        type: type || "postfunction-semantic",
+        fieldId,
+        conditionPrompt: (conditionPrompt || "").substring(0, 500),
+        actionPrompt: (actionPrompt || "").substring(0, 500),
+        code: (code || "").substring(0, 10000),
+        workflow: Object.keys(workflowData).length > 0 ? workflowData : undefined,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    await storage.set(CONFIG_REGISTRY_KEY, configs);
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to register post function:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Resolver: Remove a post function config from the registry
+ */
+resolver.define("removePostFunction", async ({ payload }) => {
+  try {
+    const { id } = payload;
+    let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    configs = configs.filter((c) => c.id !== id);
+    await storage.set(CONFIG_REGISTRY_KEY, configs);
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to remove post function:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Resolver: Disable a post function rule via KVS flag
+ */
+resolver.define("disablePostFunction", async ({ payload }) => {
+  try {
+    const { id } = payload;
+    let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    const config = configs.find((c) => c.id === id);
+    if (!config) {
+      return { success: false, error: "Config not found in registry" };
+    }
+    configs = configs.map((c) => c.id === id ? { ...c, disabled: true, updatedAt: new Date().toISOString() } : c);
+    await storage.set(CONFIG_REGISTRY_KEY, configs);
+    return { success: true, disabled: true };
+  } catch (error) {
+    console.error("Failed to disable post function:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Resolver: Re-enable a post function rule via KVS flag
+ */
+resolver.define("enablePostFunction", async ({ payload }) => {
+  try {
+    const { id } = payload;
+    let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    const config = configs.find((c) => c.id === id);
+    if (!config) {
+      return { success: false, error: "Config not found in registry" };
+    }
+    configs = configs.map((c) => c.id === id ? { ...c, disabled: false, updatedAt: new Date().toISOString() } : c);
+    await storage.set(CONFIG_REGISTRY_KEY, configs);
+    return { success: true, disabled: false };
+  } catch (error) {
+    console.error("Failed to enable post function:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Resolver: Get the disabled status of a post function
+ */
+resolver.define("getPostFunctionStatus", async ({ payload }) => {
+  try {
+    const { id } = payload;
+    const configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    const config = configs.find((c) => c.id === id);
+    if (config) {
+      return { found: true, disabled: config.disabled === true, registryId: config.id };
+    }
+    return { found: false, disabled: false, registryId: null };
+  } catch (error) {
+    console.error("Failed to get post function status:", error);
+    return { found: false, disabled: false, registryId: null };
+  }
+});
+
+/**
  * Helper: Search workflows via /rest/api/3/workflows/search and return
  * a Set of transition IDs for the given workflow.
  * Requires read:workflow:jira scope (already in manifest).
@@ -1688,6 +1827,264 @@ const getFieldValue = async (issueKey, fieldId, modifiedFields) => {
 
   // Extract human-readable display value from the raw field value
   return extractFieldDisplayValue(rawValue);
+};
+
+/**
+ * ==================== POST FUNCTION EXECUTION ENGINE ====================
+ */
+
+/**
+ * Post Function Internal Executor
+ * This is the core engine that executes both semantic and static post functions
+ */
+const executePostFunctionInternal = async ({ issueKey, config, dryRun = false, context = {} }) => {
+  console.log(`executePostFunctionInternal: issueKey=${issueKey}, type=${config?.type}, dryRun=${dryRun}`);
+
+  try {
+    if (context?.license && context.license.isActive === false) {
+      console.log("License inactive — skipping post function execution");
+      return { success: true, skipped: true, reason: "License inactive" };
+    }
+
+    let postFunctionConfig = config;
+    if (!config.code && !config.conditionPrompt && config.id) {
+      const configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+      const loadedConfig = configs.find((c) => c.id === config.id);
+      if (!loadedConfig) {
+        return { success: false, error: "Post function configuration not found" };
+      }
+      postFunctionConfig = loadedConfig;
+    }
+
+    const { type, code, conditionPrompt, actionPrompt, actionFieldId } = postFunctionConfig;
+    
+    // For semantic post functions, we need the validation field (fieldId) for the condition check
+    // The action field (actionFieldId) is where changes will be applied
+    const fieldId = postFunctionConfig.fieldId || actionFieldId; // fallback to action field if not set
+    const issueContext = { key: issueKey, modifiedFields: postFunctionConfig.modifiedFields || null };
+
+    if (type === "postfunction-semantic") {
+      return await executeSemanticPostFunction({ 
+        issueContext, 
+        conditionPrompt, 
+        actionPrompt, 
+        fieldId,
+        actionFieldId, 
+        dryRun 
+      });
+    }
+
+    if (type === "postfunction-static") {
+      return await executeStaticPostFunction({ issueContext, code, dryRun });
+    }
+
+    return { success: false, error: `Unknown post function type: ${type}` };
+  } catch (error) {
+    console.error("executePostFunctionInternal error:", error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Execute Semantic Post Function
+ * 
+ * Flow:
+ * 1. Get the validation field value from modifiedFields or current issue
+ * 2. Check condition against the validation field (user specifies what triggers execution)
+ * 3. If condition met, get action field value and execute action prompt
+ * 4. Update action field with AI-generated new value
+ */
+const executeSemanticPostFunction = async ({ issueContext, conditionPrompt, actionPrompt, fieldId, actionFieldId, dryRun }) => {
+  console.log(`executeSemanticPostFunction: issue=${issueContext.key}, validationField=${fieldId}, actionField=${actionFieldId}`);
+
+  try {
+    // Always get the modifiedFields from context if available (transition in progress)
+    const modifiedFields = issueContext.modifiedFields || null;
+    
+    // For condition check, we evaluate against the field being validated
+    // This is the same field used for standard validators/conditions
+    let fieldValueToValidate = await getFieldValue(issueContext.key, fieldId, modifiedFields);
+    
+    if (conditionPrompt && conditionPrompt.trim()) {
+      const conditionResult = await callOpenAI(fieldValueToValidate, conditionPrompt);
+      
+      if (!conditionResult.isValid) {
+        return { success: true, skipped: true, reason: `Condition not met: ${conditionResult.reason}` };
+      }
+      console.log(`Semantic post function condition passed`);
+    }
+
+    // Now execute the action on the target field
+    let currentActionFieldValue = await getFieldValue(issueContext.key, actionFieldId, modifiedFields);
+    
+    if (!actionPrompt || !actionPrompt.trim()) {
+      return { success: false, error: "Action prompt is required for semantic post functions" };
+    }
+    
+    const actionResult = await callOpenAI(currentActionFieldValue, actionPrompt);
+
+    if (!actionResult.isValid) {
+      // Action failed - but this shouldn't fail the transition
+      console.log(`Action prompt returned invalid: ${actionResult.reason}`);
+      return { success: true, skipped: true, reason: `Action not applied: ${actionResult.reason}` };
+    }
+
+    const newValue = actionResult.reason;
+
+    if (dryRun) {
+      return { success: true, dryRun: true, changes: [{ field: actionFieldId, oldValue: currentActionFieldValue, newValue }] };
+    }
+
+    try {
+      console.log(`Updating issue ${issueContext.key} field ${actionFieldId} with new value`);
+      const response = await api.asApp().requestJira(
+        route`/rest/api/3/issue/${issueContext.key}`,
+        { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields: { [actionFieldId]: newValue } }) }
+      );
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`Failed to update issue: ${response.status} - ${errorBody}`);
+      }
+
+      return { success: true, changes: [{ field: actionFieldId, oldValue: currentActionFieldValue, newValue }] };
+    } catch (error) {
+      console.error("Failed to update field:", error);
+      return { success: false, error: `Failed to update field "${actionFieldId}": ${error.message}` };
+    }
+  } catch (error) {
+    console.error("executeSemanticPostFunction error:", error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Execute Static Post Function
+ */
+const executeStaticPostFunction = async ({ issueContext, code, dryRun }) => {
+  console.log(`executeStaticPostFunction: issue=${issueContext.key}`);
+
+  if (dryRun) {
+    return await executeStaticCodeSandbox({ issueContext, code, dryRun: true, simulationMode: true });
+  }
+
+  return await executeStaticCodeSandbox({ issueContext, code, dryRun: false, simulationMode: false });
+};
+
+/**
+ * Sandboxed JavaScript execution environment
+ */
+const executeStaticCodeSandbox = async ({ issueContext, code, dryRun, simulationMode = false }) => {
+  const startTime = Date.now();
+  const logs = [];
+  const changes = [];
+
+  const apiSurface = {
+    getIssue: async (key) => {
+      try {
+        const r = await api.asApp().requestJira(route`/rest/api/3/issue/${key}?expand=renderedFields`);
+        if (!r.ok) throw new Error(`Failed: ${r.status}`);
+        const data = await r.json();
+        return { key: data.key, fields: data.fields };
+      } catch (e) { logs.push(`ERROR: ${e.message}`); throw e; }
+    },
+    updateIssue: async (key, fields) => {
+      if (simulationMode || dryRun) {
+        logs.push(`DRY-RUN: ${key} -> ${JSON.stringify(fields)}`);
+        changes.push({ key, fields });
+        return { success: true };
+      }
+      try {
+        const r = await api.asApp().requestJira(route`/rest/api/3/issue/${key}`, {
+          method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fields })
+        });
+        if (!r.ok) throw new Error(`Failed: ${r.status}`);
+        logs.push(`Updated: ${key}`);
+        changes.push({ key, fields });
+        return { success: true };
+      } catch (e) { logs.push(`ERROR: ${e.message}`); throw e; }
+    },
+    searchJql: async (jql) => {
+      try {
+        const r = await api.asApp().requestJira(route`/rest/api/3/search/jql`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jql, fields: ["summary", "status"], maxResults: 20 })
+        });
+        if (!r.ok) throw new Error(`Failed: ${r.status}`);
+        const data = await r.json();
+        return { total: data.total, issues: (data.issues || []).map(i => ({ key: i.key, summary: i.fields?.summary })) };
+      } catch (e) { logs.push(`ERROR: ${e.message}`); throw e; }
+    },
+    transitionIssue: async (key, tid) => {
+      if (simulationMode || dryRun) {
+        logs.push(`DRY-RUN: Transition ${key} to ${tid}`);
+        changes.push({ key, transitionId: tid });
+        return { success: true };
+      }
+      try {
+        const r = await api.asApp().requestJira(route`/rest/api/3/issue/${key}/transitions`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transition: { id: tid } })
+        });
+        if (!r.ok) throw new Error(`Failed: ${r.status}`);
+        logs.push(`Transitioned: ${key} to ${tid}`);
+        changes.push({ key, transitionId: tid });
+        return { success: true };
+      } catch (e) { logs.push(`ERROR: ${e.message}`); throw e; }
+    },
+    log: (...args) => logs.push(args.join(" ")),
+    context: issueContext,
+  };
+
+  try {
+    const fn = new Function('ctx', 'api', `try { ${code} } catch (e) { api.log("ERROR:", e.message); throw e; }`);
+    fn(null, apiSurface);
+  } catch (e) {
+    return { success: false, error: `Syntax or runtime error: ${e.message}`, logs };
+  }
+
+  return { success: true, dryRun: dryRun || simulationMode, changes, logs, executionTimeMs: Date.now() - startTime };
+};
+
+/**
+ * Post Function Execution Handler
+ */
+export const executePostFunction = async (args) => {
+  console.log("AI Post Function called:", JSON.stringify(args, null, 2));
+
+  const { issue, configuration } = args;
+  const license = args?.context?.license;
+
+  if (license && license.isActive === false) {
+    console.log("License inactive — skipping");
+    return { result: true };
+  }
+
+  const result = await executePostFunctionInternal({
+    issueKey: issue.key,
+    config: configuration || {},
+    dryRun: configuration?.dryRun === true,
+    context: args.context,
+  });
+
+  if (!result.success) {
+    console.error("Post function failed:", result.error);
+    return { result: true, message: `Failed: ${result.error}` };
+  }
+
+  if (result.skipped) {
+    console.log(`Post function skipped: ${result.reason}`);
+    return { result: true };
+  }
+
+  if (result.dryRun) {
+    console.log(`Dry run completed: ${JSON.stringify(result.changes)}`);
+    return { result: true, message: `Dry run: ${JSON.stringify(result.changes)}` };
+  }
+
+  console.log(`Post function completed: ${JSON.stringify(result.changes)}`);
+  return { result: true };
 };
 
 /**
