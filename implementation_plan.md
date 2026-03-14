@@ -1,144 +1,480 @@
-# Implementation Plan: JIRA Prompt System for AI-Driven API Selection
+# Implementation Plan: Modular Architecture Refactoring
 
-[Overview]
-Create a chain-of-thought prompt system using Atlassian Forge KVS that helps the AI decide which JIRA REST API endpoint to use based on user natural language requests. The system uses keyword matching to select appropriate prompts, then executes JIRA API calls with proper parameter handling.
+## Overview
+
+Refactor the monolithic `src/index.js` (1700+ lines) into a clean, hierarchical 3-layer architecture with separate directories for core business logic, integration layers, and organized prompt definitions. This will improve maintainability, testability, and scalability.
+
+**Why this change?**
+- Current single-file architecture is difficult to navigate and maintain
+- Multiple concerns mixed together (validation, post functions, config, OpenAI calls)
+- Hard to write unit tests for individual components
+- No clear separation between business logic and external integrations
+
+---
 
 ## Types
-The prompt system defines structured objects with the following schema:
+
+### New Module Exports Structure
 
 ```javascript
+// Core modules export consistent interfaces:
+
+// validator module
+export const validate = async (args) => { ... }  // Main validation entry point
+export const callOpenAI = async (...) => { ... }
+export const callOpenAIWithTools = async (...) => { ... }
+
+// post-function module  
+export const executePostFunction = async (args) => { ... }
+export const executeSemanticPostFunction = async (...) => { ... }
+export const executeStaticPostFunction = async (...) => { ... }
+
+// config module
+export const registerConfig = async (payload) => { ... }
+export const getConfigs = async () => { ... }
+export const storeLog = async (logEntry) => { ... }
+```
+
+### Data Structures
+
+```javascript
+// Tool registry entry structure
 {
-  id: "unique_prompt_identifier",
-  category: "issues|groups|users|projects|workflows|field-configs|screens|custom-fields|statuses|resolutions|issue-types|security",
-  keywords: ["array", "of", "common", "user", "phrases"],
-  endpoint: "/rest/api/3/endpoint/path",
-  method: "GET|POST|PUT|DELETE",
-  description: "Detailed explanation of when to use this endpoint",
-  parameters: {
-    required: ["param1", "param2"],
-    optional: ["optional1"]
+  definition: {
+    type: "function",
+    function: { name, description, parameters }
   },
-  response_format: {
-    // Description of expected response structure
+  execute: async (args, validatedFieldId) => { ... }
+}
+
+// Config registry entry
+{
+  id: string,
+  type: "validator" | "condition" | "postfunction-semantic" | "postfunction-static",
+  fieldId: string,
+  prompt?: string,
+  conditionPrompt?: string,
+  actionPrompt?: string,
+  code?: string,
+  workflow?: {
+    workflowName?: string,
+    transitionId?: string,
+    projectId?: string
   },
-  when_to_use: "Specific guidance on application scenarios",
-  example_queries: ["User query example 1", "Example 2"],
-  fields_suggestions: ["field1", "field2"], // For search endpoints
-  example_jql: "project = PROJ AND status = Open" // For JQL search
+  disabled?: boolean,
+  createdAt: string,
+  updatedAt: string
+}
+
+// Validation log entry
+{
+  id: string,
+  timestamp: string,
+  issueKey: string,
+  fieldId: string,
+  fieldValue: string,
+  prompt: string,
+  isValid: boolean,
+  reason: string,
+  toolMeta?: {
+    toolsUsed: boolean,
+    toolRounds: number,
+    queries: string[],
+    totalResults: number
+  }
 }
 ```
 
+---
+
 ## Files
 
-### New Files to Create:
-1. **`src/jira-prompts.js`** - Core prompt definitions and matching logic
-   - Contains `JIRA_PROMPTS` object with all endpoint definitions
-   - Implements fuzzy keyword matching for intent detection
-   - Provides helper functions: `matchPrompt()`, `getPromptById()`, `searchPrompts()`
-   - Includes `buildJqlFromIntent()` for JQL query construction
-   - Handles KVS storage and retrieval via `loadPrompts()`, `storePrompts()`
+### New Files to Create
 
-2. **`src/jira-tool-executor.js`** - API execution engine
-   - `executeJiraEndpoint(endpoint, method, parameters)` - Direct endpoint calling
-   - `executePrompt(prompt, parameters)` - Prompt-based execution with validation
-   - `executePaginated(prompt, parameters)` - Handles paginated list endpoints
-   - `buildQueryParams(endpoint, parsedIntent)` - Constructs query parameters
-   - Implements pagination for large result sets
+| Path | Purpose |
+|------|---------|
+| `src/core/index.js` | Core module aggregator (re-export all core modules) |
+| `src/core/validator/index.js` | Main validator entry point and OpenAI integration |
+| `src/core/validator/openai-client.js` | OpenAI API client with tool-calling support |
+| `src/core/validator/attachments.js` | Attachment processing for AI validation |
+| `src/core/post-function/index.js` | Post function executor aggregator |
+| `src/core/post-function/semantic.js` | Semantic post function execution logic |
+| `src/core/post-function/static.js` | Static (JavaScript builder) post function logic |
+| `src/core/config/index.js` | Config module aggregator |
+| `src/core/config/registry.js` | KVS config storage/retrieval |
+| `src/core/config/logger.js` | Validation logging helpers |
+| `src/integration/prompts/index.js` | Replaces src/jira-prompts/index.js |
+| `src/integration/prompts/categories/index.js` | Category modules aggregator |
+| `src/integration/prompts/categories/issues.js` | Issue prompt definitions (moved from jira-prompts) |
+| `src/integration/prompts/categories/projects.js` | Project prompt definitions |
+| `src/integration/prompts/categories/users.js` | User prompt definitions |
+| `src/integration/prompts/categories/groups.js` | Group prompt definitions |
+| `src/integration/prompts/categories/workflows.js` | Workflow prompt definitions |
+| `src/integration/prompts/categories/field-configs.js` | Field configuration prompts |
+| `src/integration/prompts/categories/screens.js` | Screen prompt definitions |
+| `src/integration/prompts/categories/custom-fields.js` | Custom field prompts |
+| `src/integration/prompts/categories/statuses-resolutions.js` | Status/resolution prompts |
+| `src/integration/prompts/categories/issue-types.js` | Issue type prompts |
+| `src/integration/prompts/categories/security.js` | Security level prompts |
+| `src/integration/prompts/categories/notifications.js` | Notification prompts |
+| `src/integration/prompts/categories/permissions.js` | Permission prompts |
+| `src/integration/prompts/categories/automation.js` | Automation prompts |
+| `src/integration/prompts/categories/attachments-versions.js` | Attachment/version prompts |
+| `src/integration/prompts/helpers.js` | Prompt helper functions (moved from jira-prompts) |
+| `src/integration/jira-api/index.js` | JIRA API integration aggregator |
+| `src/integration/jira-api/fields.js` | Field extraction and formatting helpers |
+| `src/integration/jira-api/workflows.js` | Workflow fetching helpers |
+| `src/integration/jira-api/screens.js` | Screen-based field resolution |
+| `src/integration/jira-api/attachments.js` | Attachment download helpers |
+| `src/integration/tools/index.js` | Agentic tool registry (JQL search, etc.) |
 
-### Existing Files to Modify:
-1. **`src/index.js`** - Already updated in this implementation
-   - Added imports: `JIRA_PROMPTS`, `matchPrompt`, `getPromptById`, `buildJqlFromIntent`
-   - Added imports: `executeJiraEndpoint`, `executePrompt`, `executePaginated`, `buildQueryParams`
-   - The existing agentic validation loop can now optionally use prompt matching
+### Files to Delete
+
+| Path | Reason |
+|------|--------|
+| `src/jira-prompts/*.js` (all 17 files) | Replaced by integration/prompts/categories/ |
+| `src/jira-prompts/index.js` | Replaced by integration/prompts/index.js |
+| `src/jira-tool-executor.js` | Integration moved to integration/jira-api/ |
+
+### Files to Modify
+
+| Path | Changes |
+|------|---------|
+| `src/index.js` | Remove all business logic, only keep entry point glue code and export handler |
+| `static/config-ui/src/prompts-data.js` | Update import path from `../jira-prompts/index.js` to `../../src/integration/prompts/index.js` |
+
+---
 
 ## Functions
 
-### New Functions in src/jira-prompts.js:
+### New Functions
 
-| Function | Parameters | Return | Purpose |
-|----------|------------|--------|---------|
-| `matchPrompt(userQuery, prompts)` | string, object | array | Find best-matching prompts by keyword similarity |
-| `getPromptById(promptId, prompts)` | string, object | object|null | Retrieve specific prompt by ID |
-| `getPromptsByCategory(category, prompts)` | string, object | array | Get all prompts in a category |
-| `getAllCategories(prompts)` | object | array | List all available categories |
-| `loadPrompts(key)` | string | Promise<object> | Load from KVS or return defaults |
-| `storePrompts(key)` | string | Promise<void> | Store prompts to KVS |
-| `searchPrompts(searchQuery, prompts)` | string, object | array | Search across all prompt fields |
-| `buildJqlFromIntent(userQuery)` | string | object|null | Construct JQL from natural language |
+#### src/core/validator/openai-client.js
+```javascript
+export const callOpenAI = async (fieldValue, validationPrompt, attachmentParts) => { ... }
+export const callOpenAIWithTools = async (...) => { ... }  // Agentic mode with tool-calling
+```
 
-### New Functions in src/jira-tool-executor.js:
+#### src/core/validator/attachments.js
+```javascript
+export const downloadAttachment = async (attachment) => { ... }
+export const buildAttachmentContentParts = (downloadedAttachments) => { ... }
+```
 
-| Function | Parameters | Return | Purpose |
-|----------|------------|--------|---------|
-| `executeJiraEndpoint(endpoint, method, parameters)` | string, string, object | Promise<object> | Execute raw API call |
-| `executePrompt(prompt, parameters)` | object, object | Promise<object> | Execute with validation |
-| `executePaginated(prompt, parameters)` | object, object | Promise<object> | Handle paginated results |
-| `buildQueryParams(endpoint, parsedIntent)` | string, object | object | Build query string params |
+#### src/core/post-function/semantic.js
+```javascript
+export const executeSemanticPostFunction = async ({ issueContext, conditionPrompt, actionPrompt, fieldId, actionFieldId, dryRun }) => { ... }
+```
+
+#### src/core/post-function/static.js
+```javascript
+export const executeStaticPostFunction = async ({ issueContext, code, dryRun }) => { ... }
+export const executeStaticCodeSandbox = async ({ issueContext, code, dryRun, simulationMode }) => { ... }
+```
+
+#### src/core/config/registry.js
+```javascript
+export const registerConfig = async ({ payload }) => { ... }
+export const removeConfig = async ({ payload }) => { ... }
+export const disableRule = async ({ payload }) => { ... }
+export const enableRule = async ({ payload }) => { ... }
+export const registerPostFunction = async ({ payload }) => { ... }
+export const removePostFunction = async ({ payload }) => { ... }
+export const disablePostFunction = async ({ payload }) => { ... }
+export const enablePostFunction = async ({ payload }) => { ... }
+export const getPostFunctionStatus = async ({ payload }) => { ... }
+export const getConfigs = async () => { ... }  // Returns configs with orphan cleanup
+```
+
+#### src/core/config/logger.js
+```javascript
+export const storeLog = async (logEntry) => { ... }
+export const MAX_LOGS = 50
+export const LOGS_STORAGE_KEY = "validation_logs"
+```
+
+### Modified Functions
+
+| Current Location | New Location | Changes |
+|-----------------|--------------|---------|
+| `validate` in src/index.js | `src/core/validator/index.js:validate` | Extract logic, add imports from new modules |
+| `executePostFunction` in src/index.js | `src/core/post-function/index.js:executePostFunction` | Extract logic, add imports from new modules |
+| All JIRA prompts exports | `src/integration/prompts/categories/*.js` | Move each category to its own file |
+
+### Removed Functions
+
+| Function | Reason | Migration |
+|----------|--------|-----------|
+| All functions in src/jira-prompts/ | Replaced by integration/prompts/ | Use new import paths |
+| executeJiraEndpoint, executePrompt | Replaced by integration/jira-api/ | Use new jira-api module |
+
+---
 
 ## Classes
-No new classes required. The system uses:
-- Plain JavaScript objects for prompt definitions
-- Module-level exported functions for stateless operations
-- KVS for persistence (handled via Forge storage API)
+
+### New Class Structures (No Classes Needed)
+
+This refactor focuses on functional decomposition. No classes are required as the existing codebase uses a functional style with exported objects.
+
+**Tool Registry Pattern (Object-based):**
+```javascript
+export const TOOL_REGISTRY = {
+  search_jira_issues: {
+    definition: { type: "function", function: { name, description, parameters } },
+    execute: async (args, validatedFieldId) => { ... }
+  }
+}
+```
+
+---
 
 ## Dependencies
-**No external dependencies required:**
-- Uses existing `@forge/api` imports (`api`, `route`, `storage`)
-- No new npm packages needed
-- Compatible with current Forge runtime (nodejs22.x)
+
+### Package.json Changes (None Required)
+
+No new npm packages required. The existing dependencies are sufficient:
+- `@forge/api` - Forge API for JIRA integration
+- `@forge/resolver` - Resolver for backend functions
+
+---
 
 ## Testing
-### Unit Test Strategy:
-1. **Prompt Matching Tests:**
-   - Verify fuzzy keyword matching works for various user queries
-   - Test edge cases: empty input, partial matches, exact matches
-   - Validate scoring algorithm ranks correct prompts highest
 
-2. **Execution Tests:**
-   - Mock Forge API responses using `@forge/api` mocks
-   - Test parameter validation (required vs optional)
-   - Verify error handling for failed API calls
+### Test File Structure
 
-3. **Integration Tests:**
-   - End-to-end flow: user query → prompt matching → execution
-   - Test pagination with large result sets
-   - Verify KVS persistence across invocations
-
-### Test Commands:
-```bash
-# Run existing tests (if any)
-npm test
-
-# Lint check
-npm run lint
-
-# Build for Forge
-forge build --force
 ```
+src/
+├── core/
+│   ├── validator/__tests__/
+│   │   ├── openai-client.test.js
+│   │   └── attachments.test.js
+│   ├── post-function/__tests__/
+│   │   ├── semantic.test.js
+│   │   └── static.test.js
+│   └── config/__tests__/
+│       ├── registry.test.js
+│       └── logger.test.js
+└── integration/
+    ├── prompts/__tests__/
+    │   └── helpers.test.js
+    └── jira-api/__tests__/
+        ├── fields.test.js
+        ├── workflows.test.js
+        └── screens.test.js
+```
+
+### Test Strategy
+
+1. **Unit Tests**: Each module should have its own test file
+2. **Mock External Dependencies**: Use mocks for KVS storage, JIRA API calls
+3. **Integration Tests**: Test the full `validate` and `executePostFunction` flows
+
+---
 
 ## Implementation Order
 
-1. **Create `src/jira-prompts.js`** - Main prompt definitions and matching logic
-   - Define all JIRA endpoint prompts (issues, groups, users, workflows, etc.)
-   - Implement similarity calculation algorithm
-   - Add helper functions for loading/storing in KVS
+### Phase 1: Setup Directory Structure (Steps 1-4)
 
-2. **Create `src/jira-tool-executor.js`** - API execution engine
-   - Implement pagination handling
-   - Create response formatting functions
-   - Add parameter validation and error handling
+1. Create new directory structure:
+   ```
+   src/core/
+   src/core/validator/
+   src/core/post-function/
+   src/core/config/
+   src/integration/
+   src/integration/prompts/categories/
+   src/integration/jira-api/
+   src/integration/tools/
+   ```
 
-3. **Update `src/index.js`** - Integration with existing codebase
-   - Import new modules (already done)
-   - Wire up agentic validation to optionally use prompt matching
-   - Ensure backward compatibility with existing TOOL_REGISTRY
+2. Move helper functions to `src/integration/prompts/helpers.js`:
+   - `calculateSimilarity`
+   - `searchPrompts`
+   - `buildJqlFromIntent`
 
-4. **Build and Deploy:**
-   - Run `forge build --force`
-   - Test in development Jira instance
-   - Monitor for any API errors or rate limiting
+3. Create prompt category files in `src/integration/prompts/categories/`:
+   - Copy from `src/jira-prompts/` each file
+   - Update exports to be named exports
 
-5. **Optional Enhancements:**
-   - Create admin UI component to view/edit prompts (in static/config-ui)
-   - Add logging for prompt matching decisions
-   - Implement prompt versioning and updates via KVS
+4. Create main prompts aggregator at `src/integration/prompts/index.js`
+
+### Phase 2: Extract Validator Logic (Steps 5-8)
+
+5. Create `src/core/validator/openai-client.js`:
+   - Move `callOpenAI` function
+   - Move `callOpenAIWithTools` function
+   - Move tool registry (`TOOL_REGISTRY`)
+   - Move OpenAI helpers (`getOpenAIKey`, `getOpenAIModel`)
+
+6. Create `src/core/validator/attachments.js`:
+   - Move `downloadAttachment`
+   - Move `buildAttachmentContentParts`
+
+7. Create `src/core/validator/index.js`:
+   - Import from new modules
+   - Export `validate` with complete validation logic
+
+8. Update main index to use validator module
+
+### Phase 3: Extract Post Function Logic (Steps 9-12)
+
+9. Create `src/core/post-function/static.js`:
+   - Move `executeStaticPostFunction`
+   - Move `executeStaticCodeSandbox`
+
+10. Create `src/core/post-function/semantic.js`:
+    - Move `executeSemanticPostFunction`
+
+11. Create `src/core/post-function/index.js`:
+    - Import from new modules
+    - Export `executePostFunction`
+
+12. Update main index to use post-function module
+
+### Phase 4: Extract Config/Logger (Steps 13-15)
+
+13. Create `src/core/config/logger.js`:
+    - Move `storeLog`
+    - Define constants (`MAX_LOGS`, `LOGS_STORAGE_KEY`)
+
+14. Create `src/core/config/registry.js`:
+    - Move config registry functions
+    - Move post function registry functions
+
+15. Create `src/core/config/index.js`:
+    - Import from new modules
+    - Export all config-related resolvers
+
+### Phase 5: Extract JIRA API Helpers (Steps 16-20)
+
+16. Create `src/integration/jira-api/fields.js`:
+    - Move `formatField`
+    - Move `sortFields`
+    - Move `getFallbackFields`
+
+17. Create `src/integration/jira-api/workflows.js`:
+    - Move `fetchWorkflowTransitions`
+    - Move `fetchProjectsForWorkflow`
+
+18. Create `src/integration/jira-api/screens.js`:
+    - Move screen resolution helpers
+    - Move `getScreenFields` resolver
+
+19. Create `src/integration/jira-api/attachments.js`:
+    - Move attachment-related helpers if any remain
+
+20. Create `src/integration/jira-api/index.js`:
+    - Export all JIRA API helpers
+
+### Phase 6: Refactor Main Entry Point (Steps 21-23)
+
+21. Update `src/index.js`:
+    - Remove all business logic
+    - Import from new modules
+    - Keep only resolver definitions and handler export
+    - Should be under ~200 lines after refactor
+
+22. Verify all imports are correct:
+    ```
+    import { validate, executePostFunction } from './core/validator.js'
+    ```
+
+23. Test the application still works
+
+### Phase 7: Update Frontend Imports (Steps 24-25)
+
+24. Update `static/config-ui/src/prompts-data.js`:
+    - Change imports to use new path structure
+    - Or copy relevant prompt data if needed for browser compatibility
+
+25. Verify config UI still works correctly
+
+### Phase 8: Cleanup (Step 26)
+
+26. Delete old files after verification:
+    - Remove `src/jira-prompts/` directory
+    - Remove `src/jira-tool-executor.js`
+
+---
+
+## Files Reference
+
+### New Module Import Paths
+
+```javascript
+// In src/index.js
+import { validate, executePostFunction } from './core/index.js'
+import { TOOL_REGISTRY } from './integration/tools/index.js'
+
+// In core modules
+import { downloadAttachment, buildAttachmentContentParts } from './validator/attachments.js'
+import { callOpenAI, callOpenAIWithTools } from './validator/openai-client.js'
+
+// In integration/prompts
+import { issues, projects, users } from './categories/index.js'
+import { calculateSimilarity, searchPrompts } from './helpers.js'
+```
+
+### Resolver Functions to Export
+
+```javascript
+export const handler = resolver.getDefinitions()
+
+// Resolvers (move to core/config/index.js):
+- getJiraPrompts
+- searchJiraPrompts
+- getJiraPromptById
+- getJiraCategories
+- checkLicense
+- getLogs
+- clearLogs
+- registerConfig
+- removeConfig
+- disableRule
+- enableRule
+- registerPostFunction
+- removePostFunction
+- disablePostFunction
+- enablePostFunction
+- getPostFunctionStatus
+- getConfigs
+- getRuleStatus
+- getFields
+- getScreenFields
+```
+
+---
+
+## Validation Checklist
+
+After implementation, verify:
+
+- [ ] All existing resolvers work correctly
+- [ ] Validation function works with new module structure
+- [ ] Post functions execute correctly
+- [ ] Config registry stores/retrieves data properly
+- [ ] Logs are stored and retrieved
+- [ ] JIRA API calls work through new helpers
+- [ ] OpenAI integration works (both normal and tool-calling modes)
+- [ ] Frontend config UI loads prompts correctly
+- [ ] No broken imports across the codebase
+- [ ] Application builds successfully (`npm run build`)
+- [ ] Existing tests still pass (if any)
+
+---
+
+## Rollback Plan
+
+If issues arise:
+1. The old `src/jira-prompts/` and `src/jira-tool-executor.js` files can be restored
+2. Keep the old code commented out in `src/index.js` with TODO to remove later
+3. Changes are additive first, then old code is removed after verification
+
+---
+
+## Estimated Impact
+
+- **Lines of Code**: ~1700 → ~200 (main entry)
+- **Files**: 19 files → 45+ files (properly organized)
+- **Maintainability Score**: Major improvement
+- **Test Coverage Potential**: From ~0% to easily testable

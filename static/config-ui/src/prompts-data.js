@@ -9,7 +9,8 @@
  * JIRA Prompts Data Export for Config UI
  * 
  * This file contains a copy of the JIRA_PROMPTS object for use in the config-ui.
- * The prompts are imported from src/jira-prompts.js and exported here for browser consumption.
+ * The full prompt definitions have been split into modular files under src/jira-prompts/.
+ * This file provides a browser-compatible subset for static configuration display.
  */
 
 // The full prompt definitions - this would be imported from the source module
