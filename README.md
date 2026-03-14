@@ -106,7 +106,31 @@ Any field type not explicitly handled gets a best-effort extraction (readable ke
 CogniRunner/
 ├── manifest.yml                  # Forge app definition
 ├── src/
-│   └── index.js                  # ALL backend logic (single file)
+│   ├── index.js                  # Main entry point (resolvers + exports)
+│   ├── core/                     # Core business logic modules
+│   │   ├── validator/            # Validation logic
+│   │   │   ├── index.js          # Main validator entry point
+│   │   │   ├── openai-client.js  # OpenAI API integration
+│   │   │   └── attachments.js    # Attachment processing
+│   │   ├── post-function/        # Post function execution
+│   │   │   ├── index.js          # Post function aggregator
+│   │   │   ├── semantic.js       # Semantic post function
+│   │   │   └── static.js         # Static (JavaScript) post function
+│   │   └── config/               # Configuration management
+│   │       ├── index.js          # Config module aggregator
+│   │       ├── registry.js       # KVS storage/retrieval
+│   │       └── logger.js         # Validation logging
+│   └── integration/              # Integration layers
+│       ├── prompts/              # Prompt definitions
+│       │   ├── index.js          # Prompts aggregator
+│       │   ├── helpers.js        # Prompt helper functions
+│       │   └── categories/       # Category-specific prompts
+│       ├── jira-api/             # Jira API helpers
+│       │   ├── index.js          # API aggregator
+│       │   ├── fields.js         # Field extraction/formatting
+│       │   ├── workflows.js      # Workflow fetching
+│       │   └── screens.js        # Screen-based field resolution
+│       └── tools/                # Agentic tool registry
 ├── static/
 │   ├── config-ui/src/            # React app: configure validator/condition
 │   ├── config-view/src/          # React app: read-only view + logs
@@ -116,16 +140,76 @@ CogniRunner/
 └── README.md
 ```
 
-### Backend (`src/index.js`)
+### Backend Architecture
 
-Single file containing all server-side logic:
-- **Validator/Condition handler** (`validate`) -- Receives issue data + configuration on each workflow transition, extracts the target field value, routes to standard or agentic AI validation, returns pass/fail.
-- **Standard validation** (`callOpenAI`) -- Single-turn: sends field content + prompt, gets `{ isValid, reason }` back.
-- **Agentic validation** (`callOpenAIWithTools`) -- Multi-turn tool-calling loop. The AI can request JQL searches via the `search_jira_issues` tool, receive results, refine queries, and iterate up to 3 rounds before rendering a final verdict.
-- **Tool registry** -- Extensible registry mapping tool names to OpenAI function definitions and executors. Currently includes `search_jira_issues`; designed for easy addition of new tools.
-- **Forge Resolvers** -- Bridge functions called by the frontend Custom UIs (`getFields`, `getScreenFields`, `getLogs`, `clearLogs`, `getConfigs`, `registerConfig`, `enableRule`, `disableRule`, `getRuleStatus`, `checkLicense`, etc.)
-- **Field extraction** -- Converts any Jira field type (ADF rich text, select lists, user pickers, cascading selects, attachments, etc.) to plain text for AI consumption.
-- **Screen-aware field resolution** -- Walks the Jira screen scheme chain (project -> issue type screen scheme -> screen scheme -> screen -> tabs -> fields) to determine exactly which fields are available on a given transition.
+The backend has been refactored into a clean, modular 3-layer architecture:
+
+**Layer 1: Core Business Logic (`src/core/`)**
+- **Validator Module** (`core/validator/`) - Handles all validation logic including standard and agentic AI validation
+- **Post-Function Module** (`core/post-function/`) - Executes post-function logic (semantic and static)
+- **Config Module** (`core/config/`) - Manages configuration registry and validation logs
+
+**Layer 2: Integration Layers (`src/integration/`)**
+- **Prompts Module** (`integration/prompts/`) - Organized prompt definitions by category with helper functions
+- **Jira API Module** (`integration/jira-api/`) - Jira API helpers for field extraction, workflow fetching, and screen resolution
+- **Tools Module** (`integration/tools/`) - Agentic tool registry for OpenAI function definitions and executors
+
+**Layer 3: Entry Point (`src/index.js`)**
+- Main entry point that exports resolver definitions and provides backward compatibility
+- Imports and coordinates all core and integration modules
+- ~200 lines (down from ~1700 lines)
+
+### Core Modules
+
+**Validator Module** (`src/core/validator/`)
+- **`validate`** - Main validation entry point that receives issue data + configuration
+- **`callOpenAI`** - Standard single-turn validation: sends field content + prompt, returns `{ isValid, reason }`
+- **`callOpenAIWithTools`** - Agentic multi-turn validation with tool-calling support
+- **`downloadAttachment` / `buildAttachmentContentParts`** - Attachment processing for AI validation
+
+**Post-Function Module** (`src/core/post-function/`)
+- **`executePostFunction`** - Main post function executor
+- **`executeSemanticPostFunction`** - AI-powered semantic post functions (uses OpenAI to analyze and modify fields)
+- **`executeStaticPostFunction`** - Static JavaScript post functions (runs custom JavaScript code in a sandbox)
+
+**Config Module** (`src/core/config/`)
+- **`registerConfig` / `getConfigs`** - Configuration registry management
+- **`storeLog` / `getLogs` / `clearLogs`** - Validation log storage and retrieval
+- **`enableRule` / `disableRule`** - Rule enable/disable functionality
+- **`registerPostFunction` / `getPostFunctionStatus`** - Post function management
+
+### Integration Modules
+
+**Prompts Module** (`src/integration/prompts/`)
+- **`index.js`** - Aggregates all prompt categories
+- **`helpers.js`** - Helper functions: `calculateSimilarity`, `searchPrompts`, `buildJqlFromIntent`
+- **`categories/`** - Organized prompt definitions by category:
+  - `issues.js` - Issue-related prompts
+  - `projects.js` - Project-related prompts
+  - `users.js` - User-related prompts
+  - `groups.js` - Group-related prompts
+  - `workflows.js` - Workflow-related prompts
+  - `field-configs.js` - Field configuration prompts
+  - `screens.js` - Screen-related prompts
+  - `custom-fields.js` - Custom field prompts
+  - `statuses-resolutions.js` - Status/resolution prompts
+  - `issue-types.js` - Issue type prompts
+  - `security.js` - Security level prompts
+  - `notifications.js` - Notification prompts
+  - `permissions.js` - Permission prompts
+  - `automation.js` - Automation prompts
+  - `attachments-versions.js` - Attachment/version prompts
+
+**Jira API Module** (`src/integration/jira-api/`)
+- **`index.js`** - Aggregates all Jira API helpers
+- **`fields.js`** - Field extraction and formatting (`formatField`, `sortFields`, `getFallbackFields`)
+- **`workflows.js`** - Workflow fetching (`fetchWorkflowTransitions`, `fetchProjectsForWorkflow`)
+- **`screens.js`** - Screen-based field resolution
+
+**Tools Module** (`src/integration/tools/`)
+- **Tool Registry** - Extensible registry mapping tool names to OpenAI function definitions and executors
+- Currently includes `search_jira_issues` tool for agentic validation
+- Designed for easy addition of new tools
 
 ### Frontend (3 React Apps)
 
@@ -301,7 +385,7 @@ Set via `forge variables set KEY value`.
 Some rough edges are expected:
 
 - **No tests.** Testing is done manually via `forge tunnel` and `forge deploy`. A test framework is planned.
-- **Single-file backend.** All backend logic lives in `src/index.js` (~1900 lines). Module split is planned.
+- **Backend refactoring complete.** The monolithic `src/index.js` has been successfully refactored into a modular 3-layer architecture with separate directories for core logic, integration layers, and organized prompt definitions. The main entry point is now ~200 lines.
 - **CSS triple-definition.** Due to Forge Custom UI iframe quirks, styles are defined in three places per UI app (CSS file, HTML `<style>` block, and `injectStyles()` in JS). This is intentional but ugly.
 - **No i18n.** All strings are hardcoded in English.
 - **Attachment validation on CREATE.** Jira doesn't expose attachments in `modifiedFields` during issue creation, so attachment validation is skipped on create transitions.
