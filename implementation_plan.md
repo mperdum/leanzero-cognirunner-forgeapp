@@ -1,23 +1,185 @@
-# Implementation Plan: Forge App Component Refactoring
+# Frontend Architecture Reference
 
-## Overview
-
-Split large React components across three Forge app frontend directories (config-ui, admin-panel, config-view) following Atlassian Forge best practices. This will extract reusable UI components into a shared folder and separate styles from JavaScript logic.
-
-**Why this is needed:**
-- Current `App.js` files are 500-800 lines each with mixed concerns
-- Styles are embedded in JavaScript (injected via inline CSS)
-- No component extraction - everything is monolithic
-- Code duplication across the three UI apps
+**Status: ✅ COMPLETED** - This document describes the frontend refactoring that was completed to modularize the CogniRunner UI components.
 
 ---
 
-## Types
+## Overview
 
-### New Component Types/Interfaces
+The CogniRunner Forge app consists of three separate React applications, each serving a specific purpose in the Jira workflow configuration experience. The codebase has been refactored from monolithic `App.js` files into a clean component-based architecture with shared utilities.
+
+### Architecture Goals Achieved
+
+- ✅ Extracted reusable UI components into dedicated modules
+- ✅ Separated styles from JavaScript logic
+- ✅ Created shared component library for consistency across apps
+- ✅ Reduced code duplication between the three UI apps
+- ✅ Improved maintainability and testability
+
+---
+
+## Application Structure
+
+```
+static/
+├── config-ui/                    # Configuration UI (create/edit mode)
+│   ├── src/
+│   │   ├── index.js              # React root mount
+│   │   ├── App.js                # Legacy main component
+│   │   ├── styles.css            # CSS custom properties (light/dark theme)
+│   │   └── components/           # Extracted components
+│   │       ├── Dropdown.jsx      # Reusable dropdown with search
+│   │       ├── FieldSelector.jsx # Context-aware field selector
+│   │       ├── FunctionBlock.jsx # Single function configuration UI
+│   │       ├── FunctionBuilder.jsx # Code editor wrapper
+│   │       ├── SemanticConfig.jsx # Semantic post-function form
+│   │       ├── StandardValidator.jsx # Validator/Condition form
+│   │       └── ThemeInjector.jsx # CSS variable injection for theming
+│   └── build/                    # Webpack output (committed)
+│
+├── config-view/                  # Read-only view + validation logs
+│   ├── src/
+│   │   ├── index.js              # React root mount
+│   │   ├── App.js                # Legacy main component
+│   │   ├── styles.css            # CSS custom properties
+│   │   └── components/           # Extracted components
+│   │       ├── ConfigViewer.jsx  # Configuration display
+│   │       ├── LogsSection.jsx   # Validation logs viewer
+│   │       └── StatusBanner.jsx  # Rule status indicator
+│   └── build/                    # Webpack output (committed)
+│
+├── admin-panel/                  # Global administration dashboard
+│   ├── src/
+│   │   ├── index.js              # React root mount
+│   │   ├── App.js                # Legacy main component
+│   │   ├── styles.css            # CSS custom properties
+│   │   └── components/           # Extracted components
+│   │       ├── LicenseBanner.jsx # License status display
+│   │       ├── LogsSection.jsx   # Shared logs viewer
+│   │       └── RuleTable.jsx     # Rules listing table
+│   └── build/                    # Webpack output (committed)
+│
+└── shared/                       # Shared component library
+    └── components/
+        └── common/
+            ├── Button.jsx         # Reusable button component
+            ├── Card.jsx           # Card container component
+            └── Spinner.jsx        # Loading spinner component
+```
+
+---
+
+## Component Reference
+
+### config-ui Components
+
+#### `FieldSelector.jsx`
+Context-aware field selector that resolves screen schemes to show only relevant fields.
+
+**Props:**
+- `value`: Current selected field ID
+- `onChange`: Callback when selection changes
+- `fields`: Array of available `{ id, name, type, custom }` objects
+- `label`: Optional label text
+- `required`: Whether field is required
+
+#### `ThemeInjector.jsx`
+Injects CSS variables for Jira's light/dark theme support.
+
+**Props:**
+- `stylesId`: Optional custom style element ID
+- `additionalStyles`: Optional additional CSS to inject
+
+#### `StandardValidator.jsx`
+Form component for configuring standard validators and conditions.
+
+**Features:**
+- Field selection dropdown
+- Validation prompt textarea
+- Jira Search (JQL) toggle (Auto/On/Off)
+- Prompt library integration
+
+#### `SemanticConfig.jsx`
+Form component for configuring semantic post-functions.
+
+**Features:**
+- Condition prompt input (optional)
+- Action prompt input
+- Source field selector
+- Target field selector
+- Dry-run mode toggle
+
+#### `FunctionBuilder.jsx` / `FunctionBlock.jsx`
+Components for building and editing static post-function JavaScript code.
+
+---
+
+### config-view Components
+
+#### `ConfigViewer.jsx`
+Displays current configuration in read-only format.
+
+**Features:**
+- Field ID display
+- Prompt preview (truncated)
+- Jira Search mode indicator
+- Configuration timestamp
+
+#### `LogsSection.jsx`
+Validation logs viewer with filtering and actions.
+
+**Features:**
+- Last 50 validation entries
+- Pass/fail status indicators
+- AI reasoning display
+- Agentic metadata (queries, rounds, results)
+- Refresh and clear actions
+
+#### `StatusBanner.jsx`
+Rule enable/disable status indicator and toggle.
+
+---
+
+### admin-panel Components
+
+#### `RuleTable.jsx`
+Global rules listing across all workflows.
+
+**Features:**
+- Rule type badges (validator/condition/post-function)
+- Workflow context display
+- Enable/disable toggles
+- Edit links to workflow configuration
+- Orphan detection indicators
+
+#### `LicenseBanner.jsx`
+Displays current Marketplace license status.
+
+---
+
+### Shared Components
+
+#### `Button.jsx`
+Reusable button with variant support.
+
+**Props:**
+- `variant`: 'primary' | 'secondary' | 'danger' (default: 'primary')
+- `onClick`: Click handler
+- `disabled`: Disabled state
+- `children`: Button content
+
+#### `Card.jsx`
+Card container component for grouping related content.
+
+#### `Spinner.jsx`
+Loading spinner component.
+
+---
+
+## Component Interfaces (TypeScript Reference)
 
 ```typescript
-// Component Props Interfaces
+// Field Selector
 interface FieldSelectorProps {
   value: string;
   onChange: (value: string) => void;
@@ -26,18 +188,13 @@ interface FieldSelectorProps {
   required?: boolean;
 }
 
+// Theme Injector
 interface ThemeInjectorProps {
   stylesId?: string;
   additionalStyles?: string;
 }
 
-interface FunctionBlockProps {
-  func: FunctionConfig;
-  index: number;
-  onUpdate: (id: string, updates: Partial<FunctionConfig>) => void;
-  onRemove: (id: string) => void;
-}
-
+// Rule Table (admin-panel)
 interface RuleTableProps {
   configs: Array<{
     id: string;
@@ -56,6 +213,7 @@ interface RuleTableProps {
   onToggle?: (id: string, currentlyDisabled: boolean) => void;
 }
 
+// Logs Section
 interface LogsSectionProps {
   visible: boolean;
   logs: Array<{
@@ -65,206 +223,154 @@ interface LogsSectionProps {
     timestamp: string;
     fieldId: string;
     reason: string;
+    toolMeta?: {
+      toolsUsed: boolean;
+      toolRounds: number;
+      queries: string[];
+      totalResults: number;
+    };
   }>;
   onToggleVisible?: () => void;
   onClear?: () => void;
   onRefresh?: () => void;
 }
+
+// Button (shared)
+interface ButtonProps {
+  variant?: 'primary' | 'secondary' | 'danger';
+  onClick?: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}
 ```
 
 ---
 
-## Files
+## Styling Architecture
 
-### New Files to Create
+### CSS Custom Properties (Theming)
 
-```
-static/config-ui/src/frontend/components/          (NEW FOLDER)
-├── ThemeInjector.jsx                              (NEW - Extracted from App.js)
-├── FieldSelector.jsx                              (NEW - Dropdown component)
-├── FunctionBuilder/
-│   ├── index.js                                   (NEW - Barrel export)
-│   ├── FunctionBlock.jsx                          (NEW - Function block UI)
-│   └── FunctionEditor.jsx                         (NEW - Code editor)
-├── SemanticConfig.jsx                             (NEW - Semantic post function form)
-└── StandardValidator.jsx                          (NEW - Standard validator form)
+All three apps use CSS custom properties for Jira's light/dark theme support:
 
-static/config-ui/src/frontend/styles.css           (NEW - Extracted CSS)
+```css
+/* Light theme (default) */
+:root {
+  --color-primary: #0052CC;
+  --color-text: #172B4D;
+  --color-background: #FFFFFF;
+  --color-border: #DFE1E6;
+  /* ... more variables */
+}
 
-static/admin-panel/src/frontend/                   (NEW FOLDER)
-├── App.jsx                                        (NEW - Cleaned up)
-├── styles.css                                     (NEW - Extracted CSS)
-└── components/
-    ├── ThemeInjector.jsx                          (NEW - Reusable)
-    ├── RuleTable.jsx                              (NEW)
-    ├── LogsSection.jsx                            (NEW)
-    └── LicenseBanner.jsx                          (NEW)
-
-static/config-view/src/frontend/                   (NEW FOLDER)
-├── App.jsx                                        (NEW - Cleaned up)
-├── styles.css                                     (NEW - Extracted CSS)
-└── components/
-    ├── ThemeInjector.jsx                          (NEW - Reusable)
-    ├── ConfigViewer.jsx                           (NEW)
-    └── RuleStatusBanner.jsx                       (NEW)
-
-static/shared/components/                          (SHARED COMPONENTS FOLDER)
-├── common/
-│   ├── Button.jsx                                 (NEW - Reusable button)
-│   ├── Card.jsx                                   (NEW - Card container)
-│   └── Spinner.jsx                                (NEW - Loading spinner)
-└── index.js                                       (BARREL EXPORT)
-
-static/shared/styles/                              (SHARED STYLES FOLDER)
-├── themes.css                                     (NEW - CSS variables)
-└── index.js                                       (BARREL EXPORT)
+/* Dark theme */
+html[data-color-mode="dark"] {
+  --color-primary: #4C9AFF;
+  --color-text: #M672B0;
+  --color-background: #1D1F21;
+  --color-border: #3E4B5E;
+  /* ... more variables */
+}
 ```
 
-### Files to Modify
+### Triple-Definition Pattern
 
-| File | Changes |
-|------|---------|
-| `static/config-ui/src/index.js` | Update import paths, add styles import |
-| `static/admin-panel/src/index.js` | Update import paths, create frontend folder structure |
-| `static/config-view/src/index.js` | Update import paths, create frontend folder structure |
+Due to Forge Custom UI iframe quirks, styles are defined in three places per app:
 
-### Files to Delete/Deprecate
+1. **`src/styles.css`** — Canonical CSS source (imported in `index.js`)
+2. **`public/index.html` `<style>` block** — Ensures styles load before JS hydration
+3. **Component `injectStyles()` or ThemeInjector** — Inline injection as fallback
 
-None (we'll keep existing files as backups during migration)
+This pattern is intentional and should be maintained for reliable theme rendering.
 
 ---
 
-## Functions
+## Build Process
 
-### Removed from App.js (config-ui)
-
-| Function | Location | Replacement |
-|----------|----------|-------------|
-| `injectStyles()` | App.js line 17-263 | `ThemeInjector.jsx` component |
-| `handleFieldKeyDown()` | App.js line ~450 | `FieldSelector.jsx` |
-| `handleActionFieldKeyDown()` | App.js line ~510 | `FieldSelector.jsx` |
-| `handlePostFunctionTypeKeyDown()` | App.js line ~390 | `StandardValidator.jsx` / `SemanticConfig.jsx` |
-
-### New Functions
-
-```javascript
-// static/shared/components/common/Button.jsx
-export function Button({ children, variant = 'primary', onClick, disabled }) { ... }
-
-// static/config-ui/src/frontend/components/FieldSelector.jsx
-export function FieldSelector({ value, onChange, fields, label, required }) { ... }
-
-// static/admin-panel/src/frontend/components/RuleTable.jsx  
-export function RuleTable({ configs, onEdit, onToggle }) { ... }
-```
-
----
-
-## Classes
-
-### New Component Classes
-
-| File | Component Name | Purpose |
-|------|---------------|---------|
-| `ThemeInjector.jsx` | ThemeInjector | Injects CSS variables for dark/light mode |
-| `FieldSelector.jsx` | FieldSelector | Reusable dropdown with search functionality |
-| `FunctionBlock.jsx` | FunctionBlock | Single function configuration UI |
-| `FunctionEditor.jsx` | FunctionEditor | Code editor with syntax highlighting |
-| `StandardValidator.jsx` | StandardValidator | Validator/Condition form (replaces part of App.js) |
-| `SemanticConfig.jsx` | SemanticConfig | Semantic post function form |
-| `RuleTable.jsx` | RuleTable | Admin panel rule listing table |
-| `LogsSection.jsx` | LogsSection | Configurable logs display section |
-| `LicenseBanner.jsx` | LicenseBanner | License status banner component |
-
----
-
-## Dependencies
-
-### No New Dependencies Required
-
-All existing packages are sufficient:
-- `react`, `react-dom` - Already present
-- `@forge/bridge` - Already present
-- `@forge/react` - Already present
-
----
-
-## Testing
-
-### Test Approach
-
-1. **Unit Tests**: Verify each extracted component renders correctly
-2. **Integration Tests**: Ensure App.js works with new component imports
-3. **Visual Regression**: Check that styles remain consistent after extraction
-
-### Test Commands
+Each app is built independently with Webpack:
 
 ```bash
-cd static/config-ui && npm run test
-cd static/admin-panel && npm run test  
-cd static/config-view && npm run test
+# config-ui
+cd static/config-ui && npm run build
+
+# config-view  
+cd static/config-view && npm run build
+
+# admin-panel
+cd static/admin-panel && npm run build
 ```
+
+**Important:** The `build/` directories are committed to the repository. Forge deploys these directly. Always rebuild after changing frontend source before deploying.
+
+---
+
+## Development Workflow
+
+### Watch Mode (Hot Reload)
+
+Run in separate terminals:
+
+```bash
+cd static/config-ui && npm run start
+cd static/config-view && npm run start
+cd static/admin-panel && npm run start
+```
+
+### Backend Tunnel
+
+```bash
+forge tunnel
+```
+
+This enables live backend reloading while frontend watch modes handle UI changes.
+
+---
+
+## Testing Guidelines
 
 ### Manual Testing Checklist
 
-- [ ] config-ui - Standard validator form works
-- [ ] config-ui - Semantic post function form works
-- [ ] config-ui - Function builder works (add/remove functions)
-- [ ] admin-panel - Rule table displays correctly
-- [ ] admin-panel - Toggle rule works
+- [ ] config-ui - Standard validator form works (field selection, prompt entry)
+- [ ] config-ui - Semantic post-function form works (condition/action prompts)
+- [ ] config-ui - Function builder works (add/remove/edit functions)
+- [ ] admin-panel - Rule table displays correctly with all rule types
+- [ ] admin-panel - Toggle rule enable/disable works
 - [ ] admin-panel - Logs display and refresh work
-- [ ] config-view - Config display works
-- [ ] Dark mode works across all apps
+- [ ] config-view - Config display shows current settings
+- [ ] config-view - Validation logs show AI reasoning
+- [ ] Dark mode works across all apps (toggle Jira theme)
+
+### Integration Testing
+
+Test the full flow:
+1. Create a validator in config-ui
+2. Verify it appears in admin-panel
+3. Run a workflow transition to generate validation log
+4. View the log in config-view and admin-panel
+5. Toggle rule disabled status
+6. Verify validation is skipped when disabled
 
 ---
 
-## Implementation Order
+## Future Improvements
 
-### Phase 1: Shared Infrastructure (Days 1-2)
-1. Create `static/shared/components/common/Button.jsx`
-2. Create `static/shared/components/common/Card.jsx`  
-3. Create `static/shared/components/common/Spinner.jsx`
-4. Create `static/shared/styles/themes.css`
-5. Create barrel exports in shared folders
+### Planned Enhancements
 
-### Phase 2: config-ui Refactoring (Days 3-5)
-6. Create `static/config-ui/src/frontend/` folder
-7. Extract CSS to `styles.css` from App.js
-8. Create `ThemeInjector.jsx` component
-9. Create `FieldSelector.jsx` (combines field/action dropdowns)
-10. Create `FunctionBuilder/FunctionBlock.jsx`
-11. Create `FunctionBuilder/FunctionEditor.jsx`
-12. Create `StandardValidator.jsx`
-13. Create `SemanticConfig.jsx`
-14. Refactor App.js to use new components
-15. Update `index.js` with new imports
+- [ ] Add unit tests with Jest + React Testing Library
+- [ ] Migrate to TypeScript for better type safety
+- [ ] Extract more shared components (form inputs, modals)
+- [ ] Implement i18n support for multi-language UIs
+- [ ] Add component storybook for isolated development
 
-### Phase 3: admin-panel Refactoring (Days 6-7)
-16. Create `static/admin-panel/src/frontend/` folder
-17. Extract CSS to `styles.css`
-18. Copy reusable components from shared (Button, Spinner)
-19. Create `RuleTable.jsx`
-20. Create `LogsSection.jsx`
-21. Create `LicenseBanner.jsx`
-22. Refactor App.js to use new components
+### Technical Debt
 
-### Phase 4: config-view Refactoring (Days 8-9)
-23. Create `static/config-view/src/frontend/` folder
-24. Extract CSS to `styles.css`
-25. Copy reusable components from shared
-26. Create `ConfigViewer.jsx`
-27. Create `RuleStatusBanner.jsx`
-28. Refactor App.js to use new components
-
-### Phase 5: Final (Day 10)
-29. Run tests on all three apps
-30. Manual verification of all UI elements
-31. Update documentation if needed
+- CSS triple-definition pattern is ugly but necessary for Forge iframe compatibility
+- Some legacy `App.js` files still exist alongside new components (can be cleaned up after verification)
+- No formal test suite yet — testing is manual via `forge tunnel`
 
 ---
 
-## Risk Mitigation
+## Related Documentation
 
-- **Backup**: Keep original files during migration
-- **Incremental**: Each phase can be tested independently
-- **Rollback**: Easy to revert by switching imports back
+- [README.md](../README.md) - Main project documentation
+- [CLAUDE.md](../CLAUDE.md) - Developer guidance for AI assistants
+- [Atlassian Forge Docs](https://developer.atlassian.com/platform/forge/) - Official Forge platform docs
