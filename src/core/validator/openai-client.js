@@ -2,6 +2,8 @@
  * OpenAI Client - Handles OpenAI API integration for validation
  */
 
+import api, { route } from '@forge/api';
+
 // Configuration constants
 const MAX_TOOL_ROUNDS = 3;
 

@@ -11,8 +11,9 @@ Thumbs.db
 *.swp
 *.swo
 
-# Claude Code
+# Claude Code / Cline
 .claude/
+.cline/
 CLAUDE.md
 
 # MCP server logs

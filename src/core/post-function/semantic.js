@@ -2,13 +2,25 @@
  * Semantic Post Function Module - Handles semantic AI-based post function execution
  */
 
+import api, { route } from '@forge/api';
 import { callOpenAI } from '../validator/openai-client.js';
 
 /**
  * Execute Semantic Post Function
  */
-export const executeSemanticPostFunction = async ({ issueContext, conditionPrompt, actionPrompt, fieldId, actionFieldId, dryRun }) => {
+export const executeSemanticPostFunction = async ({ issueContext, conditionPrompt, actionPrompt, fieldId, actionFieldId, dryRun, changelog, transition, workflow }) => {
   console.log(`executeSemanticPostFunction: issue=${issueContext.key}, validationField=${fieldId}, actionField=${actionFieldId}`);
+  
+  // Log transition information (Forge best practice)
+  if (transition?.executionId) {
+    console.log(`Transition execution ID: ${transition.executionId}`);
+  }
+  if (changelog && changelog.length > 0) {
+    console.log(`Changelog entries: ${changelog.length} field(s) changed`);
+    changelog.forEach(entry => {
+      console.log(`  - ${entry.field}: "${entry.from}" -> "${entry.to}"`);
+    });
+  }
 
   try {
     // Always get the modifiedFields from context if available (transition in progress)

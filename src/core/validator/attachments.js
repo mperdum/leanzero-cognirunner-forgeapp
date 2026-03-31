@@ -2,6 +2,8 @@
  * Attachments Module - Handles JIRA attachment operations for validation
  */
 
+import api, { route } from '@forge/api';
+
 // Configuration
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_TOTAL_ATTACHMENT_SIZE = 20 * 1024 * 1024; // 20MB

@@ -17,6 +17,7 @@
  */
 
 import Resolver from "@forge/resolver";
+import api, { route } from '@forge/api';
 import promptsModule from "./integration/prompts/index.js";
 
 // Import validator module
@@ -314,7 +315,7 @@ const executeJqlSearch = async ({ jql }, validatedFieldId) => {
 /**
  * Post Function Internal Executor
  */
-const executePostFunctionInternal = async ({ issueKey, config, dryRun = false, context = {} }) => {
+const executePostFunctionInternal = async ({ issueKey, config, dryRun = false, context = {}, changelog, transition, workflow }) => {
   console.log(`executePostFunctionInternal: issueKey=${issueKey}, type=${config?.type}, dryRun=${dryRun}`);
 
   try {
@@ -344,12 +345,15 @@ const executePostFunctionInternal = async ({ issueKey, config, dryRun = false, c
         actionPrompt, 
         fieldId,
         actionFieldId, 
-        dryRun 
+        dryRun,
+        changelog,
+        transition,
+        workflow
       });
     }
 
     if (type === "postfunction-static") {
-      return await executeStaticCodeSandbox({ issueContext, code, dryRun, simulationMode: !dryRun });
+      return await executeStaticCodeSandbox({ issueContext, code, dryRun, simulationMode: !dryRun, changelog, transition, workflow });
     }
 
     return { success: false, error: `Unknown post function type: ${type}` };
@@ -365,7 +369,7 @@ const executePostFunctionInternal = async ({ issueKey, config, dryRun = false, c
 export const executePostFunction = async (args) => {
   console.log("AI Post Function called:", JSON.stringify(args, null, 2));
 
-  const { issue, configuration } = args;
+  const { issue, configuration, changelog, transition, workflow } = args;
   const license = args?.context?.license;
 
   if (license && license.isActive === false) {
@@ -378,6 +382,9 @@ export const executePostFunction = async (args) => {
     config: configuration || {},
     dryRun: configuration?.dryRun === true,
     context: args.context,
+    changelog,
+    transition,
+    workflow,
   });
 
   if (!result.success) {

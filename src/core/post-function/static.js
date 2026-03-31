@@ -2,17 +2,30 @@
  * Static Post Function Module - Handles static JavaScript post function execution
  */
 
+import api, { route } from '@forge/api';
+
 /**
  * Execute Static Post Function
  */
-export const executeStaticPostFunction = async ({ issueContext, code, dryRun }) => {
+export const executeStaticPostFunction = async ({ issueContext, code, dryRun, changelog, transition, workflow }) => {
   console.log(`executeStaticPostFunction: issue=${issueContext.key}`);
-
-  if (dryRun) {
-    return await executeStaticCodeSandbox({ issueContext, code, dryRun: true, simulationMode: true });
+  
+  // Log transition information (Forge best practice)
+  if (transition?.executionId) {
+    console.log(`Transition execution ID: ${transition.executionId}`);
+  }
+  if (changelog && changelog.length > 0) {
+    console.log(`Changelog entries: ${changelog.length} field(s) changed`);
+    changelog.forEach(entry => {
+      console.log(`  - ${entry.field}: "${entry.from}" -> "${entry.to}"`);
+    });
   }
 
-  return await executeStaticCodeSandbox({ issueContext, code, dryRun: false, simulationMode: false });
+  if (dryRun) {
+    return await executeStaticCodeSandbox({ issueContext, code, dryRun: true, simulationMode: true, changelog, transition, workflow });
+  }
+
+  return await executeStaticCodeSandbox({ issueContext, code, dryRun: false, simulationMode: false, changelog, transition, workflow });
 };
 
 /**

@@ -2,6 +2,8 @@
  * JIRA Screens Module - Handles screen-related API operations
  */
 
+import api, { route } from '@forge/api';
+
 /**
  * Helper: Get the issue type screen scheme ID for a project.
  */
