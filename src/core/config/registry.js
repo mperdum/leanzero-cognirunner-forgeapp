@@ -2,8 +2,10 @@
  * Config Registry Module - Handles config storage and management in KVS
  */
 
+import { LOGS_STORAGE_KEY, storeLog } from './logger.js';
+
 // Configuration
-const CONFIG_REGISTRY_KEY = "config_registry";
+export const CONFIG_REGISTRY_KEY = "config_registry";
 
 /**
  * Get all configs from storage
