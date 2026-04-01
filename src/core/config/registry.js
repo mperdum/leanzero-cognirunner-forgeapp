@@ -4,6 +4,9 @@
 
 import { LOGS_STORAGE_KEY, storeLog } from './logger.js';
 
+// Re-export logger utilities for external access
+export { LOGS_STORAGE_KEY, storeLog };
+
 // Configuration
 export const CONFIG_REGISTRY_KEY = "config_registry";
 

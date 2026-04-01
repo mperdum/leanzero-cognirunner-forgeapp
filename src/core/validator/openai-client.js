@@ -107,6 +107,34 @@ export const promptRequiresTools = (prompt) => {
 // === Agentic tool infrastructure ===
 
 /**
+ * Extract display value from a Jira field (handles complex types like ADF, users, arrays)
+ */
+export const extractFieldDisplayValue = (value) => {
+  if (!value) return "";
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  
+  // ADF content
+  if (value.type === "doc" && value.content) {
+    return "[ADF content]";
+  }
+  
+  // User fields
+  if (value.displayName) return value.displayName;
+  
+  // Select fields
+  if (value.name) return value.name;
+  if (value.value) return value.value;
+  
+  // Arrays (multi-select, components, versions)
+  if (Array.isArray(value)) {
+    return value.map(extractFieldDisplayValue).filter(v => v).join(", ");
+  }
+  
+  // Fallback: JSON stringify complex objects
+  try { return JSON.stringify(value); } catch { return "[Complex]"; }
+};
+
+/**
  * Tool registry — maps tool names to their OpenAI function definition and executor.
  */
 export const TOOL_REGISTRY = {
@@ -127,6 +155,60 @@ export const TOOL_REGISTRY = {
           required: ["jql"],
         },
       },
+    },
+    execute: async ({ jql }, validatedFieldId) => {
+      try {
+        const fields = ["summary", "status"];
+        if (validatedFieldId && validatedFieldId !== "summary" && validatedFieldId !== "status") {
+          fields.push(validatedFieldId);
+        }
+
+        const response = await api.asApp().requestJira(
+          route`/rest/api/3/search/jql`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: JSON.stringify({
+              jql,
+              fields,
+              maxResults: MAX_JQL_RESULTS,
+            }),
+          },
+        );
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error("JQL search failed:", response.status, errorText.substring(0, 200));
+          return JSON.stringify({
+            error: `JQL search failed (${response.status}): ${errorText.substring(0, 200)}`,
+            issues: [],
+          });
+        }
+
+        const data = await response.json();
+        const issues = (data.issues || []).map((issue) => {
+          const result = {
+            key: issue.key,
+            summary: issue.fields?.summary || "(no summary)",
+            status: issue.fields?.status?.name || "Unknown",
+          };
+          if (validatedFieldId && validatedFieldId !== "summary" && issue.fields?.[validatedFieldId] != null) {
+            const raw = extractFieldDisplayValue(issue.fields[validatedFieldId]);
+            if (raw) {
+              result[validatedFieldId] = raw.substring(0, 500);
+            }
+          }
+          return result;
+        });
+
+        return JSON.stringify({ total: issues.length, issues });
+      } catch (error) {
+        console.error("JQL search error:", error);
+        return JSON.stringify({ error: `JQL search error: ${error.message}`, issues: [] });
+      }
     },
   },
 };

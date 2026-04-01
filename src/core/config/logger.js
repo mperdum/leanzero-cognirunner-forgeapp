@@ -4,7 +4,7 @@
 
 // Configuration
 const MAX_LOGS = 50;
-const LOGS_STORAGE_KEY = "validation_logs";
+export const LOGS_STORAGE_KEY = "validation_logs";
 
 /**
  * Store a validation log entry

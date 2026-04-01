@@ -5,7 +5,7 @@
 import api, { route } from '@forge/api';
 
 // Fields that are not available during issue creation.
-const FIELDS_UNAVAILABLE_ON_CREATE = new Set([
+export const FIELDS_UNAVAILABLE_ON_CREATE = new Set([
   "creator", "created", "updated", "resolutiondate",
   "resolution", "status", "statuscategorychangedate",
   "votes", "watches", "worklog", "comment",

@@ -17,14 +17,28 @@
  */
 
 import Resolver from "@forge/resolver";
-import api, { route } from '@forge/api';
+import api, { route, storage } from '@forge/api';
 import promptsModule from "./integration/prompts/index.js";
 
 // Import validator module
-import { callOpenAI, callOpenAIWithTools, downloadAttachment, buildAttachmentContentParts } from "./core/validator/openai-client.js";
+import { 
+  callOpenAI, 
+  callOpenAIWithTools,
+  getOpenAIKey,
+  getOpenAIModel,
+  promptRequiresTools,
+  TOOL_TRIGGER_PATTERN,
+  extractFieldDisplayValue,
+  downloadAttachment,
+  buildAttachmentContentParts,
+  FILE_MIME_TYPES,
+  IMAGE_MIME_TYPES,
+  MAX_ATTACHMENT_SIZE,
+  MAX_TOTAL_ATTACHMENT_SIZE
+} from "./core/validator/index.js";
 
 // Import post function modules
-import { executeSemanticPostFunction, getFieldValue, extractFieldDisplayValue } from "./core/post-function/semantic.js";
+import { executeSemanticPostFunction, getFieldValue } from "./core/post-function/semantic.js";
 import { executeStaticCodeSandbox } from "./core/post-function/static.js";
 
 // Import JIRA API helpers
@@ -43,91 +57,6 @@ import { MAX_LOGS } from "./core/config/logger.js";
 
 // App ID for rule identification in Jira workflows
 const APP_ID = "36415848-6868-4697-9554-3c3ad87b8da9";
-
-// Agentic validation constants
-const MAX_TOOL_ROUNDS = 3;
-const MAX_JQL_RESULTS = 10;
-const AGENTIC_TIMEOUT_MS = 22000;
-
-const TOOL_TRIGGER_PATTERN = /\b(duplicat(?:e[ds]?|ion)|already\s+(?:exists?|reported|created|filed|logged)|previously\s+(?:reported|created|filed|logged)|existing\s+(?:issues?|tickets?|bugs?|stor(?:y|ies)|tasks?)|redundan(?:t|cy)\s+(?:issues?|tickets?|bugs?|entries?)|identical\s+(?:issues?|tickets?|bugs?)|(?:similar|resembl(?:es?|ing))\s+(?:issues?|tickets?|bugs?|stor(?:y|ies)|tasks?|entries?)|no\s+duplicat|(?:search|query|check)\s+jira|find\s+(?:related|matching|existing)\s+(?:issues?|tickets?|bugs?|stor(?:y|ies)|tasks?)|cross[- ]?reference|compare\s+(?:against|with)\s+(?:existing|other|jira))\b/i;
-
-const TOOL_REGISTRY = {
-  search_jira_issues: {
-    definition: {
-      type: "function",
-      function: {
-        name: "search_jira_issues",
-        description: "Search for Jira issues using JQL (Jira Query Language). Use this to find similar issues, check for duplicates, or look up related work. Returns up to 10 issues with their key, summary, status, and the validated field's content (truncated to 500 chars).",
-        parameters: {
-          type: "object",
-          properties: {
-            jql: {
-              type: "string",
-              description: "A JQL query string. Must include a search restriction (project, text, summary, etc.). Examples: 'project = PROJ AND text ~ \"login error\"', 'summary ~ \"payment\" AND status != Done'",
-            },
-          },
-          required: ["jql"],
-        },
-      },
-    },
-    execute: async ({ jql }, validatedFieldId) => {
-      try {
-        const fields = ["summary", "status"];
-        if (validatedFieldId && validatedFieldId !== "summary" && validatedFieldId !== "status") {
-          fields.push(validatedFieldId);
-        }
-
-        const response = await api.asApp().requestJira(
-          route`/rest/api/3/search/jql`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Accept: "application/json",
-            },
-            body: JSON.stringify({
-              jql,
-              fields,
-              maxResults: MAX_JQL_RESULTS,
-            }),
-          },
-        );
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error("JQL search failed:", response.status, errorText.substring(0, 200));
-          return JSON.stringify({
-            error: `JQL search failed (${response.status}): ${errorText.substring(0, 200)}`,
-            issues: [],
-          });
-        }
-
-        const data = await response.json();
-        const issues = (data.issues || []).map((issue) => {
-          const result = {
-            key: issue.key,
-            summary: issue.fields?.summary || "(no summary)",
-            status: issue.fields?.status?.name || "Unknown",
-          };
-          if (validatedFieldId && validatedFieldId !== "summary" && issue.fields?.[validatedFieldId] != null) {
-            const raw = extractFieldDisplayValue(issue.fields[validatedFieldId]);
-            if (raw) {
-              result[validatedFieldId] = raw.substring(0, 500);
-            }
-          }
-          return result;
-        });
-
-        return JSON.stringify({ total: issues.length, issues });
-      } catch (error) {
-        console.error("JQL search error:", error);
-        return JSON.stringify({ error: `JQL search error: ${error.message}`, issues: [] });
-      }
-    },
-  },
-};
-
-const resolver = new Resolver();
 
 // Backward compatibility aliases for prompts
 export const JIRA_PROMPTS = promptsModule.JIRA_PROMPTS;
@@ -237,78 +166,6 @@ const loadPrompts = async (key = 'jira_prompts') => {
   } catch (error) {
     console.error('Failed to load prompts, using defaults:', error);
     return JIRA_PROMPTS;
-  }
-};
-
-// Get OpenAI configuration
-const getOpenAIKey = () => process.env.OPENAI_API_KEY;
-const getOpenAIModel = () => process.env.OPENAI_MODEL || "gpt-5-mini";
-
-/**
- * Check if a validation prompt's wording implies the need for JQL search tools.
- */
-const promptRequiresTools = (prompt) => {
-  if (!prompt || typeof prompt !== "string") return false;
-  return TOOL_TRIGGER_PATTERN.test(prompt);
-};
-
-// === Extracted Helper Functions ===
-
-/**
- * Execute a JQL search against Jira and return results as a JSON string.
- */
-const executeJqlSearch = async ({ jql }, validatedFieldId) => {
-  try {
-    const fields = ["summary", "status"];
-    if (validatedFieldId && validatedFieldId !== "summary" && validatedFieldId !== "status") {
-      fields.push(validatedFieldId);
-    }
-
-    const response = await api.asApp().requestJira(
-      route`/rest/api/3/search/jql`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({
-          jql,
-          fields,
-          maxResults: MAX_JQL_RESULTS,
-        }),
-      },
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("JQL search failed:", response.status, errorText.substring(0, 200));
-      return JSON.stringify({
-        error: `JQL search failed (${response.status}): ${errorText.substring(0, 200)}`,
-        issues: [],
-      });
-    }
-
-    const data = await response.json();
-    const issues = (data.issues || []).map((issue) => {
-      const result = {
-        key: issue.key,
-        summary: issue.fields?.summary || "(no summary)",
-        status: issue.fields?.status?.name || "Unknown",
-      };
-      if (validatedFieldId && validatedFieldId !== "summary" && issue.fields?.[validatedFieldId] != null) {
-        const raw = extractFieldDisplayValue(issue.fields[validatedFieldId]);
-        if (raw) {
-          result[validatedFieldId] = raw.substring(0, 500);
-        }
-      }
-      return result;
-    });
-
-    return JSON.stringify({ total: issues.length, issues });
-  } catch (error) {
-    console.error("JQL search error:", error);
-    return JSON.stringify({ error: `JQL search error: ${error.message}`, issues: [] });
   }
 };
 
@@ -448,7 +305,7 @@ export const validate = async (args) => {
     projectKey = modifiedFields.project.key;
   }
 
-  const deadline = useTools ? Date.now() + AGENTIC_TIMEOUT_MS : 0;
+  const deadline = useTools ? Date.now() + 22000 : 0;
   const issueContext = useTools
     ? (issue.key ? `Issue: ${issue.key}` : "New issue (being created)")
     : "";
@@ -485,10 +342,35 @@ export const validate = async (args) => {
       logFieldValue = summary;
       console.log(`Attachments: ${summary}`);
 
-      // Attachment download and processing logic would go here
+      // Filter to processable attachments within total size budget
+      let totalBudget = MAX_TOTAL_ATTACHMENT_SIZE;
+      const toDownload = [];
+      for (const att of attachments) {
+        const size = att.size || 0;
+        if (size > MAX_ATTACHMENT_SIZE) continue;
+        const mime = (att.mimeType || "").toLowerCase();
+        if (!FILE_MIME_TYPES.has(mime) && !IMAGE_MIME_TYPES.has(mime)) continue;
+        if (size > totalBudget) {
+          console.log(`Attachment "${att.filename}" (${Math.round(size / 1024)}KB) exceeds remaining budget, skipping`);
+          continue;
+        }
+        totalBudget -= size;
+        toDownload.push(att);
+      }
+
+      // Download attachment contents in parallel
+      const downloads = await Promise.all(toDownload.map(downloadAttachment));
+      const downloadedAttachments = downloads.filter((d) => d !== null);
+
+      console.log(`Successfully downloaded ${downloadedAttachments.length} of ${toDownload.length} attachments`);
+
+      // Build OpenAI message content parts from downloaded files
+      const attachmentParts = buildAttachmentContentParts(downloadedAttachments);
+      console.log(`Built ${attachmentParts.length} attachment content parts for OpenAI`);
+
       validationResult = useTools
-        ? await callOpenAIWithTools("", validationPrompt, undefined, issueContext, projectKey, fieldId, deadline)
-        : await callOpenAI("", validationPrompt);
+        ? await callOpenAIWithTools("", validationPrompt, attachmentParts, issueContext, projectKey, fieldId, deadline)
+        : await callOpenAI("", validationPrompt, attachmentParts);
     }
   } else {
     const fieldValue = await getFieldValue(issue.key, fieldId, modifiedFields);
