@@ -7,69 +7,103 @@ import api, { route } from '@forge/api';
 // Configuration constants
 const MAX_TOOL_ROUNDS = 3;
 
-/**
- * Download attachment from JIRA API
- */
-export const downloadAttachment = async (attachmentId) => {
-  try {
-    const response = await api.asApp().requestJira(route`/rest/api/3/attachment/${attachmentId}`, {
-      headers: { Accept: "application/json" },
-    });
+// Attachment size limits
+export const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10MB per file
+export const MAX_TOTAL_ATTACHMENT_SIZE = 20 * 1024 * 1024; // 20MB total
 
-    if (!response.ok) {
-      console.error("Failed to download attachment metadata:", response.status);
+// Supported mime types for OpenAI processing
+export const FILE_MIME_TYPES = new Set([
+  "application/pdf",
+  "text/plain",
+  "text/csv",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+]);
+
+export const IMAGE_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]);
+
+/**
+ * Download attachment content from JIRA API
+ */
+export const downloadAttachment = async (attachment) => {
+  try {
+    if (!attachment.id) {
+      console.log("Attachment missing id, skipping");
       return null;
     }
 
-    const data = await response.json();
-    return data;
+    // Skip attachments that are too large
+    if (attachment.size && attachment.size > MAX_ATTACHMENT_SIZE) {
+      console.log(`Attachment "${attachment.filename}" too large (${Math.round(attachment.size / 1024 / 1024)}MB), skipping`);
+      return null;
+    }
+
+    const mimeType = (attachment.mimeType || "").toLowerCase();
+
+    // Only download file types that OpenAI can process
+    if (!FILE_MIME_TYPES.has(mimeType) && !IMAGE_MIME_TYPES.has(mimeType)) {
+      console.log(`Attachment "${attachment.filename}" has unsupported type "${mimeType}", skipping content download`);
+      return null;
+    }
+
+    console.log(`Downloading attachment "${attachment.filename}" (${attachment.id}, ${mimeType})`);
+
+    const response = await api.asApp().requestJira(
+      route`/rest/api/3/attachment/content/${attachment.id}`,
+    );
+
+    if (!response.ok) {
+      console.error(`Failed to download attachment ${attachment.id}:`, response.status);
+      return null;
+    }
+
+    const buffer = await response.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString("base64");
+
+    return {
+      base64,
+      mimeType,
+      filename: attachment.filename || `attachment_${attachment.id}`,
+    };
   } catch (error) {
-    console.error("Error downloading attachment:", error);
+    console.error(`Error downloading attachment "${attachment.filename}":`, error);
     return null;
   }
 };
 
 /**
- * Build attachment content parts for multimodal OpenAI calls
+ * Build OpenAI message content parts from downloaded attachments.
+ * Images use the image_url content type; documents use the file content type.
  */
-export const buildAttachmentContentParts = async (attachments) => {
-  if (!attachments || !Array.isArray(attachments) || attachments.length === 0) {
-    return [];
-  }
-
+export const buildAttachmentContentParts = (downloadedAttachments) => {
   const parts = [];
 
-  for (const attachment of attachments) {
-    try {
-      // Download the attachment content
-      const response = await api.asApp().requestJira(route`/rest/api/3/attachment/${attachment.id}`, {
-        headers: { Accept: "*/*" },
-      });
+  for (const att of downloadedAttachments) {
+    if (!att) continue;
 
-      if (!response.ok) {
-        console.error(`Failed to download attachment ${attachment.id}:`, response.status);
-        continue;
-      }
-
-      const blob = await response.blob();
-      
-      // Create a data URL for the attachment
-      const reader = new FileReader();
-      const dataUrl = await new Promise((resolve, reject) => {
-        reader.onloadend = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-
+    if (IMAGE_MIME_TYPES.has(att.mimeType)) {
+      // Vision API: image_url with base64 data URI
       parts.push({
         type: "image_url",
         image_url: {
-          url: dataUrl,
+          url: `data:${att.mimeType};base64,${att.base64}`,
+          detail: "auto",
         },
       });
-    } catch (error) {
-      console.error(`Error processing attachment ${attachment.id}:`, error);
-      continue;
+    } else if (FILE_MIME_TYPES.has(att.mimeType)) {
+      // File content type for PDFs, DOCX, XLSX, etc.
+      parts.push({
+        type: "file",
+        file: {
+          filename: att.filename,
+          file_data: `data:${att.mimeType};base64,${att.base64}`,
+        },
+      });
     }
   }
 
@@ -94,7 +128,7 @@ export const getOpenAIModel = () => {
 };
 
 // Tool trigger patterns for agentic mode
-const TOOL_TRIGGER_PATTERN = /\b(duplicat(?:e[ds]?|ion)|already\s+(?:exists?|reported|created|filed|logged)|previously\s+(?:reported|created|filed|logged)|existing\s+(?:issues?|tickets?|bugs?|stor(?:y|ies)|tasks?)|redundan(?:t|cy)\s+(?:issues?|tickets?|bugs?|entries?)|identical\s+(?:issues?|tickets?|bugs?)|(?:similar|resembl(?:es?|ing))\s+(?:issues?|tickets?|bugs?|stor(?:y|ies)|tasks?|entries?)|no\s+duplicat|(?:search|query|check)\s+jira|find\s+(?:related|matching|existing)\s+(?:issues?|tickets?|bugs?|stor(?:y|ies)|tasks?)|cross[- ]?reference|compare\s+(?:against|with)\s+(?:existing|other|jira))\b/i;
+export const TOOL_TRIGGER_PATTERN = /\b(duplicat(?:e[ds]?|ion)|already\s+(?:exists?|reported|created|filed|logged)|previously\s+(?:reported|created|filed|logged)|existing\s+(?:issues?|tickets?|bugs?|stor(?:y|ies)|tasks?)|redundan(?:t|cy)\s+(?:issues?|tickets?|bugs?|entries?)|identical\s+(?:issues?|tickets?|bugs?)|(?:similar|resembl(?:es?|ing))\s+(?:issues?|tickets?|bugs?|stor(?:y|ies)|tasks?|entries?)|no\s+duplicat|(?:search|query|check)\s+jira|find\s+(?:related|matching|existing)\s+(?:issues?|tickets?|bugs?|stor(?:y|ies)|tasks?)|cross[- ]?reference|compare\s+(?:against|with)\s+(?:existing|other|jira))\b/i;
 
 /**
  * Check if a validation prompt's wording implies the need for JQL search tools.
