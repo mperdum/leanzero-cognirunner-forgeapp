@@ -129,4 +129,5 @@ export const getFieldValue = async (issueKey, fieldId, modifiedFields) => {
   return extractFieldDisplayValue(rawValue);
 };
 
-// Already imported from validator/openai-client.js - no need to duplicate
+// Re-export extractFieldDisplayValue for consumers of semantic.js module
+export { extractFieldDisplayValue };

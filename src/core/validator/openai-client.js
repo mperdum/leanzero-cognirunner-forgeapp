@@ -5,7 +5,7 @@
 import api, { route } from '@forge/api';
 
 // Configuration constants
-const MAX_TOOL_ROUNDS = 3;
+export const MAX_TOOL_ROUNDS = 3;
 
 // Attachment size limits
 export const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10MB per file
@@ -110,8 +110,8 @@ export const buildAttachmentContentParts = (downloadedAttachments) => {
   return parts;
 };
 
-const MAX_JQL_RESULTS = 10;
-const AGENTIC_TIMEOUT_MS = 22000; // 22s budget within Forge's 25s validator limit
+export const MAX_JQL_RESULTS = 10;
+export const AGENTIC_TIMEOUT_MS = 22000; // 22s budget within Forge's 25s validator limit
 
 /**
  * Get the OpenAI API key from environment variables
