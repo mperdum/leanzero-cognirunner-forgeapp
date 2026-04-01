@@ -131,6 +131,66 @@ export const getOpenAIModel = () => {
 export const TOOL_TRIGGER_PATTERN = /\b(duplicat(?:e[ds]?|ion)|already\s+(?:exists?|reported|created|filed|logged)|previously\s+(?:reported|created|filed|logged)|existing\s+(?:issues?|tickets?|bugs?|stor(?:y|ies)|tasks?)|redundan(?:t|cy)\s+(?:issues?|tickets?|bugs?|entries?)|identical\s+(?:issues?|tickets?|bugs?)|(?:similar|resembl(?:es?|ing))\s+(?:issues?|tickets?|bugs?|stor(?:y|ies)|tasks?|entries?)|no\s+duplicat|(?:search|query|check)\s+jira|find\s+(?:related|matching|existing)\s+(?:issues?|tickets?|bugs?|stor(?:y|ies)|tasks?)|cross[- ]?reference|compare\s+(?:against|with)\s+(?:existing|other|jira))\b/i;
 
 /**
+ * Extract text from Jira Atlassian Document Format (ADF) content
+ * Handles headings, lists, tables, code blocks, mentions, emojis, etc.
+ */
+export const extractTextFromADF = (adfContent) => {
+  if (!adfContent) return "";
+  if (typeof adfContent === "string") return adfContent;
+
+  const parts = [];
+
+  // Block-level node types that should be separated by newlines
+  const blockTypes = new Set([
+    "paragraph", "heading", "blockquote", "codeBlock",
+    "rule", "mediaSingle", "mediaGroup", "bulletList",
+    "orderedList", "listItem", "table", "tableRow",
+    "tableHeader", "tableCell", "panel", "decisionList",
+    "decisionItem", "taskList", "taskItem", "expand",
+  ]);
+
+  const extractFromNode = (node) => {
+    if (!node) return;
+
+    // Text nodes
+    if (node.type === "text" && node.text) {
+      parts.push(node.text);
+    }
+
+    // Inline nodes with attrs-based content
+    if (node.type === "mention" && node.attrs?.text) {
+      parts.push(node.attrs.text);
+    } else if (node.type === "emoji" && node.attrs?.shortName) {
+      parts.push(node.attrs.shortName);
+    } else if (node.type === "inlineCard" && node.attrs?.url) {
+      parts.push(node.attrs.url);
+    } else if (node.type === "date" && node.attrs?.timestamp) {
+      // Convert Unix timestamp to readable date
+      const ts = Number(node.attrs.timestamp);
+      parts.push(isNaN(ts) ? node.attrs.timestamp : new Date(ts).toISOString().split("T")[0]);
+    } else if (node.type === "status" && node.attrs?.text) {
+      parts.push(node.attrs.text);
+    } else if (node.type === "hardBreak") {
+      parts.push("\n");
+    }
+
+    // Recurse into child content
+    if (node.content && Array.isArray(node.content)) {
+      node.content.forEach((child, index) => {
+        extractFromNode(child);
+        // Add newline after block-level children (except the last one)
+        if (blockTypes.has(child.type) && index < node.content.length - 1) {
+          parts.push("\n");
+        }
+      });
+    }
+  };
+
+  extractFromNode(adfContent);
+  return parts.join("").trim();
+};
+
+/**
  * Check if a validation prompt's wording implies the need for JQL search tools.
  */
 export const promptRequiresTools = (prompt) => {
@@ -147,9 +207,22 @@ export const extractFieldDisplayValue = (value) => {
   if (!value) return "";
   if (typeof value === "string" || typeof value === "number") return String(value);
   
+  // Boolean
+  if (typeof value === "boolean") {
+    return value ? "Yes" : "No";
+  }
+  
   // ADF content
   if (value.type === "doc" && value.content) {
-    return "[ADF content]";
+    return extractTextFromADF(value);
+  }
+  
+  // Attachment objects — { id, filename, size, mimeType, author, created, ... }
+  if (value.filename && value.mimeType !== undefined) {
+    const parts = [value.filename];
+    if (value.size !== undefined) parts.push(`(${Math.round(value.size / 1024)}KB)`);
+    if (value.mimeType) parts.push(`[${value.mimeType}]`);
+    return parts.join(" ");
   }
   
   // User fields
@@ -161,6 +234,11 @@ export const extractFieldDisplayValue = (value) => {
   
   // Arrays (multi-select, components, versions)
   if (Array.isArray(value)) {
+    // Checklist for Jira (Okapya) — flat array format from Jira REST API
+    // Format: [{ name: "...", checked: true/false, mandatory: false, rank: 1, ... }]
+    if (value.length > 0 && value[0].name !== undefined && value[0].checked !== undefined) {
+      return value.map((item) => `[${item.checked ? "x" : " "}] ${item.name}`).join("\n");
+    }
     return value.map(extractFieldDisplayValue).filter(v => v).join(", ");
   }
   

@@ -38,8 +38,12 @@ import {
 } from "./core/validator/index.js";
 
 // Import post function modules
-import { executeSemanticPostFunction, getFieldValue } from "./core/post-function/semantic.js";
-import { executeStaticCodeSandbox } from "./core/post-function/static.js";
+import {
+  executeSemanticPostFunction,
+  executeStaticPostFunction,
+  executeStaticCodeSandbox,
+  getFieldValue,
+} from "./core/post-function/index.js";
 
 // Import JIRA API helpers
 import {

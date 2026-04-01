@@ -3,7 +3,7 @@
  */
 
 import api, { route } from '@forge/api';
-import { callOpenAI } from '../validator/openai-client.js';
+import { callOpenAI, extractFieldDisplayValue } from '../validator/openai-client.js';
 
 /**
  * Execute Semantic Post Function
@@ -106,6 +106,19 @@ export const getFieldValue = async (issueKey, fieldId, modifiedFields) => {
 
       const issue = await response.json();
       rawValue = issue.fields?.[fieldId];
+
+      // If the raw value is complex (ADF/object), try renderedFields as a pre-rendered HTML fallback
+      if (rawValue && typeof rawValue === "object" && issue.renderedFields?.[fieldId]) {
+        const rendered = issue.renderedFields[fieldId];
+        if (typeof rendered === "string" && rendered.length > 0) {
+          // Strip HTML tags to get plain text — use as fallback only if ADF extraction yields nothing
+          const adfResult = extractFieldDisplayValue(rawValue);
+          if (!adfResult || adfResult === "[Complex value]" || adfResult === "[ADF content]") {
+            return rendered.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+          }
+          return adfResult;
+        }
+      }
     } catch (error) {
       console.error("Error fetching issue:", error);
       return null;
@@ -116,107 +129,4 @@ export const getFieldValue = async (issueKey, fieldId, modifiedFields) => {
   return extractFieldDisplayValue(rawValue);
 };
 
-/**
- * Extract a human-readable text value from any Jira field type
- */
-export const extractFieldDisplayValue = (value) => {
-  if (value === null || value === undefined) {
-    return "";
-  }
-
-  if (typeof value === "string" || typeof value === "number") {
-    return String(value);
-  }
-
-  if (typeof value === "boolean") {
-    return value ? "Yes" : "No";
-  }
-
-  if (Array.isArray(value)) {
-    if (value.length > 0 && value[0].name !== undefined && value[0].checked !== undefined) {
-      return value
-        .map((item) => `[${item.checked ? "x" : " "}] ${item.name}`)
-        .join("\n");
-    }
-    return value
-      .map((item) => extractFieldDisplayValue(item))
-      .filter((v) => v)
-      .join(", ");
-  }
-
-  if (typeof value === "object") {
-    // ADF content
-    if (value.type === "doc" && value.content) {
-      const parts = [];
-      const blockTypes = new Set([
-        "paragraph", "heading", "blockquote", "codeBlock",
-        "rule", "mediaSingle", "mediaGroup", "bulletList",
-        "orderedList", "listItem", "table", "tableRow",
-        "tableHeader", "tableCell", "panel", "decisionList",
-        "decisionItem", "taskList", "taskItem", "expand",
-      ]);
-      
-      const extractFromNode = (node) => {
-        if (!node) return;
-        
-        if (node.type === "text" && node.text) {
-          parts.push(node.text);
-        }
-        
-        if (node.content && Array.isArray(node.content)) {
-          node.content.forEach((child, index) => {
-            extractFromNode(child);
-            if (blockTypes.has(child.type) && index < node.content.length - 1) {
-              parts.push("\n");
-            }
-          });
-        }
-      };
-      
-      extractFromNode(value);
-      return parts.join("").trim();
-    }
-
-    // Attachment
-    if (value.filename && value.mimeType !== undefined) {
-      const parts = [value.filename];
-      if (value.size !== undefined) parts.push(`(${Math.round(value.size / 1024)}KB)`);
-      if (value.mimeType) parts.push(`[${value.mimeType}]`);
-      return parts.join(" ");
-    }
-
-    // User
-    if (value.displayName) {
-      return value.displayName;
-    }
-    
-    // Project
-    if (value.key && value.name) {
-      return `${value.name} (${value.key})`;
-    }
-
-    // Status/Resolution/etc.
-    if (value.name) {
-      return value.name;
-    }
-    if (value.value) {
-      return value.value;
-    }
-
-    try {
-      const keys = Object.keys(value);
-      if (keys.length <= 5) {
-        const readable = keys
-          .filter((k) => typeof value[k] === "string" || typeof value[k] === "number")
-          .map((k) => `${k}: ${value[k]}`)
-          .join(", ");
-        if (readable) return readable;
-      }
-      return JSON.stringify(value);
-    } catch {
-      return "[Complex value]";
-    }
-  }
-
-  return String(value);
-};
+// Already imported from validator/openai-client.js - no need to duplicate
