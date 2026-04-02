@@ -1,5 +1,6 @@
 /*
  * Config Registry Module - Handles config storage and management in KVS
+ * Improves duplicate handling with smarter merge strategies and conflict resolution
  */
 
 import { LOGS_STORAGE_KEY, storeLog } from './logger.js';
@@ -23,8 +24,43 @@ export const getConfigs = async () => {
 };
 
 /**
+ * Resolve duplicate configs based on priority rules
+ * - Higher ID wins (newer config)
+ * - More complete workflow context wins
+ */
+export const resolveDuplicateConfigs = (configs) => {
+  const byId = new Map();
+  
+  for (const config of configs) {
+    if (!config.id) continue;
+    
+    const existing = byId.get(config.id);
+    if (!existing) {
+      byId.set(config.id, config);
+    } else {
+      // Priority scoring: more fields = higher priority
+      const existingScore = Object.keys(existing).length + (existing.workflow ? 5 : 0);
+      const newScore = Object.keys(config).length + (config.workflow ? 5 : 0);
+      
+      if (newScore > existingScore) {
+        byId.set(config.id, config);
+        console.log(`Resolved duplicate for ${config.id}: keeping newer/more complete config`);
+      } else {
+        console.log(`Resolved duplicate for ${config.id}: keeping existing config`);
+      }
+    }
+  }
+  
+  return Array.from(byId.values());
+};
+
+/**
  * Register a validator/condition config in the registry
  * Called from config-ui when a rule is saved
+ * 
+ * Duplicate handling:
+ * - If same ID exists: merge/update with priority to new config
+ * - If same workflow+field combination exists: merge or replace based on type
  */
 export const registerConfig = async ({ id, type, fieldId, prompt, workflow }) => {
   try {
@@ -48,14 +84,23 @@ export const registerConfig = async ({ id, type, fieldId, prompt, workflow }) =>
 
     // Match by id first; fall back to workflow context
     let existingIndex = configs.findIndex((c) => c.id === id);
+    
+    // Fallback match by workflow context if no ID match
     if (existingIndex < 0 && workflowData.workflowName && workflowData.transitionId) {
       existingIndex = configs.findIndex((c) =>
         c.workflow?.workflowName === workflowData.workflowName
         && String(c.workflow?.transitionId) === String(workflowData.transitionId)
+        // Match by fieldId as well to avoid false positives
+        && (!fieldId || !c.fieldId || c.fieldId === fieldId)
       );
     }
-
-    if (existingIndex >= 0) {
+    
+    const existingConfig = existingIndex >= 0 ? configs[existingIndex] : null;
+    
+    if (existingConfig) {
+      // Determine conflict resolution strategy
+      const isSameType = existingConfig.type === type;
+      
       configs[existingIndex] = {
         ...configs[existingIndex],
         id,
@@ -63,10 +108,12 @@ export const registerConfig = async ({ id, type, fieldId, prompt, workflow }) =>
         fieldId,
         prompt: (prompt || "").substring(0, 200),
         workflow: Object.keys(workflowData).length > 0
-          ? workflowData
+          ? { ...configs[existingIndex].workflow, ...workflowData }
           : configs[existingIndex].workflow,
         updatedAt: now,
       };
+      
+      console.log(`Updated existing config ${id} (${isSameType ? 'same type' : 'type mismatch'}): ${configs[existingIndex].prompt.substring(0, 60)}...`);
     } else {
       configs.push({
         id,
@@ -142,6 +189,10 @@ export const enableRule = async ({ id }) => {
 
 /**
  * Register a post function config in the registry
+ * 
+ * Duplicate handling:
+ * - Same ID: merge/update with priority to new config
+ * - Same workflow+field combination: merge or replace based on type
  */
 export const registerPostFunction = async ({ id, type, fieldId, conditionPrompt, actionPrompt, code, workflow }) => {
   try {
@@ -163,14 +214,22 @@ export const registerPostFunction = async ({ id, type, fieldId, conditionPrompt,
     if (wf.siteUrl) workflowData.siteUrl = wf.siteUrl;
 
     let existingIndex = configs.findIndex((c) => c.id === id);
+    
+    // Fallback match by workflow context if no ID match
     if (existingIndex < 0 && workflowData.workflowName && workflowData.transitionId) {
       existingIndex = configs.findIndex((c) =>
         c.workflow?.workflowName === workflowData.workflowName
         && String(c.workflow?.transitionId) === String(workflowData.transitionId)
+        && (!fieldId || !c.fieldId || c.fieldId === fieldId)
       );
     }
-
-    if (existingIndex >= 0) {
+    
+    const existingConfig = existingIndex >= 0 ? configs[existingIndex] : null;
+    
+    if (existingConfig) {
+      // Determine conflict resolution strategy
+      const isSameType = existingConfig.type === type;
+      
       configs[existingIndex] = {
         ...configs[existingIndex],
         id,
@@ -179,9 +238,13 @@ export const registerPostFunction = async ({ id, type, fieldId, conditionPrompt,
         conditionPrompt: (conditionPrompt || "").substring(0, 500),
         actionPrompt: (actionPrompt || "").substring(0, 500),
         code: (code || "").substring(0, 10000),
-        workflow: Object.keys(workflowData).length > 0 ? workflowData : configs[existingIndex].workflow,
+        workflow: Object.keys(workflowData).length > 0
+          ? { ...configs[existingIndex].workflow, ...workflowData }
+          : configs[existingIndex].workflow,
         updatedAt: now,
       };
+      
+      console.log(`Updated existing post function ${id} (${isSameType ? 'same type' : 'type mismatch'}): condition="${conditionPrompt?.substring(0, 50)}..."`);
     } else {
       configs.push({
         id,

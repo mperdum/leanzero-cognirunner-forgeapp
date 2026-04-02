@@ -351,9 +351,20 @@ const injectStyles = () => {
       color: #FF991F;
     }
 
+    .alert-success {
+      background: rgba(0, 102, 68, 0.08);
+      border-color: var(--success-color);
+      color: var(--success-color);
+    }
+
     html[data-color-mode="dark"] .alert-warning {
       color: #F5CD47;
       border-color: #F5CD47;
+    }
+
+    html[data-color-mode="dark"] .alert-success {
+      color: var(--success-color);
+      border-color: var(--success-color);
     }
 
     .alert-dismiss {
@@ -427,6 +438,7 @@ function App() {
     try {
       await invoke("clearLogs");
       setLogs([]);
+      setSuccessMessage("Logs cleared successfully");
     } catch (e) {
       console.error("Failed to clear logs:", e);
     }
@@ -435,9 +447,23 @@ function App() {
 
   const [toggleError, setToggleError] = useState(null);
   const [toggleWarning, setToggleWarning] = useState(null);
+  
+  // Success toast for enable/disable operations
+  const [successMessage, setSuccessMessage] = useState("");
+  
+  useEffect(() => {
+    if (successMessage) {
+      const timer = setTimeout(() => setSuccessMessage(""), 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [successMessage]);
 
   const handleToggleRule = async () => {
     if (!invoke || !ruleId) return;
+    
+    // Optimistic update
+    setRuleDisabled(!ruleDisabled);
+    
     setToggling(true);
     setToggleError(null);
     setToggleWarning(null);
@@ -445,18 +471,29 @@ function App() {
       const action = ruleDisabled ? "enableRule" : "disableRule";
       const result = await invoke(action, { id: ruleId });
       if (result.success) {
+        // Update with server response
         setRuleDisabled(result.disabled);
         if (result.warning) {
           setToggleWarning(result.warning);
         }
       } else {
+        // Rollback on error
+        setRuleDisabled(ruleDisabled);
         setToggleError(result.error || "Failed to update rule. Please try again.");
       }
     } catch (e) {
       console.error("Failed to toggle rule:", e);
+      // Rollback on error
+      setRuleDisabled(ruleDisabled);
       setToggleError("Failed to communicate with the server. Please try again.");
     }
     setToggling(false);
+    
+    // Show success message after successful toggle
+    if (!toggleError && !toggleWarning) {
+      const actionName = ruleDisabled ? "enabled" : "disabled";
+      setSuccessMessage(`Rule ${actionName} successfully`);
+    }
   };
 
   const formatTime = (timestamp) => {
@@ -886,6 +923,15 @@ function App() {
     <div className="container">
       {licenseBanner}
       {statusBanner}
+      {successMessage && (
+        <div className="alert alert-success">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M20 6L9 17l-5-5" />
+          </svg>
+          <span>{successMessage}</span>
+        </div>
+      )}
+
       {toggleAlerts}
 
       {/* Post Function Type Indicator */}

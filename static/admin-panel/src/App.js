@@ -427,9 +427,20 @@ const injectStyles = () => {
       color: #FF991F;
     }
 
+    .alert-success {
+      background: rgba(0, 102, 68, 0.08);
+      border-color: var(--success-color);
+      color: var(--success-color);
+    }
+
     html[data-color-mode="dark"] .alert-warning {
       color: #F5CD47;
       border-color: #F5CD47;
+    }
+
+    html[data-color-mode="dark"] .alert-success {
+      color: var(--success-color);
+      border-color: var(--success-color);
     }
 
     .alert-dismiss {
@@ -499,6 +510,7 @@ function App() {
     try {
       await invoke("clearLogs");
       setLogs([]);
+      setSuccessMessage("Logs cleared successfully");
     } catch (e) {
       console.error("Failed to clear logs:", e);
     }
@@ -511,9 +523,27 @@ function App() {
   const [toggling, setToggling] = useState(null);
   const [toggleError, setToggleError] = useState(null);
   const [toggleWarning, setToggleWarning] = useState(null);
+  
+  // Success toast for enable/disable operations
+  const [successMessage, setSuccessMessage] = useState("");
+  
+  useEffect(() => {
+    if (successMessage) {
+      const timer = setTimeout(() => setSuccessMessage(""), 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [successMessage]);
 
   const toggleRule = async (id, currentlyDisabled) => {
     if (!invoke) return;
+    
+    // Optimistic update
+    setConfigs((prev) =>
+      prev.map((c) =>
+        c.id === id ? { ...c, disabled: !currentlyDisabled, updatedAt: new Date().toISOString() } : c
+      )
+    );
+    
     setToggling(id);
     setToggleError(null);
     setToggleWarning(null);
@@ -521,6 +551,7 @@ function App() {
       const action = currentlyDisabled ? "enableRule" : "disableRule";
       const result = await invoke(action, { id });
       if (result.success) {
+        // Update with server response
         setConfigs((prev) =>
           prev.map((c) =>
             c.id === id ? { ...c, disabled: result.disabled, updatedAt: new Date().toISOString() } : c
@@ -530,13 +561,31 @@ function App() {
           setToggleWarning(result.warning);
         }
       } else {
+        // Rollback on error
+        setConfigs((prev) =>
+          prev.map((c) =>
+            c.id === id ? { ...c, disabled: currentlyDisabled, updatedAt: new Date().toISOString() } : c
+          )
+        );
         setToggleError(result.error || "Failed to update rule. Please try again.");
       }
     } catch (e) {
       console.error("Failed to toggle rule:", e);
+      // Rollback on error
+      setConfigs((prev) =>
+        prev.map((c) =>
+          c.id === id ? { ...c, disabled: currentlyDisabled, updatedAt: new Date().toISOString() } : c
+        )
+      );
       setToggleError("Failed to communicate with the server. Please try again.");
     }
     setToggling(null);
+    
+    // Show success message after successful toggle
+    if (!toggleError && !toggleWarning) {
+      const actionName = currentlyDisabled ? "enabled" : "disabled";
+      setSuccessMessage(`Rule ${actionName} successfully`);
+    }
   };
 
   const formatTime = (timestamp) => {
@@ -661,6 +710,15 @@ function App() {
           </svg>
           <span>{toggleWarning}</span>
           <button className="alert-dismiss" onClick={() => setToggleWarning(null)}>&times;</button>
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="alert alert-success">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M20 6L9 17l-5-5" />
+          </svg>
+          <span>{successMessage}</span>
         </div>
       )}
 

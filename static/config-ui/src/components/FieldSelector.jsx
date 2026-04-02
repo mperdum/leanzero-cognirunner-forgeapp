@@ -45,7 +45,6 @@ export const FieldSelector = ({
       </>
     );
   }
-
   const options = fields.map((f) => ({
     id: f.id,
     label: f.name,
@@ -67,7 +66,6 @@ export const FieldSelector = ({
         emptyMessage="No fields match your search"
         renderOption={(opt) => opt.label}
       />
-      {error && <p className="hint" style={{ color: "var(--error-color)" }}>{error}</p>}
     </div>
   );
 };

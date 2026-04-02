@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import React from "react";
+import React, { useState } from "react";
 
 /**
  * FunctionBlock Component - Individual function block in the static builder
@@ -17,6 +17,31 @@ export const FunctionBlock = ({
   onRemove,
 }) => {
   const { id, name, conditionPrompt, operationType, operationPrompt, endpoint, method, variableName, code, includeBackoff } = functionData;
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const handleRegenerateCode = async () => {
+    if (!conditionPrompt || !operationPrompt) return;
+
+    setIsGenerating(true);
+    try {
+      // Simulate AI generation with a small delay for better UX
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      
+      const generatedCode = generateFunctionCode(
+        conditionPrompt,
+        operationType,
+        operationPrompt,
+        endpoint,
+        method
+      );
+      
+      onUpdate({ code: generatedCode });
+    } catch (error) {
+      console.error("Failed to regenerate code:", error);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   return (
     <div className="function-block">
@@ -244,12 +269,17 @@ export const FunctionBlock = ({
               <button
                 type="button"
                 className="small-button"
-                onClick={() => {
-                  const generatedCode = generateFunctionCode(conditionPrompt, operationType, operationPrompt, endpoint, method);
-                  onUpdate({ code: generatedCode });
-                }}
+                onClick={handleRegenerateCode}
+                disabled={isGenerating}
               >
-                Regenerate Code with AI
+                {isGenerating ? (
+                  <>
+                    <span className="spinner-small" style={{ marginRight: "6px", display: "inline-block" }}></span>
+                    Generating code...
+                  </>
+                ) : (
+                  <>Regenerate Code with AI</>
+                )}
               </button>
               <label className="backoff-checkbox">
                 <input
