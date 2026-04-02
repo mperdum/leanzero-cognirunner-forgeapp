@@ -17,7 +17,8 @@
  */
 
 import Resolver from "@forge/resolver";
-import api, { route, storage } from '@forge/api';
+import api, { route } from '@forge/api';
+import { kvs } from '@forge/kvs';
 import promptsModule from "./integration/prompts/index.js";
 
 // Import validator module
@@ -150,7 +151,7 @@ const getPromptsByCategory = (category, prompts = JIRA_PROMPTS) => {
 
 const storePrompts = async (key = 'jira_prompts') => {
   try {
-    await storage.set(key, JIRA_PROMPTS);
+    await kvs.set({ key, value: JIRA_PROMPTS });
     console.log(`Stored ${Object.keys(JIRA_PROMPTS).length} prompts in KVS`);
   } catch (error) {
     console.error('Failed to store prompts:', error);
@@ -159,7 +160,7 @@ const storePrompts = async (key = 'jira_prompts') => {
 
 const loadPrompts = async (key = 'jira_prompts') => {
   try {
-    const stored = await storage.get(key);
+    const { value: stored } = await kvs.get({ key });
     if (stored) {
       console.log(`Loaded ${Object.keys(stored).length} prompts from KVS`);
       return stored;
@@ -187,7 +188,7 @@ const executePostFunctionInternal = async ({ issueKey, config, dryRun = false, c
 
     let postFunctionConfig = config;
     if (!config.code && !config.conditionPrompt && config.id) {
-      const configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+      const { value: configs } = await kvs.get({ key: CONFIG_REGISTRY_KEY }) || [];
       const loadedConfig = configs.find((c) => c.id === config.id);
       if (!loadedConfig) {
         return { success: false, error: "Post function configuration not found" };
@@ -282,7 +283,7 @@ export const validate = async (args) => {
   }
 
   try {
-    const configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    const { value: configs } = await kvs.get({ key: CONFIG_REGISTRY_KEY }) || [];
     const matchingConfig = configs.find((c) =>
       c.fieldId === (configuration?.fieldId || process.env.VALIDATE_FIELD_ID || "description")
       && c.disabled === true
@@ -417,7 +418,7 @@ export const validate = async (args) => {
 
 resolver.define("getJiraPrompts", async () => {
   try {
-    const prompts = await loadPrompts();
+    const { value: prompts } = await kvs.get({ key: 'jira_prompts' });
     return { success: true, prompts };
   } catch (error) {
     console.error("Failed to get JIRA prompts:", error);
@@ -428,7 +429,7 @@ resolver.define("getJiraPrompts", async () => {
 resolver.define("searchJiraPrompts", async ({ payload }) => {
   try {
     const { query, category } = payload || {};
-    const allPrompts = await loadPrompts();
+    const { value: allPrompts } = await kvs.get({ key: 'jira_prompts' });
     
     let results = searchPrompts(query, allPrompts);
     
@@ -446,7 +447,7 @@ resolver.define("searchJiraPrompts", async ({ payload }) => {
 resolver.define("getJiraPromptById", async ({ payload }) => {
   try {
     const { promptId } = payload || {};
-    const allPrompts = await loadPrompts();
+    const { value: allPrompts } = await kvs.get({ key: 'jira_prompts' });
     const prompt = getPromptById(promptId, allPrompts);
     
     return { success: !!prompt, prompt };
@@ -458,7 +459,7 @@ resolver.define("getJiraPromptById", async ({ payload }) => {
 
 resolver.define("getJiraCategories", async () => {
   try {
-    const allPrompts = await loadPrompts();
+    const { value: allPrompts } = await kvs.get({ key: 'jira_prompts' });
     const categories = getAllCategories(allPrompts);
     
     return { success: true, categories };
@@ -477,7 +478,7 @@ resolver.define("checkLicense", ({ context }) => {
 
 resolver.define("getLogs", async () => {
   try {
-    const logs = (await storage.get(LOGS_STORAGE_KEY)) || [];
+    const { value: logs } = await kvs.get({ key: LOGS_STORAGE_KEY }) || [];
     return { success: true, logs };
   } catch (error) {
     console.error("Failed to get logs:", error);
@@ -487,7 +488,7 @@ resolver.define("getLogs", async () => {
 
 resolver.define("clearLogs", async () => {
   try {
-    await storage.set(LOGS_STORAGE_KEY, []);
+    await kvs.set({ key: LOGS_STORAGE_KEY, value: [] });
     return { success: true };
   } catch (error) {
     console.error("Failed to clear logs:", error);
@@ -502,7 +503,7 @@ resolver.define("registerConfig", async ({ payload }) => {
       return { success: false, error: "Missing required fields" };
     }
 
-    let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    let { value: configs } = await kvs.get({ key: CONFIG_REGISTRY_KEY }) || [];
     const now = new Date().toISOString();
 
     const wf = workflow || {};
@@ -547,7 +548,7 @@ resolver.define("registerConfig", async ({ payload }) => {
       });
     }
 
-    await storage.set(CONFIG_REGISTRY_KEY, configs);
+    await kvs.set({ key: CONFIG_REGISTRY_KEY, value: configs });
     return { success: true };
   } catch (error) {
     console.error("Failed to register config:", error);
@@ -558,9 +559,9 @@ resolver.define("registerConfig", async ({ payload }) => {
 resolver.define("removeConfig", async ({ payload }) => {
   try {
     const { id } = payload;
-    let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    let { value: configs } = await kvs.get({ key: CONFIG_REGISTRY_KEY }) || [];
     configs = configs.filter((c) => c.id !== id);
-    await storage.set(CONFIG_REGISTRY_KEY, configs);
+    await kvs.set({ key: CONFIG_REGISTRY_KEY, value: configs });
     return { success: true };
   } catch (error) {
     console.error("Failed to remove config:", error);
@@ -571,13 +572,13 @@ resolver.define("removeConfig", async ({ payload }) => {
 resolver.define("disableRule", async ({ payload }) => {
   try {
     const { id } = payload;
-    let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    let { value: configs } = await kvs.get({ key: CONFIG_REGISTRY_KEY }) || [];
     const config = configs.find((c) => c.id === id);
     if (!config) {
       return { success: false, error: "Config not found in registry" };
     }
     configs = configs.map((c) => c.id === id ? { ...c, disabled: true, updatedAt: new Date().toISOString() } : c);
-    await storage.set(CONFIG_REGISTRY_KEY, configs);
+    await kvs.set({ key: CONFIG_REGISTRY_KEY, value: configs });
     return { success: true, disabled: true };
   } catch (error) {
     console.error("Failed to disable rule:", error);
@@ -588,13 +589,13 @@ resolver.define("disableRule", async ({ payload }) => {
 resolver.define("enableRule", async ({ payload }) => {
   try {
     const { id } = payload;
-    let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    let { value: configs } = await kvs.get({ key: CONFIG_REGISTRY_KEY }) || [];
     const config = configs.find((c) => c.id === id);
     if (!config) {
       return { success: false, error: "Config not found in registry" };
     }
     configs = configs.map((c) => c.id === id ? { ...c, disabled: false, updatedAt: new Date().toISOString() } : c);
-    await storage.set(CONFIG_REGISTRY_KEY, configs);
+    await kvs.set({ key: CONFIG_REGISTRY_KEY, value: configs });
     return { success: true, disabled: false };
   } catch (error) {
     console.error("Failed to enable rule:", error);
@@ -609,7 +610,7 @@ resolver.define("registerPostFunction", async ({ payload }) => {
       return { success: false, error: "Missing required fields" };
     }
 
-    let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    let { value: configs } = await kvs.get({ key: CONFIG_REGISTRY_KEY }) || [];
     const now = new Date().toISOString();
 
     const wf = workflow || {};
@@ -656,7 +657,7 @@ resolver.define("registerPostFunction", async ({ payload }) => {
       });
     }
 
-    await storage.set(CONFIG_REGISTRY_KEY, configs);
+    await kvs.set({ key: CONFIG_REGISTRY_KEY, value: configs });
     return { success: true };
   } catch (error) {
     console.error("Failed to register post function:", error);
@@ -667,9 +668,9 @@ resolver.define("registerPostFunction", async ({ payload }) => {
 resolver.define("removePostFunction", async ({ payload }) => {
   try {
     const { id } = payload;
-    let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    let { value: configs } = await kvs.get({ key: CONFIG_REGISTRY_KEY }) || [];
     configs = configs.filter((c) => c.id !== id);
-    await storage.set(CONFIG_REGISTRY_KEY, configs);
+    await kvs.set({ key: CONFIG_REGISTRY_KEY, value: configs });
     return { success: true };
   } catch (error) {
     console.error("Failed to remove post function:", error);
@@ -680,13 +681,13 @@ resolver.define("removePostFunction", async ({ payload }) => {
 resolver.define("disablePostFunction", async ({ payload }) => {
   try {
     const { id } = payload;
-    let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    let { value: configs } = await kvs.get({ key: CONFIG_REGISTRY_KEY }) || [];
     const config = configs.find((c) => c.id === id);
     if (!config) {
       return { success: false, error: "Config not found in registry" };
     }
     configs = configs.map((c) => c.id === id ? { ...c, disabled: true, updatedAt: new Date().toISOString() } : c);
-    await storage.set(CONFIG_REGISTRY_KEY, configs);
+    await kvs.set({ key: CONFIG_REGISTRY_KEY, value: configs });
     return { success: true, disabled: true };
   } catch (error) {
     console.error("Failed to disable post function:", error);
@@ -697,13 +698,13 @@ resolver.define("disablePostFunction", async ({ payload }) => {
 resolver.define("enablePostFunction", async ({ payload }) => {
   try {
     const { id } = payload;
-    let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    let { value: configs } = await kvs.get({ key: CONFIG_REGISTRY_KEY }) || [];
     const config = configs.find((c) => c.id === id);
     if (!config) {
       return { success: false, error: "Config not found in registry" };
     }
     configs = configs.map((c) => c.id === id ? { ...c, disabled: false, updatedAt: new Date().toISOString() } : c);
-    await storage.set(CONFIG_REGISTRY_KEY, configs);
+    await kvs.set({ key: CONFIG_REGISTRY_KEY, value: configs });
     return { success: true, disabled: false };
   } catch (error) {
     console.error("Failed to enable post function:", error);
@@ -714,7 +715,7 @@ resolver.define("enablePostFunction", async ({ payload }) => {
 resolver.define("getPostFunctionStatus", async ({ payload }) => {
   try {
     const { id } = payload;
-    const configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    const { value: configs } = await kvs.get({ key: CONFIG_REGISTRY_KEY }) || [];
     const config = configs.find((c) => c.id === id);
     if (config) {
       return { found: true, disabled: config.disabled === true, registryId: config.id };
@@ -728,7 +729,7 @@ resolver.define("getPostFunctionStatus", async ({ payload }) => {
 
 resolver.define("getConfigs", async () => {
   try {
-    const configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    const { value: configs } = await kvs.get({ key: CONFIG_REGISTRY_KEY }) || [];
     if (configs.length === 0) {
       return { success: true, configs: [], removedCount: 0 };
     }
@@ -777,9 +778,9 @@ resolver.define("getConfigs", async () => {
       }
     }
 
-    if (removed.length > 0) {
-      await storage.set(CONFIG_REGISTRY_KEY, surviving);
-    }
+      if (removed.length > 0) {
+        await kvs.set({ key: CONFIG_REGISTRY_KEY, value: surviving });
+      }
 
     return { success: true, configs: surviving, removedCount: removed.length };
   } catch (error) {
@@ -791,7 +792,7 @@ resolver.define("getConfigs", async () => {
 resolver.define("getRuleStatus", async ({ payload }) => {
   try {
     const { id, fieldId, prompt } = payload;
-    const configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    const { value: configs } = await kvs.get({ key: CONFIG_REGISTRY_KEY }) || [];
 
     if (id) {
       const config = configs.find((c) => c.id === id);
