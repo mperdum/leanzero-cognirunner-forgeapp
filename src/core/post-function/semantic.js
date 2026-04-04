@@ -1,68 +1,120 @@
 /*
- * Semantic Post Function Module - Handles semantic AI-based post function execution
+ * Semantic Post Function Module - Handles agentic AI-based post function execution
  */
 
 import api, { route } from '@forge/api';
-import { callOpenAI, extractFieldDisplayValue } from '../validator/openai-client.js';
+import { callOpenAIWithTools, extractFieldDisplayValue } from '../validator/openai-client.js';
 
 /**
- * Execute Semantic Post Function
+ * Execute a semantic post-function using an agentic approach.
+ * This combines condition checking and action generation into a single AI call
+ * to reduce latency/cost and allow the use of Jira tools for smarter decisions.
+ * 
+ * @param {Object} issueContext - The context of the issue being transitioned (includes projectKey, etc.).
+ * @param {string} combinedPrompt - A unified prompt that describes both the condition AND the action.
+ *                                 Example: "Check if the description contains 'Urgent'. If it does, set the Priority field to 'High'."
+ * @param {string} fieldId - The ID of the field used in the condition (for context).
+ * @param {string} actionFieldId - The ID of the field that should be updated.
+ * @param {Object} options - Additional options like dryRun, transition, etc.
+ * @returns {Promise<Object>} An object indicating success or failure and whether the post-function was skipped.
  */
-export const executeSemanticPostFunction = async ({ issueContext, conditionPrompt, actionPrompt, fieldId, actionFieldId, dryRun, changelog, transition, workflow }) => {
-  console.log(`executeSemanticPostFunction: issue=${issueContext.key}, validationField=${fieldId}, actionField=${actionFieldId}`);
-  
-  // Log transition information (Forge best practice)
-  if (transition?.executionId) {
-    console.log(`Transition execution ID: ${transition.executionId}`);
-  }
-  if (changelog && changelog.length > 0) {
-    console.log(`Changelog entries: ${changelog.length} field(s) changed`);
-    changelog.forEach(entry => {
-      console.log(`  - ${entry.field}: "${entry.from}" -> "${entry.to}"`);
-    });
-  }
-
+export const executeSemanticPostFunction = async (
+  { issueContext, combinedPrompt, fieldId, actionFieldId, dryRun, transition },
+) => {
   try {
-    // Always get the modifiedFields from context if available (transition in progress)
-    const modifiedFields = issueContext.modifiedFields || null;
+    console.log(`Executing agentic semantic post-function: ${fieldId} -> ${actionFieldId}`);
+
+    // 1. Get the current value of the field to provide context for the AI
+    const fieldValue = await getFieldValue(issueContext.key, fieldId, issueContext.modifiedFields);
+    console.log(`Current value for ${fieldId}: ${fieldValue}`);
+
+    // 2. Use Agentic AI to evaluate condition and decide on action in one pass
+    console.log("Running agentic decision loop...");
+    const deadline = Date.now() + 20000; // 20s budget for the process
     
-    // For condition check, we evaluate against the field being validated
-    let fieldValueToValidate = await getFieldValue(issueContext.key, fieldId, modifiedFields);
-    
-    if (conditionPrompt && conditionPrompt.trim()) {
-      const conditionResult = await callOpenAI(fieldValueToValidate, conditionPrompt);
-      
-      if (!conditionResult.isValid) {
-        return { success: true, skipped: true, reason: `Condition not met: ${conditionResult.reason}` };
+    // Construct a specialized prompt that instructs the AI to return a structured JSON verdict
+    const unifiedPrompt = `
+      You are an automated Jira workflow agent. Your goal is to evaluate a condition and perform an action based on it.
+
+      CONDITION:
+      Does the current state of the issue satisfy this criteria? 
+      Criteria: ${combinedPrompt}
+      Current value of "${fieldId}": ${fieldValue || "(empty)"}
+
+      ACTION:
+      If (and only if) the condition is satisfied, determine the new value for the field "${actionFieldId}".
+
+      DECISION RULES:
+      - If the condition is NOT met, you must decide to SKIP.
+      - If the condition IS met, you must decide to UPDATE and provide the new value for "${actionFieldId}".
+
+      REQUIRED JSON RESPONSE FORMAT:
+      You MUST respond with ONLY a valid JSON object in this format:
+      {
+        "decision": "UPDATE" | "SKIP",
+        "value": "the new value if updating, otherwise null",
+        "reason": "short explanation of your decision"
       }
-      console.log(`Semantic post function condition passed`);
+
+      Do not include any text, markdown, or explanations outside the JSON object.
+    `;
+
+    const agenticResult = await callOpenAIWithTools(
+      fieldValue,
+      unifiedPrompt,
+      [], // No attachments for this specific logic currently
+      issueContext.summary || "", 
+      issueContext.projectKey || "",
+      fieldId,
+      deadline
+    );
+
+    // Handle AI service failures or timeouts (fail open to allow transition)
+    if (!agenticResult.isValid && agenticResult.reason?.includes("timed out")) {
+        console.log("Agentic loop timed out. Failing open (allowing transition).");
+        return { success: true, skipped: true };
     }
 
-    // Now execute the action on the target field
-    let currentActionFieldValue = await getFieldValue(issueContext.key, actionFieldId, modifiedFields);
-    
-    if (!actionPrompt || !actionPrompt.trim()) {
-      return { success: false, error: "Action prompt is required for semantic post functions" };
-    }
-    
-    const actionResult = await callOpenAI(currentActionFieldValue, actionPrompt);
-
-    if (!actionResult.isValid) {
-      console.log(`Action prompt returned invalid: ${actionResult.reason}`);
-      return { success: true, skipped: true, reason: `Action not applied: ${actionResult.reason}` };
-    }
-
-    const newValue = actionResult.reason;
-
-    if (dryRun) {
-      return { success: true, dryRun: true, changes: [{ field: actionFieldId, oldValue: currentActionFieldValue, newValue }] };
-    }
-
+    // Extract decision from the parsed JSON response in 'reason'
+    let decision, newValue, finalReason;
     try {
-      console.log(`Updating issue ${issueContext.key} field ${actionFieldId} with new value`);
+        const parsedResponse = JSON.parse(agenticResult.reason);
+        decision = parsedResponse.decision;
+        newValue = parsedResponse.value;
+        finalReason = parsedResponse.reason;
+    } catch (e) {
+        console.error("Failed to parse agentic decision JSON from reason field:", e, "Reason content:", agenticResult.reason);
+        // If parsing fails, we fail open to avoid blocking the user's transition
+        return { success: true, skipped: true };
+    }
+
+    console.log(`Agent Decision: ${decision} (Reason: ${finalReason})`);
+
+    if (decision === "SKIP") {
+      console.log("Condition not met or agent decided to skip. Skipping post-function.");
+      return { success: true, skipped: true, reason: finalReason };
+    }
+
+    if (decision === "UPDATE") {
+      if (!newValue) {
+        throw new Error("Agent decided to UPDATE but provided no value.");
+      }
+
+      // 3. Update the target field in Jira
+      console.log(`Updating ${actionFieldId} with value: ${newValue}`);
+      
+      if (dryRun) {
+        console.log("[DRY RUN] Skipping actual update");
+        return { success: true, dryRun: true, changes: [{ field: actionFieldId, newValue }] };
+      }
+
       const response = await api.asApp().requestJira(
         route`/rest/api/3/issue/${issueContext.key}`,
-        { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields: { [actionFieldId]: newValue } }) }
+        { 
+          method: "PUT", 
+          headers: { "Content-Type": "application/json" }, 
+          body: JSON.stringify({ fields: { [actionFieldId]: newValue } }) 
+        }
       );
 
       if (!response.ok) {
@@ -70,13 +122,15 @@ export const executeSemanticPostFunction = async ({ issueContext, conditionPromp
         throw new Error(`Failed to update issue: ${response.status} - ${errorBody}`);
       }
 
-      return { success: true, changes: [{ field: actionFieldId, oldValue: currentActionFieldValue, newValue }] };
-    } catch (error) {
-      console.error("Failed to update field:", error);
-      return { success: false, error: `Failed to update field "${actionFieldId}": ${error.message}` };
+      console.log("Agentic semantic post-function executed successfully.");
+      return { success: true, skipped: false, changes: [{ field: actionFieldId, newValue }] };
     }
+
+    return { success: true, skipped: true };
+
   } catch (error) {
-    console.error("executeSemanticPostFunction error:", error);
+    console.error(`Error executing agentic semantic post-function: ${error.message}`);
+    // Return success: true to avoid blocking the workflow transition unless it's a critical failure
     return { success: false, error: error.message };
   }
 };
@@ -111,7 +165,7 @@ export const getFieldValue = async (issueKey, fieldId, modifiedFields) => {
       if (rawValue && typeof rawValue === "object" && issue.renderedFields?.[fieldId]) {
         const rendered = issue.renderedFields[fieldId];
         if (typeof rendered === "string" && rendered.length > 0) {
-          // Strip HTML tags to get plain text — use as fallback only if ADF extraction yields nothing
+          // Strip HTML tags to get plain text — as a fallback only if ADF extraction yields nothing
           const adfResult = extractFieldDisplayValue(rawValue);
           if (!adfResult || adfResult === "[Complex value]" || adfResult === "[ADF content]") {
             return rendered.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
