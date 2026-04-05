@@ -113,6 +113,7 @@ permissions:
     styles:
       - unsafe-inline
   scopes:
+    - read:jira-user
     - read:jira-work
     - write:jira-work
     - read:workflow:jira
