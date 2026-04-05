@@ -71,7 +71,7 @@ export const downloadAttachment = async (attachment) => {
       filename: attachment.filename || `attachment_${attachment.id}`,
     };
   } catch (error) {
-    console.error(`Error downloading attachment "${attachment.filename}":`, error);
+    console.error("Download attachment error:", error);
     return null;
   }
 };
@@ -121,14 +121,14 @@ export const getOpenAIKey = () => {
 };
 
 /**
- * Get the OpenAI model from environment variables (defaults to gpt-5-mini)
+ * Get the OpenAI model from environment variables (defaults to gpt-4o-mini)
  */
 export const getOpenAIModel = () => {
-  return process.env.OPENAI_MODEL || "gpt-5-mini";
+  return process.env.OPENAI_MODEL || "gpt-4o-mini";
 };
 
 // Tool trigger patterns for agentic mode
-export const TOOL_TRIGGER_PATTERN = /\b(duplicat(?:e[ds]?|ion)|already\s+(?:exists?|reported|created|filed|logged)|previously\s+(?:reported|created|filed|logged)|existing\s+(?:issues?|tickets?|bugs?|stor(?:y|ies)|tasks?)|redundan(?:t|cy)\s+(?:issues?|tickets?|bugs?|entries?)|identical\s+(?:issues?|tickets?|bugs?)|(?:similar|resembl(?:es?|ing))\s+(?:issues?|tickets?|bugs?|stor(?:y|ies)|tasks?|entries?)|no\s+duplicat|(?:search|query|check)\s+jira|find\s+(?:related|matching|existing)\s+(?:issues?|tickets?|bugs?|stor(?:y|ies)|tasks?)|cross[- ]?reference|compare\s+(?:against|with)\s+(?:existing|other|jira))\b/i;
+export const TOOL_TRIGGER_PATTERN = /\b(duplicat(?:e[ds]?|ion)|already\s+(?:exists?|reported|created|filed|logged)|previously\s+(?:reported|created|filed|logged)|existing\s+(?:issues?|tickets?|bugs?|stor(?:y|ies)|tasks?)|redundan(?:t|cy)\s+(?:issues?|tickets?|bugs?|entries?)|identical\s+(?:issues?|tickets?|bugs?|stor(?:y|ies)|tasks?|entries?)|(?:similar|resembl(?:es?|ing))\s+(?:issues?|tickets?|bugs?|stor(?:y|ies)|tasks?|entries?)|no\s+duplicat|(?:search|query|check)\s+jira|find\s+(?:related|matching|existing)\s+(?:issues?|tickets?|bugs?|stor(?:y|ies)|tasks?)|cross[- ]?reference|compare\s+(?:against|with)\s+(?:existing|other|jira))\b/i;
 
 /**
  * Extract text from Jira Atlassian Document Format (ADF) content
@@ -274,7 +274,6 @@ export const TOOL_REGISTRY = {
         if (validatedFieldId && validatedFieldId !== "summary" && validatedFieldId !== "status") {
           fields.push(validatedFieldId);
         }
-
         const response = await api.asApp().requestJira(
           route`/rest/api/3/search/jql`,
           {
@@ -290,7 +289,6 @@ export const TOOL_REGISTRY = {
             }),
           },
         );
-
         if (!response.ok) {
           const errorText = await response.text();
           console.error("JQL search failed:", response.status, errorText.substring(0, 200));
@@ -299,7 +297,6 @@ export const TOOL_REGISTRY = {
             issues: [],
           });
         }
-
         const data = await response.json();
         const issues = (data.issues || []).map((issue) => {
           const result = {
@@ -307,7 +304,7 @@ export const TOOL_REGISTRY = {
             summary: issue.fields?.summary || "(no summary)",
             status: issue.fields?.status?.name || "Unknown",
           };
-          if (validatedFieldId && validatedFieldId !== "summary" && issue.fields?.[validatedFieldId] != null) {
+          if (validatedFieldId && validatedFieldId !== "summary" && validatedFieldId !== "status" && issue.fields?.[validatedFieldId] != null) {
             const raw = extractFieldDisplayValue(issue.fields[validatedFieldId]);
             if (raw) {
               result[validatedFieldId] = raw.substring(0, 500);
@@ -315,12 +312,149 @@ export const TOOL_REGISTRY = {
           }
           return result;
         });
-
         return JSON.stringify({ total: issues.length, issues });
       } catch (error) {
         console.error("JQL search error:", error);
         return JSON.stringify({ error: `JQL search error: ${error.message}`, issues: [] });
       }
+    },
+  },
+  get_issue_details: {
+    definition: {
+      type: "function",
+      function: {
+        name: "get_issue_details",
+        description: "Get full details for a specific Jira issue. Use this to inspect field content, comments, or other metadata in depth after finding an issue via search.",
+        parameters: {
+          type: "object",
+          properties: {
+            issueKey: {
+              type: "string",
+              description: "The unique Jira issue key (e.g., 'PROJ-123').",
+            },
+          },
+          required: ["issueKey"],
+        },
+      },
+    },
+    execute: async ({ issueKey }) => {
+      try {
+        const response = await api.asApp().requestJira(
+          route`/rest/api/3/issue/${issueKey}?expand=renderedFields`,
+          {
+            method: "GET",
+          },
+        );
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error("Issue detail fetch failed:", response.status, errorText);
+          return JSON.stringify({ error: `Failed to fetch issue ${issueKey}: ${response.status}` });
+        }
+        const data = await response.json();
+        return JSON.stringify({
+          key: data.key,
+          summary: data.fields?.summary,
+          status: data.fields?.status?.name,
+          description: data.fields?.description ? (data.fields.description.content ? "Description content is complex (ADF)" : data.fields.description) : "No description",
+          reporter: data.fields?.reporter?.displayName,
+          assignee: data.fields?.assignee?.displayName,
+          priority: data.fields?.priority?.name,
+          labels: data.fields?.labels,
+          components: data.fields?.components?.map(c => c.name),
+        });
+      } catch (error) {
+        console.error("Issue detail fetch error:", error);
+        return JSON.stringify({ error: `Error fetching issue ${issueKey}: ${error.message}` });
+      }
+    },
+  },
+  get_user_info: {
+    definition: {
+      type: "function",
+      function: {
+        name: "get_user_info",
+        description: "Get details about a Jira user. Use this to verify permissions, roles, or user-specific information.",
+        parameters: {
+          type: "object",
+          properties: {
+            accountId: {
+              type: "string",
+              description: "The unique Jira accountId of a user.",
+            },
+          },
+          required: ["accountId"],
+        },
+      },
+    },
+    execute: async ({ accountId }) => {
+      try {
+        const response = await api.asApp().requestJira(
+          route`/rest/api/3/user?accountId=${accountId}`,
+          {
+            method: "GET",
+          },
+        );
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error("User fetch failed:", response.status, errorText);
+          return JSON.stringify({ error: `Failed to fetch user ${accountId}: ${response.status}` });
+        }
+        const data = await response.json();
+        return JSON.stringify({
+          accountId: data.accountId,
+          displayName: data.displayName,
+          emailAddress: data.emailAddress,
+          active: data.active,
+        });
+      } catch (error) {
+        console.error("User fetch error:", error);
+        return JSON.stringify({ error: `Error fetching user ${accountId}: ${error.message}` });
+      }
+    },
+  },
+  get_project_details: {
+    definition: {
+      type: "function",
+      function: {
+        name: "get_project_details",
+        description: "Get details about a Jira project. Use this to verify project-specific settings, lead, or description.",
+        parameters: {
+          type: "object",
+          properties: {
+            projectKey: {
+              type: "string",
+              description: "The unique Jira project key (e.g., 'PROJ').",
+            },
+          },
+          required: ["projectKey"],
+        },
+      },
+    },
+    execute: async ({ projectKey }) => {
+      try {
+        const response = await api.asApp().requestJira(
+          route`/rest/api/3/project/${projectKey}`,
+          {
+            method: "GET",
+          },
+        );
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error("Project fetch failed:", response.status, errorText);
+          return JSON.stringify({ error: `Failed to fetch project ${projectKey}: ${response.status}` });
+        }
+        const data = await response.json();
+        return JSON.stringify({
+          key: data.key,
+          name: data.name,
+          lead: data.lead?.displayName,
+          projectTypeKey: data.projectTypeKey,
+          description: data.description,
+        });
+      } catch (error) {
+        console.error("Project fetch failed:", error.message);
+      }
+      return JSON.stringify({ error: "Failed to fetch project details" });
     },
   },
 };
@@ -365,26 +499,11 @@ Do not include any other text, markdown, or explanation outside the JSON object.
   if (hasAttachments) {
     const textPart = {
       type: "text",
-      text: `Validate the following content against the given criteria.
-
-VALIDATION CRITERIA:
-${validationPrompt}
-
-${fieldValue ? `ADDITIONAL TEXT CONTEXT:\n${fieldValue}\n\n` : ""}The attached files/images are the primary content to validate. Analyze their contents thoroughly.
-
-Respond with JSON only.`,
+      text: `Validate the following content against the given criteria.\n\nVALIDATION CRITERIA:\n${validationPrompt}\n\n${fieldValue ? `ADDITIONAL TEXT CONTEXT:\n${fieldValue}\n\n` : ""}The attached files/images are the primary content to validate.\n\nRespond with JSON only.`,
     };
     userContent = [textPart, ...attachmentParts];
   } else {
-    userContent = `Validate the following text against the given criteria.
-
-VALIDATION CRITERIA:
-${validationPrompt}
-
-TEXT TO VALIDATE:
-${fieldValue || "(empty)"}
-
-Respond with JSON only.`;
+    userContent = `Validate the following text against the given criteria.\n\nVALIDATION CRITERIA:\n${validationPrompt}\n\nTEXT TO VALIDATE:\n${fieldValue || "(empty)"}\n\nRespond with JSON only.`;
   }
 
   try {
@@ -446,8 +565,8 @@ export const callOpenAIWithTools = async (fieldValue, validationPrompt, attachme
   if (!apiKey) {
     console.error("OpenAI API key not configured");
     return {
-      isValid: false,
-      reason: "AI validation not configured. Please set OPENAI_API_KEY environment variable.",
+    isValid: false,
+    reason: "AI validation not configured. Please set OPENAI_API_KEY environment variable.",
     };
   }
 
@@ -499,7 +618,7 @@ RESPONSE FORMAT:
       text: `Validate the following content against the given criteria.\n\nVALIDATION CRITERIA:\n${validationPrompt}\n\n${fieldValue ? `ADDITIONAL TEXT CONTEXT:\n${fieldValue}\n\n` : ""}The attached files/images are the primary content to validate.\n\nRespond with JSON only when you have your final answer.`,
     };
     userContent = [textPart, ...attachmentParts];
-  } else {
+    } else {
     userContent = `Validate the following text against the given criteria.\n\nVALIDATION CRITERIA:\n${validationPrompt}\n\nTEXT TO VALIDATE:\n${fieldValue || "(empty)"}\n\nRespond with JSON only when you have your final answer.`;
   }
 
@@ -552,83 +671,96 @@ RESPONSE FORMAT:
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("OpenAI API error (agentic):", response.status, errorText);
-        return { isValid: false, reason: `AI service error: ${response.status}`, toolMeta };
+        console.error("OpenAI API error:", response.status, errorText);
+        return {
+          isValid: false,
+          reason: `AI service error: ${response.status}`,
+          toolMeta,
+        };
       }
 
       const data = await response.json();
-      const choice = data.choices[0];
-      const message = choice.message;
+      const message = data.choices[0]?.message;
 
-      // Append assistant message to conversation history
-      messages.push(message);
+      if (!message) {
+        return {
+          isValid: false,
+          reason: "Empty response from AI service",
+          toolMeta,
+        };
+      }
 
-      // Check if the model wants to call tools
+      // Handle tool calls
       if (message.tool_calls && message.tool_calls.length > 0) {
         toolMeta.toolsUsed = true;
         toolMeta.toolRounds++;
-        console.log(`Agentic round ${round}: model requested ${message.tool_calls.length} tool call(s)`);
-
+        
         for (const toolCall of message.tool_calls) {
           const toolName = toolCall.function.name;
+          const toolArgs = JSON.parse(toolCall.function.arguments);
+          
+          console.log(`Agentic Tool Call: ${toolName}`, toolArgs);
+          
           const tool = TOOL_REGISTRY[toolName];
-
-          let toolResult;
           if (!tool) {
-            toolResult = JSON.stringify({ error: `Unknown tool: ${toolName}` });
-          } else if (Date.now() >= deadline) {
-            toolResult = JSON.stringify({ error: "Timeout: cannot execute tool" });
-          } else {
-            try {
-              const args = JSON.parse(toolCall.function.arguments);
-              console.log(`Executing tool "${toolName}":`, JSON.stringify(args));
-              toolResult = await tool.execute(args, validatedFieldId);
-
-              // Track JQL queries for observability
-              if (toolName === "search_jira_issues" && args.jql) {
-                const parsed = JSON.parse(toolResult);
-                toolMeta.queries.push(args.jql);
-                toolMeta.totalResults += parsed.total || 0;
-              }
-            } catch (e) {
-              console.error(`Tool "${toolName}" execution error:`, e);
-              toolResult = JSON.stringify({ error: `Tool execution error: ${e.message}` });
-            }
+            console.error(`Unknown tool: ${toolName}`);
+            continue;
           }
 
+          // Inject validatedFieldId into tool execution if needed
+          const result = await tool.execute({ ...toolArgs, validatedFieldId }, validatedFieldId);
+          
+          messages.push({
+            role: "assistant",
+            content: message.content,
+            tool_calls: [toolCall],
+          });
+          
           messages.push({
             role: "tool",
             tool_call_id: toolCall.id,
-            content: toolResult,
+            content: result,
           });
+
+          toolMeta.queries.push({ name: toolName, args: toolArgs, result });
+          toolMeta.totalResults++;
         }
-
-        continue; // Next iteration: model processes tool results
+        // Continue loop for next round of reasoning
+        continue;
       }
 
-      // Model gave a final text response (no tool calls)
+      // No tool calls, handle final answer
       const content = message.content?.trim();
-      if (!content) {
-        return { isValid: false, reason: "Empty response from AI service", toolMeta };
+      if (content) {
+        try {
+          const result = JSON.parse(content);
+          return {
+            isValid: result.isValid === true,
+            reason: result.reason || "No reason provided",
+            toolMeta,
+          };
+        } catch (e) {
+          // If it's not JSON, it might be a plain text response
+          return {
+            isValid: false,
+            reason: content,
+            toolMeta,
+          };
+        }
       }
 
-      const result = JSON.parse(content);
       return {
-        isValid: result.isValid === true,
-        reason: result.reason || "No reason provided",
+        isValid: false,
+        reason: "No content in AI response",
         toolMeta,
       };
     } catch (error) {
-      console.error(`Error in agentic loop round ${round}:`, error);
-      return { isValid: false, reason: `AI validation error: ${error.message}`, toolMeta };
+      console.error("Error in agentic loop:", error);
+      return {
+        isValid: false,
+        reason: `Agentic error: ${error.message}`,
+        toolMeta,
+      };
     }
   }
-
-  // Exhausted all rounds without a final answer — fail open
-  console.log("Agentic validation exhausted max tool-call rounds");
-  return {
-    isValid: true,
-    reason: "Validation reached maximum tool-call rounds without a final answer. Transition allowed.",
-    toolMeta,
-  };
 };
