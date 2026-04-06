@@ -476,9 +476,115 @@ export const TOOL_REGISTRY = {
 };
 
 /**
- * Call OpenAI API to validate text against a prompt
+ * Call OpenAI API to validate text against a prompt (Simple version, no tools)
  */
-export const callOpenAI = async (fieldValue, validationPrompt, attachmentParts, dependencies = {}) => {
+export const callOpenAI = async (fieldValue, validationPrompt, attachmentParts = []) => {
+  const apiKey = getOpenAIKey();
+  const model = getOpenAIModel();
+
+  if (!apiKey) {
+    console.error("OpenAI API key not configured");
+    return {
+      isValid: false,
+      reason: "AI validation not configured. Please set OPENAI_API_KEY environment variable.",
+    };
+  }
+
+  const hasAttachments = attachmentParts && attachmentParts.length > 0;
+
+  const systemPrompt = hasAttachments
+    ? `You are a validation assistant. Your job is to validate content (text, documents, images, and attachments) against specific criteria.
+You must respond with ONLY a JSON object in this exact format:
+{"isValid": true, "reason": "Brief explanation"}
+or
+{"isValid": false, "reason": "Brief explanation of why validation failed"}
+
+When validating attachments, analyze the actual content of each file or image provided.
+Do not include any other text, markdown, or explanation outside the JSON object.`
+    : `You are a validation assistant. Your job is to validate text content against specific criteria.
+You must respond with ONLY a JSON object in this exact format:
+{"isValid": true, "reason": "Brief explanation"}
+or
+{"isValid": false, "reason": "Brief explanation of why validation failed"}
+
+Do not include any other text, markdown, or explanation outside the JSON object.`;
+
+  let userContent;
+  if (hasAttachments) {
+    const textPart = {
+      type: "text",
+      text: `Validate the following content against the given criteria.\n\nVALIDATION CRITERIA:\n${validationPrompt}\n\n${fieldValue ? `ADDITIONAL TEXT CONTEXT:\n${fieldValue}\n\n` : ""}The attached files/images are the primary content to validate.\n\nRespond with JSON only when you have your final answer.`,
+    };
+    userContent = [textPart, ...attachmentParts];
+  } else {
+    userContent = `Validate the following text against the given criteria.\n\nVALIDATION CRITERIA:\n${validationPrompt}\n\nTEXT TO VALIDATE:\n${fieldValue || "(empty)"}\n\nRespond with JSON only when you have your final answer.`;
+  }
+
+  const messages = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userContent },
+  ];
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        max_completion_tokens: 1000,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("OpenAI API error:", response.status, errorText);
+      return { isValid: false, reason: `AI service error: ${response.status}` };
+    }
+
+    const data = await response.json();
+    const message = data.choices[0]?.message;
+
+    if (!message) {
+      return { isValid: false, reason: "Empty response from AI service" };
+    }
+
+    const content = message.content?.trim();
+    if (content) {
+      try {
+        const result = JSON.parse(content);
+        return {
+          isValid: result.isValid === true,
+          reason: result.reason || "No reason provided",
+        };
+      } catch (e) {
+        return { isValid: false, reason: content };
+      }
+    }
+
+    return { isValid: false, reason: "No content in AI response" };
+  } catch (error) {
+    console.error("Error in callOpenAI:", error);
+    return { isValid: false, reason: `Error: ${error.message}` };
+  }
+};
+
+/**
+ * Call OpenAI API with tools (Agentic version)
+ */
+export const callOpenAIWithTools = async (
+  fieldValue,
+  validationPrompt,
+  attachmentParts,
+  issueSummary,
+  projectKey,
+  fieldId,
+  deadline,
+  dependencies = {}
+) => {
   const {
     apiKey = getOpenAIKey(),
     model = getOpenAIModel(),
@@ -489,8 +595,7 @@ export const callOpenAI = async (fieldValue, validationPrompt, attachmentParts, 
     console.error("OpenAI API key not configured");
     return {
       isValid: false,
-      reason:
-        "AI validation not configured. Please set OPENAI_API_KEY environment variable.",
+      reason: "AI validation not configured. Please set OPENAI_API_KEY environment variable.",
     };
   }
 
@@ -540,11 +645,11 @@ Do not include any other text, markdown, or explanation outside the JSON object.
   };
 
   // Agentic loop: up to MAX_TOOL_ROUNDS tool-call iterations + 1 final answer iteration
-  const deadline = Date.now() + AGENTIC_TIMEOUT_MS;
+  const currentDeadline = deadline || (Date.now() + AGENTIC_TIMEOUT_MS);
 
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
     // Timeout check
-    if (Date.now() >= deadline) {
+    if (Date.now() >= currentDeadline) {
       console.log(`Agentic validation timed out at round ${round}`);
       return {
         isValid: true,
@@ -618,7 +723,7 @@ Do not include any other text, markdown, or explanation outside the JSON object.
           }
 
           // Inject validatedFieldId into tool execution if needed
-          const result = await tool.execute({ ...toolArgs, validatedFieldId }, validatedFieldId, dependencies);
+          const result = await tool.execute({ ...toolArgs, validatedFieldId: fieldId }, fieldId, dependencies);
           
           messages.push({
             role: "assistant",
