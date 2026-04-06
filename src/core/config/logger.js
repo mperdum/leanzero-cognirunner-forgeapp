@@ -3,6 +3,7 @@
  */
 
 // Configuration
+import { kvs } from '@forge/kvs';
 const MAX_LOGS = 50;
 export const LOGS_STORAGE_KEY = "validation_logs";
 
@@ -11,7 +12,8 @@ export const LOGS_STORAGE_KEY = "validation_logs";
  */
 export const storeLog = async (logEntry) => {
   try {
-    let logs = (await storage.get(LOGS_STORAGE_KEY)) || [];
+    const result = await kvs.get({ key: LOGS_STORAGE_KEY });
+    let logs = result?.value || [];
 
     // Add new log at the beginning
     logs.unshift({
@@ -25,7 +27,7 @@ export const storeLog = async (logEntry) => {
       logs = logs.slice(0, MAX_LOGS);
     }
 
-    await storage.set(LOGS_STORAGE_KEY, logs);
+    await kvs.set({ key: LOGS_STORAGE_KEY, value: logs });
   } catch (error) {
     console.error("Failed to store log:", error);
   }
@@ -36,7 +38,8 @@ export const storeLog = async (logEntry) => {
  */
 export const loadLogs = async () => {
   try {
-    return (await storage.get(LOGS_STORAGE_KEY)) || [];
+    const result = await kvs.get({ key: LOGS_STORAGE_KEY });
+    return result?.value || [];
   } catch (error) {
     console.error("Failed to load logs:", error);
     return [];
@@ -48,7 +51,7 @@ export const loadLogs = async () => {
  */
 export const clearLogs = async () => {
   try {
-    await storage.set(LOGS_STORAGE_KEY, []);
+    await kvs.set({ key: LOGS_STORAGE_KEY, value: [] });
     return { success: true };
   } catch (error) {
     console.error("Failed to clear logs:", error);

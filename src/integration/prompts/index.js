@@ -3,28 +3,54 @@
  */
 
 // Import all category modules
-export { issues } from './categories/issues.js';
-export { projects } from './categories/projects.js';
-export { users } from './categories/users.js';
-export { groups } from './categories/groups.js';
-export { workflows } from './categories/workflows.js';
-export { fieldConfigs } from './categories/field-configs.js';
-export { screens } from './categories/screens.js';
-export { customFields } from './categories/custom-fields.js';
-export { statusesResolutions } from './categories/statuses-resolutions.js';
-export { issueTypes } from './categories/issue-types.js';
-export { security } from './categories/security.js';
-export { notifications } from './categories/notifications.js';
-export { permissions } from './categories/permissions.js';
-export { automation } from './categories/automation.js';
-export { attachmentsVersions } from './categories/attachments-versions.js';
+import { issues } from './categories/issues.js';
+import { projects } from './categories/projects.js';
+import { users } from './categories/users.js';
+import { groups } from './categories/groups.js';
+import { workflows } from './categories/workflows.js';
+import { fieldConfigs } from './categories/field-configs.js';
+import { screens } from './categories/screens.js';
+import { customFields } from './categories/custom-fields.js';
+import { statusesResolutions } from './categories/statuses-resolutions.js';
+import { issueTypes } from './categories/issue-types.js';
+import { security } from './categories/security.js';
+import { notifications } from './categories/notifications.js';
+import { permissions } from './categories/permissions.js';
+import { automation } from './categories/automation.js';
+import { attachmentsVersions } from './categories/attachments-versions.js';
+
+// Export them for other modules to use
+export {
+  issues,
+  projects,
+  users,
+  groups,
+  workflows,
+  fieldConfigs,
+  screens,
+  customFields,
+  statusesResolutions,
+  issueTypes,
+  security,
+  notifications,
+  permissions,
+  automation,
+  attachmentsVersions
+};
 
 // Import helper functions
-export {
+import {
   calculateSimilarity,
   searchPrompts,
   buildJqlFromIntent
 } from './helpers.js';
+
+// Re-export helper functions
+export {
+  calculateSimilarity,
+  searchPrompts,
+  buildJqlFromIntent
+};
 
 // Combined JIRA_PROMPTS object for backward compatibility
 export const JIRA_PROMPTS = {

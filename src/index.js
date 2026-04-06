@@ -60,6 +60,8 @@ import {
 import { storeLog, LOGS_STORAGE_KEY, CONFIG_REGISTRY_KEY } from "./core/config/registry.js";
 import { MAX_LOGS } from "./core/config/logger.js";
 
+const resolver = new Resolver();
+
 // App ID for rule identification in Jira workflows
 const APP_ID = "36415848-6868-4697-9554-3c3ad87b8da9";
 
@@ -188,7 +190,8 @@ const executePostFunctionInternal = async ({ issueKey, config, dryRun = false, c
 
     let postFunctionConfig = config;
     if (!config.code && !config.conditionPrompt && config.id) {
-      const { value: configs } = await kvs.get({ key: CONFIG_REGISTRY_KEY }) || [];
+      const result = await kvs.get({ key: CONFIG_REGISTRY_KEY });
+      const configs = result?.value || [];
       const loadedConfig = configs.find((c) => c.id === config.id);
       if (!loadedConfig) {
         return { success: false, error: "Post function configuration not found" };
@@ -283,7 +286,8 @@ export const validate = async (args) => {
   }
 
   try {
-    const { value: configs } = await kvs.get({ key: CONFIG_REGISTRY_KEY }) || [];
+    const result = await kvs.get({ key: CONFIG_REGISTRY_KEY });
+    const configs = result?.value || [];
     const matchingConfig = configs.find((c) =>
       c.fieldId === (configuration?.fieldId || process.env.VALIDATE_FIELD_ID || "description")
       && c.disabled === true
