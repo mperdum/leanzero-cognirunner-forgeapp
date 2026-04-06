@@ -4,11 +4,18 @@
 
 import api, { route } from '@forge/api';
 
+// For testing purposes
+export const isTestEnv = process.env.NODE_ENV === 'test';
+
 /**
  * Helper: Fetch all project IDs that use a given workflow.
  * Returns array of project ID strings, or null on failure.
  */
-export const fetchProjectsForWorkflow = async (workflowId) => {
+export const fetchProjectsForWorkflow = async (workflowId, dependencies = {}) => {
+  const {
+    api = api,
+    route = route,
+  } = dependencies;
   console.log(`fetchProjectsForWorkflow: workflowId="${workflowId}"`);
   const projectIds = [];
   let nextPageToken = null;
@@ -46,7 +53,12 @@ export const fetchProjectsForWorkflow = async (workflowId) => {
  * a Set of transition IDs for the given workflow.
  * Returns { transitionRules: Map<string, { validators, conditions }>|null, error: string|null }
  */
-export const fetchWorkflowTransitions = async (workflowName) => {
+export const fetchWorkflowTransitions = async (workflowName, dependencies = {}) => {
+  const {
+    api = api,
+    route = route,
+  } = dependencies;
+
   console.log(`fetchWorkflowTransitions: workflowName="${workflowName}"`);
 
   const url = route`/rest/api/3/workflows/search?queryString=${workflowName}&expand=values.transitions`;

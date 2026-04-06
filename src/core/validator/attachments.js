@@ -4,6 +4,9 @@
 
 import api, { route } from '@forge/api';
 
+// For testing purposes
+export const isTestEnv = process.env.NODE_ENV === 'test';
+
 // Configuration
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_TOTAL_ATTACHMENT_SIZE = 20 * 1024 * 1024; // 20MB
@@ -24,6 +27,8 @@ export const FILE_MIME_TYPES = new Set([
   "application/vnd.ms-excel",
   "text/csv",
   "text/tab-separated-values",
+  // Plain text
+  "text/plain",
   // Presentations
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   "application/vnd.ms-powerpoint",
@@ -43,7 +48,12 @@ export const IMAGE_MIME_TYPES = new Set([
  * Download a Jira attachment's binary content and return as base64.
  * Returns { base64, mimeType, filename } or null on failure.
  */
-export const downloadAttachment = async (attachment) => {
+export const downloadAttachment = async (attachment, dependencies = {}) => {
+  const {
+    api: apiDep = api,
+    route: routeDep = route,
+  } = dependencies;
+
   try {
     if (!attachment.id) {
       console.log("Attachment missing id, skipping");
@@ -66,8 +76,8 @@ export const downloadAttachment = async (attachment) => {
 
     console.log(`Downloading attachment "${attachment.filename}" (${attachment.id}, ${mimeType})`);
 
-    const response = await api.asApp().requestJira(
-      route`/rest/api/3/attachment/content/${attachment.id}`,
+    const response = await apiDep.asApp().requestJira(
+      routeDep`/rest/api/3/attachment/content/${attachment.id}`,
     );
 
     if (!response.ok) {
@@ -127,7 +137,12 @@ export const buildAttachmentContentParts = (downloadedAttachments) => {
  * Process attachments for validation
  * Returns { downloadedAttachments, skippedCount, attachmentSummary }
  */
-export const processAttachments = async (attachments) => {
+export const processAttachments = async (attachments, dependencies = {}) => {
+  const {
+    api: apiDep = api,
+    route: routeDep = route,
+  } = dependencies;
+
   if (!Array.isArray(attachments) || attachments.length === 0) {
     return {
       downloaded: [],
@@ -160,7 +175,7 @@ export const processAttachments = async (attachments) => {
   }
 
   // Download attachment contents in parallel
-  const downloads = await Promise.all(toDownload.map(downloadAttachment));
+  const downloads = await Promise.all(toDownload.map((att) => downloadAttachment(att, { api: apiDep, route: routeDep })));
   const successfulDownloads = downloads.filter(Boolean);
   console.log(`Downloaded ${successfulDownloads.length}/${attachments.length} attachment(s)`);
   

@@ -5,6 +5,9 @@
 import api, { route } from '@forge/api';
 import { callOpenAIWithTools, extractFieldDisplayValue } from '../validator/openai-client.js';
 
+// For testing purposes
+export const isTestEnv = process.env.NODE_ENV === 'test';
+
 /**
  * Execute a semantic post-function using an agentic approach.
  * This combines condition checking and action generation into a single AI call
@@ -20,12 +23,25 @@ import { callOpenAIWithTools, extractFieldDisplayValue } from '../validator/open
  */
 export const executeSemanticPostFunction = async (
   { issueContext, combinedPrompt, fieldId, actionFieldId, dryRun, transition },
+  dependencies = {}
 ) => {
+  const {
+    api: injectedApi = api,
+    route: injectedRoute = route,
+    callOpenAIWithTools: injectedCallOpenAIWithTools = callOpenAIWithTools,
+    getFieldValue: injectedGetFieldValue = getFieldValue
+  } = dependencies;
+
   try {
     console.log(`Executing agentic semantic post-function: ${fieldId} -> ${actionFieldId}`);
 
     // 1. Get the current value of the field to provide context for the AI
-    const fieldValue = await getFieldValue(issueContext.key, fieldId, issueContext.modifiedFields);
+    const fieldValue = await injectedGetFieldValue(
+      issueContext.key,
+      fieldId,
+      issueContext.modifiedFields,
+      dependencies
+    );
     console.log(`Current value for ${fieldId}: ${fieldValue}`);
 
     // 2. Use Agentic AI to evaluate condition and decide on action in one pass
@@ -59,14 +75,15 @@ export const executeSemanticPostFunction = async (
       Do not include any text, markdown, or explanations outside the JSON object.
     `;
 
-    const agenticResult = await callOpenAIWithTools(
+    const agenticResult = await injectedCallOpenAIWithTools(
       fieldValue,
       unifiedPrompt,
       [], // No attachments for this specific logic currently
-      issueContext.summary || "", 
+      issueContext.summary || "",
       issueContext.projectKey || "",
       fieldId,
-      deadline
+      deadline,
+      dependencies
     );
 
     // Handle AI service failures or timeouts (fail open to allow transition)
@@ -95,29 +112,29 @@ export const executeSemanticPostFunction = async (
       return { success: true, skipped: true, reason: finalReason };
     }
 
-    if (decision === "UPDATE") {
-      if (!newValue) {
-        throw new Error("Agent decided to UPDATE but provided no value.");
-      }
-
-      // 3. Update the target field in Jira
-      console.log(`Updating ${actionFieldId} with value: ${newValue}`);
-      
-      if (dryRun) {
-        console.log("[DRY RUN] Skipping actual update");
-        return { success: true, dryRun: true, changes: [{ field: actionFieldId, newValue }] };
-      }
-
-      const response = await api.asApp().requestJira(
-        route`/rest/api/3/issue/${issueContext.key}`,
-        { 
-          method: "PUT", 
-          headers: { "Content-Type": "application/json" }, 
-          body: JSON.stringify({ fields: { [actionFieldId]: newValue } }) 
+      if (decision === "UPDATE") {
+        if (!newValue) {
+          throw new Error("Agent decided to UPDATE but provided no value.");
         }
-      );
 
-      if (!response.ok) {
+        // 3. Update the target field in Jira
+        console.log(`Updating ${actionFieldId} with value: ${newValue}`);
+        
+        if (dryRun) {
+          console.log("[DRY RUN] Skipping actual update");
+          return { success: true, dryRun: true, changes: [{ field: actionFieldId, newValue }] };
+        }
+
+        const response = await injectedApi.asApp().requestJira(
+          injectedRoute`/rest/api/3/issue/${issueContext.key}`,
+          { 
+            method: "PUT", 
+            headers: { "Content-Type": "application/json" }, 
+            body: JSON.stringify({ fields: { [actionFieldId]: newValue } }) 
+          }
+        );
+
+        if (!response.ok) {
         const errorBody = await response.text();
         throw new Error(`Failed to update issue: ${response.status} - ${errorBody}`);
       }
@@ -138,7 +155,13 @@ export const executeSemanticPostFunction = async (
 /**
  * Get field value from issue
  */
-export const getFieldValue = async (issueKey, fieldId, modifiedFields) => {
+export const getFieldValue = async (issueKey, fieldId, modifiedFields, dependencies = {}) => {
+  const {
+    api: injectedApi = api,
+    route: injectedRoute = route,
+    extractFieldDisplayValue: injectedExtractFieldDisplayValue = extractFieldDisplayValue
+  } = dependencies;
+
   let rawValue = null;
 
   // Check if the field was modified on the transition screen
@@ -149,8 +172,8 @@ export const getFieldValue = async (issueKey, fieldId, modifiedFields) => {
     return null;
   } else {
     try {
-      const response = await api.asApp().requestJira(
-        route`/rest/api/3/issue/${issueKey}?fields=${fieldId}&expand=renderedFields`
+      const response = await injectedApi.asApp().requestJira(
+        injectedRoute`/rest/api/3/issue/${issueKey}?fields=${fieldId}&expand=renderedFields`
       );
 
       if (!response.ok) {
@@ -166,7 +189,7 @@ export const getFieldValue = async (issueKey, fieldId, modifiedFields) => {
         const rendered = issue.renderedFields[fieldId];
         if (typeof rendered === "string" && rendered.length > 0) {
           // Strip HTML tags to get plain text — as a fallback only if ADF extraction yields nothing
-          const adfResult = extractFieldDisplayValue(rawValue);
+          const adfResult = injectedExtractFieldDisplayValue(rawValue);
           if (!adfResult || adfResult === "[Complex value]" || adfResult === "[ADF content]") {
             return rendered.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
           }
@@ -180,7 +203,7 @@ export const getFieldValue = async (issueKey, fieldId, modifiedFields) => {
   }
 
   // Extract human-readable display value
-  return extractFieldDisplayValue(rawValue);
+  return injectedExtractFieldDisplayValue(rawValue);
 };
 
 // Re-export extractFieldDisplayValue for consumers of semantic.js module

@@ -4,6 +4,9 @@
 
 import api, { route } from '@forge/api';
 
+// For testing purposes
+export const isTestEnv = process.env.NODE_ENV === 'test';
+
 // Configuration constants
 export const MAX_TOOL_ROUNDS = 3;
 
@@ -30,7 +33,8 @@ export const IMAGE_MIME_TYPES = new Set([
 /**
  * Download attachment content from JIRA API
  */
-export const downloadAttachment = async (attachment) => {
+export const downloadAttachment = async (attachment, dependencies = {}) => {
+  const { api: injectedApi = api, route: injectedRoute = route } = dependencies;
   try {
     if (!attachment.id) {
       console.log("Attachment missing id, skipping");
@@ -53,8 +57,8 @@ export const downloadAttachment = async (attachment) => {
 
     console.log(`Downloading attachment "${attachment.filename}" (${attachment.id}, ${mimeType})`);
 
-    const response = await api.asApp().requestJira(
-      route`/rest/api/3/attachment/content/${attachment.id}`,
+    const response = await injectedApi.asApp().requestJira(
+      injectedRoute`/rest/api/3/attachment/content/${attachment.id}`,
     );
 
     if (!response.ok) {
@@ -125,6 +129,15 @@ export const getOpenAIKey = () => {
  */
 export const getOpenAIModel = () => {
   return process.env.OPENAI_MODEL || "gpt-4o-mini";
+};
+
+// Export for testing
+export const mockGetOpenAIKey = () => {
+  return "mock-key";
+};
+
+export const mockGetOpenAIModel = () => {
+  return "gpt-4o-mini";
 };
 
 // Tool trigger patterns for agentic mode
@@ -204,7 +217,7 @@ export const promptRequiresTools = (prompt) => {
  * Extract display value from a Jira field (handles complex types like ADF, users, arrays)
  */
 export const extractFieldDisplayValue = (value) => {
-  if (!value) return "";
+  if (value === null || value === undefined) return "";
   if (typeof value === "string" || typeof value === "number") return String(value);
   
   // Boolean
@@ -268,14 +281,15 @@ export const TOOL_REGISTRY = {
         },
       },
     },
-    execute: async ({ jql }, validatedFieldId) => {
+    execute: async ({ jql }, validatedFieldId, dependencies = {}) => {
+      const { api: injectedApi = api, route: injectedRoute = route } = dependencies;
       try {
         const fields = ["summary", "status"];
         if (validatedFieldId && validatedFieldId !== "summary" && validatedFieldId !== "status") {
           fields.push(validatedFieldId);
         }
-        const response = await api.asApp().requestJira(
-          route`/rest/api/3/search/jql`,
+        const response = await injectedApi.asApp().requestJira(
+          injectedRoute`/rest/api/3/search/jql`,
           {
             method: "POST",
             headers: {
@@ -337,10 +351,11 @@ export const TOOL_REGISTRY = {
         },
       },
     },
-    execute: async ({ issueKey }) => {
+    execute: async ({ issueKey }, dependencies = {}) => {
+      const { api: injectedApi = api, route: injectedRoute = route } = dependencies;
       try {
-        const response = await api.asApp().requestJira(
-          route`/rest/api/3/issue/${issueKey}?expand=renderedFields`,
+        const response = await injectedApi.asApp().requestJira(
+          injectedRoute`/rest/api/3/issue/${issueKey}?expand=renderedFields`,
           {
             method: "GET",
           },
@@ -351,7 +366,7 @@ export const TOOL_REGISTRY = {
           return JSON.stringify({ error: `Failed to fetch issue ${issueKey}: ${response.status}` });
         }
         const data = await response.json();
-        return JSON.stringify({
+        const result = {
           key: data.key,
           summary: data.fields?.summary,
           status: data.fields?.status?.name,
@@ -361,7 +376,8 @@ export const TOOL_REGISTRY = {
           priority: data.fields?.priority?.name,
           labels: data.fields?.labels,
           components: data.fields?.components?.map(c => c.name),
-        });
+        };
+        return JSON.stringify(result);
       } catch (error) {
         console.error("Issue detail fetch error:", error);
         return JSON.stringify({ error: `Error fetching issue ${issueKey}: ${error.message}` });
@@ -386,10 +402,11 @@ export const TOOL_REGISTRY = {
         },
       },
     },
-    execute: async ({ accountId }) => {
+    execute: async ({ accountId }, dependencies = {}) => {
+      const { api: injectedApi = api, route: injectedRoute = route } = dependencies;
       try {
-        const response = await api.asApp().requestJira(
-          route`/rest/api/3/user?accountId=${accountId}`,
+        const response = await injectedApi.asApp().requestJira(
+          injectedRoute`/rest/api/3/user?accountId=${accountId}`,
           {
             method: "GET",
           },
@@ -430,13 +447,11 @@ export const TOOL_REGISTRY = {
         },
       },
     },
-    execute: async ({ projectKey }) => {
+    execute: async ({ projectKey }, dependencies = {}) => {
+      const { api: injectedApi = api, route: injectedRoute = route } = dependencies;
       try {
-        const response = await api.asApp().requestJira(
-          route`/rest/api/3/project/${projectKey}`,
-          {
-            method: "GET",
-          },
+        const response = await injectedApi.asApp().requestJira(
+          injectedRoute`/rest/api/3/project/${projectKey}`,
         );
         if (!response.ok) {
           const errorText = await response.text();
@@ -444,17 +459,18 @@ export const TOOL_REGISTRY = {
           return JSON.stringify({ error: `Failed to fetch project ${projectKey}: ${response.status}` });
         }
         const data = await response.json();
-        return JSON.stringify({
+        const result = {
           key: data.key,
           name: data.name,
           lead: data.lead?.displayName,
           projectTypeKey: data.projectTypeKey,
           description: data.description,
-        });
+        };
+        return JSON.stringify(result);
       } catch (error) {
         console.error("Project fetch failed:", error.message);
+        return JSON.stringify({ error: "Failed to fetch project details" });
       }
-      return JSON.stringify({ error: "Failed to fetch project details" });
     },
   },
 };
@@ -462,8 +478,13 @@ export const TOOL_REGISTRY = {
 /**
  * Call OpenAI API to validate text against a prompt
  */
-export const callOpenAI = async (fieldValue, validationPrompt, attachmentParts) => {
-  const apiKey = getOpenAIKey();
+export const callOpenAI = async (fieldValue, validationPrompt, attachmentParts, dependencies = {}) => {
+  const {
+    apiKey = getOpenAIKey(),
+    model = getOpenAIModel(),
+    fetch: injectedFetch = fetch,
+  } = dependencies;
+
   if (!apiKey) {
     console.error("OpenAI API key not configured");
     return {
@@ -472,8 +493,6 @@ export const callOpenAI = async (fieldValue, validationPrompt, attachmentParts) 
         "AI validation not configured. Please set OPENAI_API_KEY environment variable.",
     };
   }
-
-  const model = getOpenAIModel();
 
   const hasAttachments = attachmentParts && attachmentParts.length > 0;
 
@@ -499,133 +518,18 @@ Do not include any other text, markdown, or explanation outside the JSON object.
   if (hasAttachments) {
     const textPart = {
       type: "text",
-      text: `Validate the following content against the given criteria.\n\nVALIDATION CRITERIA:\n${validationPrompt}\n\n${fieldValue ? `ADDITIONAL TEXT CONTEXT:\n${fieldValue}\n\n` : ""}The attached files/images are the primary content to validate.\n\nRespond with JSON only.`,
-    };
-    userContent = [textPart, ...attachmentParts];
-  } else {
-    userContent = `Validate the following text against the given criteria.\n\nVALIDATION CRITERIA:\n${validationPrompt}\n\nTEXT TO VALIDATE:\n${fieldValue || "(empty)"}\n\nRespond with JSON only.`;
-  }
-
-  try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userContent },
-        ],
-        max_completion_tokens: 1000,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("OpenAI API error:", response.status, errorText);
-      return {
-        isValid: false,
-        reason: `AI service error: ${response.status}`,
-      };
-    }
-
-    const data = await response.json();
-    const content = data.choices[0]?.message?.content?.trim();
-
-    if (!content) {
-      return {
-        isValid: false,
-        reason: "Empty response from AI service",
-      };
-    }
-
-    // Parse the JSON response
-    const result = JSON.parse(content);
-    return {
-      isValid: result.isValid === true,
-      reason: result.reason || "No reason provided",
-    };
-  } catch (error) {
-    console.error("Error calling OpenAI:", error);
-    return {
-      isValid: false,
-      reason: `AI validation error: ${error.message}`,
-    };
-  }
-};
-
-/**
- * Call OpenAI with tool-calling support for agentic validation.
- */
-export const callOpenAIWithTools = async (fieldValue, validationPrompt, attachmentParts, issueContext, projectKey, validatedFieldId, deadline) => {
-  const apiKey = getOpenAIKey();
-  if (!apiKey) {
-    console.error("OpenAI API key not configured");
-    return {
-    isValid: false,
-    reason: "AI validation not configured. Please set OPENAI_API_KEY environment variable.",
-    };
-  }
-
-  const model = getOpenAIModel();
-  const hasAttachments = attachmentParts && attachmentParts.length > 0;
-
-  // Build tool definitions from registry
-  const tools = Object.values(TOOL_REGISTRY).map((t) => t.definition);
-
-  const projectScope = projectKey ? `project = ${projectKey}` : null;
-
-  const systemPrompt = `You are a Jira workflow validation gate. You evaluate field content against criteria and return a pass/fail JSON verdict. Be concise, factual, and non-confrontational — users seeing a rejection are already frustrated.
-
-CONTEXT:
-${issueContext ? `- ${issueContext}` : "- No issue context available"}
-${projectKey ? `- Project: ${projectKey}` : "- Project: unknown"}
-- Validated field: ${validatedFieldId || "unknown"}
-
-DECISION FRAMEWORK — when to use tools:
-- The criteria involves comparing against OTHER Jira issues (duplicates, similarity, prior work) → SEARCH first, then judge.
-- The criteria is about the quality, format, or completeness of THIS content alone → validate directly, do NOT search.
-
-SEARCH STRATEGY (when searching):
-- Always scope JQL to the project: ${projectScope ? `use "${projectScope} AND ..."` : "include a project clause if you can infer the project key from the issue context"}.
-- The field being validated is "${validatedFieldId}". When the criteria is about comparing that field's content, prefer \`${validatedFieldId} ~ "phrase"\` over \`text ~ "phrase"\` so results are scoped to the same field. Use \`text ~\` only when you need broader cross-field coverage.
-- Try multiple approaches: first search by key phrases from the content, then by broader topic terms.
-- Extract 2-3 distinct concepts and build targeted queries. Combine with OR for broader coverage.
-- If a query returns an error, simplify it and retry — don't waste rounds on syntax fixes.
-- Search results include the validated field's content (truncated) so you can compare field values directly.
-
-JUDGMENT CALIBRATION:
-- Two issues are duplicates only if they describe the same problem, not merely the same feature area.
-- Partial overlap in topic is not sufficient grounds for rejection.
-- Different symptoms, environments, or user actions make issues distinct even if the root cause might be related.
-- When in doubt, pass — false rejections are worse than missed duplicates.
-
-RESPONSE FORMAT:
-- When done, respond with ONLY a JSON object: {"isValid": true, "reason": "..."}  or  {"isValid": false, "reason": "..."}
-- Keep reasons to 1-2 sentences.
-- On rejection due to potential duplicates, list the specific issue keys and briefly explain why each matches.
-- On pass, a simple confirmation is sufficient.
-- Do not include any text outside the JSON object.`;
-
-  // Build initial user message
-  let userContent;
-  if (hasAttachments) {
-    const textPart = {
-      type: "text",
       text: `Validate the following content against the given criteria.\n\nVALIDATION CRITERIA:\n${validationPrompt}\n\n${fieldValue ? `ADDITIONAL TEXT CONTEXT:\n${fieldValue}\n\n` : ""}The attached files/images are the primary content to validate.\n\nRespond with JSON only when you have your final answer.`,
     };
     userContent = [textPart, ...attachmentParts];
-    } else {
+  } else {
     userContent = `Validate the following text against the given criteria.\n\nVALIDATION CRITERIA:\n${validationPrompt}\n\nTEXT TO VALIDATE:\n${fieldValue || "(empty)"}\n\nRespond with JSON only when you have your final answer.`;
   }
 
   const messages = [
     { role: "system", content: systemPrompt },
-    { role: "user", content: userContent },
   ];
+  // Add user message to messages array (handle multimodal)
+  messages.push({ role: "user", content: userContent });
 
   // Observability: track tool usage across the loop
   const toolMeta = {
@@ -636,6 +540,8 @@ RESPONSE FORMAT:
   };
 
   // Agentic loop: up to MAX_TOOL_ROUNDS tool-call iterations + 1 final answer iteration
+  const deadline = Date.now() + AGENTIC_TIMEOUT_MS;
+
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
     // Timeout check
     if (Date.now() >= deadline) {
@@ -656,11 +562,15 @@ RESPONSE FORMAT:
 
       // Offer tools only if we haven't exhausted tool-call rounds
       if (round < MAX_TOOL_ROUNDS) {
-        requestBody.tools = tools;
+        requestBody.tools = Object.values(TOOL_REGISTRY).map(tool => ({
+          type: "function",
+          function: tool.definition
+        }));
         requestBody.tool_choice = "auto";
       }
-
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      
+      // This is where we actually call the API
+      const response = await injectedFetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -708,7 +618,7 @@ RESPONSE FORMAT:
           }
 
           // Inject validatedFieldId into tool execution if needed
-          const result = await tool.execute({ ...toolArgs, validatedFieldId }, validatedFieldId);
+          const result = await tool.execute({ ...toolArgs, validatedFieldId }, validatedFieldId, dependencies);
           
           messages.push({
             role: "assistant",
