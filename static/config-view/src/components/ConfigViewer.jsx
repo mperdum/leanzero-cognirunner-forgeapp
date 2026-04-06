@@ -26,14 +26,14 @@ export const ConfigViewer = ({ config }) => {
   const postFunctionBadge = () => {
     if (config.type === "semantic" || config.type?.startsWith("postfunction")) {
       return (
-        <span className="inline-block rounded bg-green-100 px-2 py-1 text-[9px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
+        <span className="status-badge" style={{ backgroundColor: 'var(--icon-bg)', color: 'var(--primary-color)' }}>
           Semantic Post Function
         </span>
       );
     }
     if (config.type === "static") {
       return (
-        <span className="inline-block rounded bg-orange-100 px-2 py-1 text-[9px] font-semibold text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+        <span className="status-badge" style={{ backgroundColor: 'var(--hover-bg)', color: 'var(--text-secondary)' }}>
           Static Post Function
         </span>
       );
@@ -50,27 +50,23 @@ export const ConfigViewer = ({ config }) => {
     if (config.type === "semantic" || config.type?.startsWith("postfunction")) {
       return (
         <>
-          <div className="mb-3">
-            <span className="mr-2 font-semibold text-gray-600 dark:text-gray-400">Condition:</span>
-            <span className="rounded bg-gray-100 px-2 py-1 text-xs font-mono text-blue-600 dark:bg-gray-700 dark:text-blue-400">
-              {config.conditionPrompt?.length > 80
+          <div className="config-item">
+            <span className="label">Condition:</span>
+            <span className="value">{config.conditionPrompt?.length > 80
                 ? config.conditionPrompt.substring(0, 80) + "..."
                 : (config.conditionPrompt || "(none)")}
-            </span>
+              </span>
           </div>
-          <div className="mb-3">
-            <span className="mr-2 font-semibold text-gray-600 dark:text-gray-400">Action:</span>
-            <span className="rounded bg-gray-100 px-2 py-1 text-xs font-mono text-blue-600 dark:bg-gray-700 dark:text-blue-400">
-              {config.actionPrompt?.length > 80
+          <div className="config-item">
+            <span className="label">Action:</span>
+            <span className="value">{config.actionPrompt?.length > 80
                 ? config.actionPrompt.substring(0, 80) + "..."
                 : (config.actionPrompt || "(none)")}
-            </span>
+              </span>
           </div>
-          <div className="mb-3">
-            <span className="mr-2 font-semibold text-gray-600 dark:text-gray-400">Action Field:</span>
-            <code className="rounded bg-gray-100 px-2 py-1 text-xs font-mono text-blue-600 dark:bg-gray-700 dark:text-blue-400">
-              {config.actionFieldId || config.fieldId}
-            </code>
+          <div className="config-item">
+            <span className="label">Action Field:</span>
+            <code className="value">{config.actionFieldId || config.fieldId}</code>
           </div>
         </>
       );
@@ -78,13 +74,12 @@ export const ConfigViewer = ({ config }) => {
 
     if (config.type === "static") {
       return (
-        <div className="mb-3">
-          <span className="mr-2 font-semibold text-gray-600 dark:text-gray-400">Code:</span>
-          <span className="rounded bg-gray-100 px-2 py-1 text-xs font-mono text-blue-600 dark:bg-gray-700 dark:text-blue-400">
-            {config.code?.length > 80
+        <div className="config-item">
+          <span className="label">Code:</span>
+          <span className="value">{config.code?.length > 80
               ? config.code.substring(0, 80) + "..."
               : (config.code || "(none)")}
-          </span>
+            </span>
         </div>
       );
     }
@@ -100,22 +95,17 @@ export const ConfigViewer = ({ config }) => {
 
     return (
       <>
-        <div className="mb-3">
-          <span className="mr-2 font-semibold text-gray-600 dark:text-gray-400">Prompt:</span>
-          <span className="rounded bg-gray-100 px-2 py-1 text-xs font-mono text-blue-600 dark:bg-gray-700 dark:text-blue-400">
-            {config.prompt.length > 80
+        <div className="config-item">
+          <span className="label">Prompt:</span>
+          <span className="prompt-value">{config.prompt.length > 80
               ? config.prompt.substring(0, 80) + "..."
               : config.prompt}
-          </span>
+            </span>
         </div>
         {config.enableTools !== undefined && (
-          <div className="mb-3">
-            <span className="mr-2 font-semibold text-gray-600 dark:text-gray-400">Tools:</span>
-            <span className={`rounded px-2 py-1 text-xs font-mono ${
-              config.enableTools
-                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-            }`}>
+          <div className="config-item">
+            <span className="label">Tools:</span>
+            <span className="value" style={{ color: config.enableTools ? 'var(--primary-color)' : 'var(--error-color)' }}>
               {config.enableTools ? "Enabled (JQL Search)" : "Disabled"}
             </span>
           </div>
@@ -125,15 +115,13 @@ export const ConfigViewer = ({ config }) => {
   };
 
   return (
-    <div className="mb-6">
+    <div className="container">
       {/* Post Function Type Indicator */}
       {postFunctionBadge()}
 
-      <div className="mb-3 flex items-center">
-        <span className="mr-2 font-semibold text-gray-600 dark:text-gray-400">Field:</span>
-        <code className="rounded bg-gray-100 px-2 py-1 text-xs font-mono text-blue-600 dark:bg-gray-700 dark:text-blue-400">
-          {config.fieldId}
-        </code>
+      <div className="config-item">
+        <span className="label">Field:</span>
+        <code className="value">{config.fieldId}</code>
       </div>
 
       {/* Render either Post Function fields or Standard fields */}

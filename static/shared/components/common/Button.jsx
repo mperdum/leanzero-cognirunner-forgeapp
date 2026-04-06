@@ -33,17 +33,12 @@ export const Button = ({
   const baseStyle = "border border-solid rounded-md cursor-pointer font-medium transition-colors";
   
   const variants = {
-    primary: "bg-blue-600 text-white border-blue-600 hover:bg-blue-700 disabled:bg-blue-300",
-    secondary:
-      "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 border-transparent hover:bg-gray-300 dark:hover:bg-gray-600",
-    danger:
-      "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/50",
-    outline:
-      "bg-transparent border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800",
-    success:
-      "bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-900/50",
-    link:
-      "bg-transparent border-transparent text-blue-600 dark:text-blue-400 hover:underline p-0",
+    primary: "border-[var(--primary-color)] text-white",
+    secondary: "border-transparent text-[var(--text-color)]",
+    danger: "border-[var(--error-color)] text-[var(--error-color)]",
+    outline: "border-[var(--border-color)] text-[var(--text-color)]",
+    success: "border-[var(--success-color)] text-[var(--success-color)]",
+    link: "border-transparent text-[var(--primary-color)] underline p-0",
   };
 
   const sizes = {

@@ -45,28 +45,28 @@ export const FunctionBlock = ({
 
   return (
     <div className="function-block">
-      {/* Function Header */}
-      <div className="function-header">
-        <span className="function-number">Function {index + 1}</span>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => onUpdate({ name: e.target.value })}
-          placeholder="Function name (optional)"
-          className="function-name-input"
-        />
-        <button
-          type="button"
-          className="remove-function-btn"
-          onClick={() => onRemove(id)}
-          title="Remove function"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
-      </div>
+       {/* Function Header */}
+       <div className="function-header">
+         <span className="function-number">Function {index + 1}</span>
+         <input
+           type="text"
+           value={name}
+           onChange={(e) => onUpdate({ name: e.target.value })}
+           placeholder="Function name (optional)"
+           className="function-name-input"
+         />
+         <button
+           type="button"
+           className="remove-function-btn"
+           onClick={() => onRemove(id)}
+           title="Remove function"
+         >
+           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+             <line x1="18" y1="6" x2="6" y2="18"></line>
+             <line x1="6" y1="6" x2="18" y2="18"></line>
+           </svg>
+         </button>
+       </div>
 
       {/* Condition Prompt */}
       <div className="form-group">
@@ -231,71 +231,71 @@ export const FunctionBlock = ({
         </div>
       )}
 
-      {/* Variable Name */}
-      {operationType !== "log_function" && (
-        <div className="form-group">
-          <label className="label">Variable Name (for other functions)</label>
-          <input
-            type="text"
-            value={variableName}
-            onChange={(e) => onUpdate({ variableName: e.target.value })}
-            placeholder="result1, duplicates, api_response..."
-            className="variable-name-input"
-          />
-          <p className="hint">
-            Name this function's result so other functions can use it with ${variableName}.
-            Leave empty if not needed by other functions.
-          </p>
-        </div>
-      )}
+       {/* Variable Name */}
+       {operationType !== "log_function" && (
+         <div className="form-group">
+           <label className="label">Variable Name (for other functions)</label>
+           <input
+             type="text"
+             value={variableName}
+             onChange={(e) => onUpdate({ variableName: e.target.value })}
+             placeholder="result1, duplicates, api_response..."
+             className="variable-name-input"
+           />
+           <p className="hint">
+             Name this function's result so other functions can use it with ${variableName}.
+             Leave empty if not needed by other functions.
+           </p>
+         </div>
+       )}
 
-      {/* Generated Code Editor */}
-      <div className="form-group">
-        <label className="label">Generated Code</label>
-        <textarea
-          value={code}
-          readOnly={!conditionPrompt && !operationPrompt}
-          placeholder="// AI will generate this code based on your prompts"
-          className={`code-editor ${!conditionPrompt && !operationPrompt ? "disabled-code" : ""}`}
-          rows={8}
-        />
-        <div className="code-actions">
-          {(!conditionPrompt || !operationPrompt) ? (
-            <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-              Fill in Condition Prompt and Operation Type/Prompt to generate code
-            </span>
-          ) : (
-            <>
-              <button
-                type="button"
-                className="small-button"
-                onClick={handleRegenerateCode}
-                disabled={isGenerating}
-              >
-                {isGenerating ? (
-                  <>
-                    <span className="spinner-small" style={{ marginRight: "6px", display: "inline-block" }}></span>
-                    Generating code...
-                  </>
-                ) : (
-                  <>Regenerate Code with AI</>
-                )}
-              </button>
-              <label className="backoff-checkbox">
-                <input
-                  type="checkbox"
-                  checked={includeBackoff}
-                  onChange={(e) => onUpdate({ includeBackoff: e.target.checked })}
-                />
-                Include exponential backoff for API calls (3 retries)
-              </label>
-            </>
-          )}
-        </div>
-        <p className="hint">
-          The AI generates this code based on your prompts. You can edit it manually before committing.
-        </p>
-      </div>
+       {/* Generated Code Editor */}
+       <div className="form-group">
+         <label className="label">Generated Code</label>
+         <textarea
+           value={code}
+           readOnly={!conditionPrompt && !operationPrompt}
+           placeholder="// AI will generate this code based on your prompts"
+           className={`code-editor ${!conditionPrompt && !operationPrompt ? "disabled-code" : ""}`}
+           rows={8}
+         />
+         <div className="code-actions">
+           {(!conditionPrompt || !operationPrompt) ? (
+             <span className="hint" style={{ margin: 0 }}>
+               Fill in Condition Prompt and Operation Type/Prompt to generate code
+             </span>
+           ) : (
+             <>
+               <button
+                 type="button"
+                 className="small-button"
+                 onClick={handleRegenerateCode}
+                 disabled={isGenerating}
+               >
+                 {isGenerating ? (
+                   <>
+                     <span className="spinner-small" style={{ marginRight: "6px", display: "inline-block" }}></span>
+                     Generating code...
+                   </>
+                 ) : (
+                   <>Regenerate Code with AI</>
+                 )}
+               </button>
+               <label className="backoff-checkbox">
+                 <input
+                   type="checkbox"
+                   checked={includeBackoff}
+                   onChange={(e) => onUpdate({ includeBackoff: e.target.checked })}
+                 />
+                 Include exponential backoff for API calls (3 retries)
+               </label>
+             </>
+           )}
+         </div>
+         <p className="hint">
+           The AI generates this code based on your prompts. You can edit it manually before committing.
+         </p>
+       </div>
     </div>
   );
 };

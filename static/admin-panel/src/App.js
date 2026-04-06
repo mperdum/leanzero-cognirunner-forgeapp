@@ -17,6 +17,7 @@
  */
 
 import React, { useState, useEffect } from "react";
+import OpenAIConfig from "./components/OpenAIConfig";
 
 const injectStyles = () => {
   if (document.getElementById("app-styles")) return;
@@ -713,16 +714,18 @@ function App() {
         </div>
       )}
 
-      {successMessage && (
-        <div className="alert alert-success">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M20 6L9 17l-5-5" />
-          </svg>
-          <span>{successMessage}</span>
-        </div>
-      )}
-
-      {removedCount > 0 && (
+       {successMessage && (
+         <div className="alert alert-success">
+           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+             <path d="M20 6L9 17l-5-5" />
+           </svg>
+           <span>{successMessage}</span>
+         </div>
+       )}
+ 
+       <OpenAIConfig invoke={invoke} />
+ 
+       {removedCount > 0 && (
         <div className="alert alert-warning">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <polyline points="3 6 5 6 21 6" />

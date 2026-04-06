@@ -35,7 +35,7 @@ export const LogsSection = ({
 
   if (loading) {
     return (
-      <div className="py-8 text-center text-gray-600 dark:text-gray-400">
+      <div className="loading-text" style={{ textAlign: 'center', padding: '2rem 0' }}>
         Loading logs...
       </div>
     );
@@ -43,7 +43,7 @@ export const LogsSection = ({
 
   if (!logs || logs.length === 0) {
     return (
-      <div className="py-8 text-center text-gray-600 dark:text-gray-400">
+      <div className="loading-text" style={{ textAlign: 'center', padding: '2rem 0' }}>
         No validation logs yet
       </div>
     );
@@ -51,53 +51,50 @@ export const LogsSection = ({
 
   const renderLogEntry = (log) => {
     return (
-      <div key={log.id} className="border-b border-gray-100 p-3 last:border-0 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">
-        <div className="mb-2 flex items-center gap-2">
-          <span className={`rounded px-2 py-0.5 text-[9px] font-semibold ${
-            log.isValid 
-              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-          }`}>
+      <div key={log.id} className="config-item" style={{ borderBottom: '1px solid var(--border-color)', padding: '8px 0' }}>
+        <div className="flex items-center gap-2 mb-2">
+          <span className="status-badge" style={{ 
+            backgroundColor: log.isValid ? 'var(--success-color)' : 'var(--error-color)',
+            color: 'white',
+            fontSize: '9px'
+          }}>
             {log.isValid ? "PASS" : "FAIL"}
           </span>
-          <span className="font-medium text-blue-600 dark:text-blue-400">
+          <span className="workflow-name" style={{ fontSize: '12px', color: 'var(--primary-color)' }}>
             {log.issueKey}
           </span>
-          <span className="text-[9px] text-gray-500 dark:text-gray-400 whitespace-nowrap">
+          <span className="transition-info" style={{ marginLeft: 'auto' }}>
             {formatTime(log.timestamp)}
           </span>
         </div>
-        <div className="ml-1 mb-2 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+        <div className="config-item" style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
           Field: 
-          <code className={`rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[9px] ${
-            log.fieldId ? 'text-blue-600 dark:text-blue-400' : ''
-          }`}>
+          <code className="value" style={{ marginLeft: '4px', fontSize: '10px' }}>
             {log.fieldId || "(post-function)"}
           </code>
           {log.postFunctionType && (
-            <span
-              className={`rounded px-1.5 py-0.5 text-[9px] ${
-                log.postFunctionType === "Semantic Post Function"
-                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                  : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
-              }`}
-            >
+            <span className="status-badge" style={{ 
+              marginLeft: '8px',
+              backgroundColor: log.postFunctionType === "Semantic Post Function" ? 'var(--success-color)' : 'var(--primary-color)',
+              color: 'white',
+              fontSize: '9px'
+            }}>
               {log.postFunctionType}
             </span>
           )}
         </div>
-        <div className="ml-1 rounded bg-gray-50 p-2 text-xs font-mono text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+        <div className="value" style={{ marginTop: '4px', padding: '8px', fontSize: '12px', backgroundColor: 'var(--code-bg)', color: 'var(--text-color)' }}>
           {log.reason}
         </div>
         {log.toolMeta?.toolsUsed && (
-          <div className="ml-1 mt-1.5 rounded bg-gray-50 p-2 text-[9px] text-gray-600 dark:bg-gray-800 dark:text-gray-400">
-            <span className="rounded bg-blue-100 px-1 py-0.5 font-semibold text-[9px] text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">JQL</span>
+          <div className="value" style={{ marginTop: '4px', padding: '8px', fontSize: '10px', backgroundColor: 'var(--code-bg)', color: 'var(--text-secondary)' }}>
+            <span className="status-badge" style={{ backgroundColor: 'var(--primary-color)', color: 'white', fontSize: '9px' }}>JQL</span>
             {log.toolMeta.toolRounds} round{log.toolMeta.toolRounds !== 1 ? "s" : ""},{" "}
             {log.toolMeta.totalResults} result{log.toolMeta.totalResults !== 1 ? "s" : ""}
             {log.toolMeta.queries?.length > 0 && (
-              <div className="mt-1.5 overflow-x-auto rounded bg-gray-100 p-1 font-mono text-[8px] dark:bg-gray-700">
+              <div style={{ marginTop: '4px', padding: '4px', backgroundColor: 'var(--input-bg)', borderRadius: '3px' }}>
                 {log.toolMeta.queries.map((q, i) => (
-                  <div key={i} className="whitespace-pre-wrap break-all">
+                  <div key={i} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontSize: '9px' }}>
                     {q}
                   </div>
                 ))}
@@ -110,7 +107,7 @@ export const LogsSection = ({
   };
 
   return (
-    <div className="max-h-[300px] overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+    <div className="container" style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '4px' }}>
       {logs.map(renderLogEntry)}
     </div>
   );

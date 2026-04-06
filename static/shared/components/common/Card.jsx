@@ -30,16 +30,20 @@ export const Card = ({
 }) => {
   return (
     <div
-      className={`border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 overflow-hidden ${className}`}
-      style={style}
+      className={`border rounded-lg overflow-hidden ${className}`}
+      style={{ 
+        borderColor: 'var(--border-color)', 
+        backgroundColor: 'var(--card-bg)',
+        ...style 
+      }}
     >
       {title && (
-        <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700">
-          <h3 className="font-semibold text-gray-900 dark:text-white">{title}</h3>
+        <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border-color)' }}>
+          <h3 className="font-semibold" style={{ color: 'var(--text-color)' }}>{title}</h3>
         </div>
       )}
       {headerActions && title && (
-        <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-700 flex justify-end">
+        <div className="px-4 py-2 flex justify-end" style={{ borderBottom: '1px solid var(--border-color)' }}>
           {headerActions}
         </div>
       )}

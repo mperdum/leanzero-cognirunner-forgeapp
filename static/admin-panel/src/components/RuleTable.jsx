@@ -51,9 +51,9 @@ export const RuleTable = ({
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-      <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-        <thead className="bg-gray-50 dark:bg-gray-900/50">
+    <div className="container" style={{ border: '1px solid var(--border-color)', borderRadius: '4px', overflow: 'hidden' }}>
+      <table className="min-w-full" style={{ borderCollapse: 'collapse', width: '100%' }}>
+        <thead style={{ backgroundColor: 'var(--hover-bg)' }}>
           <tr>
             <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">
               Type
@@ -67,7 +67,7 @@ export const RuleTable = ({
             <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">
               Prompt
             </th>
-            <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">
+            <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray00">
               Updated
             </th>
             <th scope="col" className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">
@@ -75,7 +75,7 @@ export const RuleTable = ({
             </th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-800">
+        <tbody style={{ backgroundColor: 'var(--card-bg)' }}>
           {configs.map((config) => {
             const wf = config.workflow || {};
             const hasWorkflow = wf.workflowName || wf.workflowId;
@@ -85,17 +85,22 @@ export const RuleTable = ({
             const isDisabled = config.disabled === true;
 
             return (
-              <tr key={config.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+              <tr key={config.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                 <td className="px-4 py-3 whitespace-nowrap">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    config.type === 'validator' 
-                      ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
-                      : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                  }`}>
+                  <span className="status-badge" style={{ 
+                    backgroundColor: config.type === 'validator' ? 'var(--primary-color)' : 'var(--success-color)',
+                    color: 'white',
+                    fontSize: '10px'
+                  }}>
                     {config.type}
                   </span>
                   {isDisabled && (
-                    <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
+                    <span className="status-badge" style={{ 
+                      marginLeft: '8px',
+                      backgroundColor: 'var(--error-color)',
+                      color: 'white',
+                      fontSize: '10px'
+                    }}>
                       Disabled
                     </span>
                   )}
@@ -103,41 +108,42 @@ export const RuleTable = ({
                 <td className="px-4 py-3 max-w-md sm:max-w-lg">
                   {hasWorkflow ? (
                     <div>
-                      <div className="font-medium text-gray-900 dark:text-white">{wf.workflowName || wf.workflowId}</div>
+                      <div className="font-medium" style={{ color: 'var(--text-color)' }}>{wf.workflowName || wf.workflowId}</div>
                       {(wf.transitionFromName || wf.transitionToName) && (
-                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        <div className="transition-info">
                           {wf.transitionFromName || "Any"} → {wf.transitionToName || "Any"}
                         </div>
                       )}
                     </div>
                   ) : (
-                    <span className="text-sm text-gray-500 dark:text-gray-400 italic">
+                    <span className="no-workflow-info">
                       Re-save rule to capture workflow info
                     </span>
                   )}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap">
-                  <code className="block rounded bg-gray-100 dark:bg-gray-700 px-2 py-1 text-xs font-mono text-blue-600 dark:text-blue-400">
+                  <code className="value" style={{ fontSize: '12px', color: 'var(--primary-color)' }}>
                     {config.fieldId}
                   </code>
                 </td>
                 <td className="px-4 py-3 max-w-xs">
-                  <span className="text-sm text-gray-700 dark:text-gray-300 break-all">
+                  <span className="text-sm" style={{ color: 'var(--text-color)' }}>
                     {config.prompt && config.prompt.length > 80
                       ? config.prompt.substring(0, 80) + "..."
                       : config.prompt}
                   </span>
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                <td className="px-4 py-3 whitespace-nowrap text-sm" style={{ color: 'var(--text-muted)' }}>
                   {formatTime(config.updatedAt)}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
-                  <div className="flex items-center justify-end gap-2">
+                  <div className="row-actions" style={{ justifyContent: 'flex-end' }}>
                     {editUrl && onEditWorkflow && (
                       <button
                         onClick={() => router && router.open(editUrl)}
                         title="Open workflow editor"
-                        className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
+                        className="btn-edit"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
                       >
                         Edit
                       </button>
@@ -145,11 +151,8 @@ export const RuleTable = ({
                     <button
                       onClick={() => onToggleRule && onToggleRule(config.id, isDisabled)}
                       disabled={togglingId === config.id}
-                      className={`px-2 py-1 rounded text-xs font-medium ${
-                        isDisabled
-                          ? 'text-green-600 hover:bg-green-50 dark:text-green-400 dark:hover:bg-green-900/20'
-                          : 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20'
-                      } disabled:opacity-60 disabled:cursor-not-allowed`}
+                      className={isDisabled ? "btn-enable" : "btn-danger"}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
                     >
                       {togglingId === config.id
                         ? (isDisabled ? "Enabling..." : "Disabling...")

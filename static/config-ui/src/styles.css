@@ -111,6 +111,11 @@ html, body {
   margin-bottom: 16px;
 }
 
+.card-success {
+  background-color: var(--alert-success-bg);
+  border-color: var(--alert-success-border);
+}
+
 .form-group {
   margin-bottom: 20px;
 }
@@ -133,7 +138,7 @@ html, body {
   color: var(--error-color);
 }
 
-.input, .textarea {
+.input, .textarea, .operation-type-select, .function-name-input, .variable-name-input, .code-editor {
   width: 100%;
   padding: 10px 12px;
   font-size: 14px;
@@ -145,7 +150,7 @@ html, body {
   transition: border-color 0.15s ease-in-out;
 }
 
-.input:focus, .textarea:focus {
+.input:focus, .textarea:focus, .operation-type-select:focus, .function-name-input:focus, .variable-name-input:focus, .code-editor:focus {
   border-color: var(--primary-color);
 }
 
@@ -157,7 +162,7 @@ html, body {
   resize: vertical;
   font-family: inherit;
   line-height: 1.5;
-  min-height: 120px;
+  min-height: 80px;
 }
 
 .input::placeholder, .textarea::placeholder {
@@ -258,42 +263,132 @@ html[data-color-mode="dark"] .button-disabled {
   animation: spin 0.8s linear infinite;
 }
 
-/* Small spinner for button loading states */
-.button .spinner-small {
-  width: 16px;
-  height: 16px;
-  border-width: 2px;
+/* Function Builder Specific Styles */
+.function-block {
+  padding: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--card-bg);
+  margin-bottom: 12px;
 }
 
-.fields-loading {
+.function-header {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 16px;
-  background-color: var(--input-bg);
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.function-number {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background-color: var(--code-bg);
+  padding: 4px 8px;
+  border-radius: 3px;
+}
+
+.function-name-input {
+  flex: 1;
+}
+
+.remove-function-btn {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
   border-radius: 4px;
+  background-color: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
 }
 
-.spinner-small {
-  width: 20px;
-  height: 20px;
-  border: 3px solid var(--border-color);
-  border-top-color: var(--primary-color);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
+.remove-function-btn:hover {
+  background-color: var(--alert-error-bg);
+  color: var(--error-color);
 }
 
-.loading-text {
-  margin-top: 12px;
-  font-size: 13px;
+.operation-type-select, .variable-name-input {
+  /* already covered by general input styles but can add specific ones if needed */
+}
+
+.variable-name-input {
+  font-family: SFMono-Regular, Consolas, monospace;
+}
+
+.code-editor {
+  font-family: SFMono-Regular, Consolas, monospace;
+  line-height: 1.6;
+  min-height: 80px;
+}
+
+.code-editor.disabled-code {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.code-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.small-button {
+  padding: 6px 12px;
+  font-size: 12px;
+  background-color: var(--code-bg);
+  color: var(--text-color);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+html[data-color-mode="dark"] .small-button {
+  background-color: #333940;
+}
+
+.backoff-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
   color: var(--text-secondary);
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
+.backoff-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary-color);
 }
 
-/* Custom dropdown */
+.add-function-container {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.add-function-btn {
+  padding: 10px 24px;
+  font-size: 13px;
+  background-color: var(--primary-color);
+  color: #FFFFFF;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+html[data-color-mode="dark"] .add-function-btn {
+  color: #1D2125;
+}
+
+/* Dropdown Styles */
 .dropdown { position: relative; }
 
 .dropdown-trigger {
@@ -319,6 +414,7 @@ html[data-color-mode="dark"] .button-disabled {
 .dropdown-trigger:focus,
 .dropdown-trigger.dropdown-open { border-color: var(--primary-color); }
 .dropdown-trigger.dropdown-error { border-color: var(--error-color) !important; }
+
 .dropdown-trigger .dropdown-placeholder { color: var(--text-muted); }
 
 .dropdown-chevron {
@@ -441,11 +537,63 @@ html[data-color-mode="dark"] .dropdown-panel {
   font-size: 13px;
 }
 
-:focus:not(:focus-visible) {
-  outline: none;
+/* Spinner and Loading */
+.fields-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background-color: var(--input-bg);
+  border: 2px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
-:focus-visible {
-  outline: 2px solid var(--primary-color);
-  outline-offset: 2px;
+.fields-loading .spinner-small {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
+
+.spinner-small {
+  width: 20px;
+  height: 20px;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.loading-text {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Syntax highlighting (Prism) */
+.token.comment, .token.prolog, .token.doctype, .token.cdata { color: #969896; }
+.token.punctuation { color: #dfdfdf; }
+.token.namespace { opacity: 0.7; }
+.token.property, .token.tag, .token.boolean, .token.number, .token.constant, .token.symbol, .token.deleted { color: #ff8b39; }
+.token.selector, .token.attr-name, .token.string, .token.char, .token.builtin, .token.inserted { color: #9ece6a; }
+.token.operator, .token.entity, .token.url, .token.variable { color: #7aa2f7; }
+.token.atrule, .token.attr-value, .token.keyword { color: #bb9af7; }
+.token.function, .token.doctag { color: #7aa2f7; }
+.token.regex, .token.important, .token.bold { font-weight: bold; }
+.token.italic { font-style: italic; }
+.token.entity { cursor: help; }
+
+/* Dark mode overrides for Prism */
+html[data-color-mode="dark"] .token.plain { color: #B6C2CF; }
+html[data-color-mode="dark"] .token.keyword { color: #FF75B9; }
+html[data-color-mode="dark"] .token.string { color: #9BEC44; }
+html[data-color-mode="dark"] .token.number { color: #FFD166; }
+html[data-color-mode="dark"] .token.function { color: #579DFF; }
+html[data-color-mode="dark"] .token.comment { color: #8C9BAB; }
+html[data-color-mode="dark"] .token.boolean { color: #FF75B9; }

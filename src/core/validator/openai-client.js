@@ -3,132 +3,51 @@
  */
 
 import api, { route } from '@forge/api';
+import { storage } from '@forge/kvs';
+import { 
+  FILE_MIME_TYPES, 
+  IMAGE_MIME_TYPES, 
+  downloadAttachment, 
+  buildAttachmentContentParts 
+} from './attachments';
 
 // For testing purposes
 export const isTestEnv = process.env.NODE_ENV === 'test';
 
 // Configuration constants
 export const MAX_TOOL_ROUNDS = 3;
-
-// Attachment size limits
-export const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10MB per file
-export const MAX_TOTAL_ATTACHMENT_SIZE = 20 * 1024 * 1024; // 20MB total
-
-// Supported mime types for OpenAI processing
-export const FILE_MIME_TYPES = new Set([
-  "application/pdf",
-  "text/plain",
-  "text/csv",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-]);
-
-export const IMAGE_MIME_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-]);
-
-/**
- * Download attachment content from JIRA API
- */
-export const downloadAttachment = async (attachment, dependencies = {}) => {
-  const { api: injectedApi = api, route: injectedRoute = route } = dependencies;
-  try {
-    if (!attachment.id) {
-      console.log("Attachment missing id, skipping");
-      return null;
-    }
-
-    // Skip attachments that are too large
-    if (attachment.size && attachment.size > MAX_ATTACHMENT_SIZE) {
-      console.log(`Attachment "${attachment.filename}" too large (${Math.round(attachment.size / 1024 / 1024)}MB), skipping`);
-      return null;
-    }
-
-    const mimeType = (attachment.mimeType || "").toLowerCase();
-
-    // Only download file types that OpenAI can process
-    if (!FILE_MIME_TYPES.has(mimeType) && !IMAGE_MIME_TYPES.has(mimeType)) {
-      console.log(`Attachment "${attachment.filename}" has unsupported type "${mimeType}", skipping content download`);
-      return null;
-    }
-
-    console.log(`Downloading attachment "${attachment.filename}" (${attachment.id}, ${mimeType})`);
-
-    const response = await injectedApi.asApp().requestJira(
-      injectedRoute`/rest/api/3/attachment/content/${attachment.id}`,
-    );
-
-    if (!response.ok) {
-      console.error(`Failed to download attachment ${attachment.id}:`, response.status);
-      return null;
-    }
-
-    const buffer = await response.arrayBuffer();
-    const base64 = Buffer.from(buffer).toString("base64");
-
-    return {
-      base64,
-      mimeType,
-      filename: attachment.filename || `attachment_${attachment.id}`,
-    };
-  } catch (error) {
-    console.error("Download attachment error:", error);
-    return null;
-  }
-};
-
-/**
- * Build OpenAI message content parts from downloaded attachments.
- * Images use the image_url content type; documents use the file content type.
- */
-export const buildAttachmentContentParts = (downloadedAttachments) => {
-  const parts = [];
-
-  for (const att of downloadedAttachments) {
-    if (!att) continue;
-
-    if (IMAGE_MIME_TYPES.has(att.mimeType)) {
-      // Vision API: image_url with base64 data URI
-      parts.push({
-        type: "image_url",
-        image_url: {
-          url: `data:${att.mimeType};base64,${att.base64}`,
-          detail: "auto",
-        },
-      });
-    } else if (FILE_MIME_TYPES.has(att.mimeType)) {
-      // File content type for PDFs, DOCX, XLSX, etc.
-      parts.push({
-        type: "file",
-        file: {
-          filename: att.filename,
-          file_data: `data:${att.mimeType};base64,${att.base64}`,
-        },
-      });
-    }
-  }
-
-  return parts;
-};
-
-export const MAX_JQL_RESULTS = 10;
 export const AGENTIC_TIMEOUT_MS = 22000; // 22s budget within Forge's 25s validator limit
 
+export const MAX_JQL_RESULTS = 10;
+
 /**
- * Get the OpenAI API key from environment variables
+ * Get the OpenAI API key from Forge KVS or environment variables
  */
-export const getOpenAIKey = () => {
+export const getOpenAIKey = async () => {
+  try {
+    const kvsKey = await storage.get('COGNIRUNNER_OPENAI_API_KEY');
+    if (kvsKey) {
+      return kvsKey;
+    }
+  } catch (error) {
+    console.error("Error reading OpenAI API key from KVS:", error);
+  }
   return process.env.OPENAI_API_KEY;
 };
 
 /**
- * Get the OpenAI model from environment variables (defaults to gpt-4o-mini)
+ * Get the OpenAI model from KVS or environment variables (defaults to gpt-mini 5.4)
  */
-export const getOpenAIModel = () => {
-  return process.env.OPENAI_MODEL || "gpt-4o-mini";
+export const getOpenAIModel = async () => {
+  try {
+    const kvsModel = await storage.get('COGNIRUNNER_OPENAI_MODEL');
+    if (kvsModel) {
+      return kvsModel;
+    }
+  } catch (error) {
+    console.error("Error reading OpenAI model from KVS:", error);
+  }
+  return process.env.OPENAI_MODEL || "gpt-mini 5.4";
 };
 
 // Export for testing
@@ -137,7 +56,7 @@ export const mockGetOpenAIKey = () => {
 };
 
 export const mockGetOpenAIModel = () => {
-  return "gpt-4o-mini";
+  return "gpt-mini 5.4";
 };
 
 // Tool trigger patterns for agentic mode
@@ -479,8 +398,8 @@ export const TOOL_REGISTRY = {
  * Call OpenAI API to validate text against a prompt (Simple version, no tools)
  */
 export const callOpenAI = async (fieldValue, validationPrompt, attachmentParts = []) => {
-  const apiKey = getOpenAIKey();
-  const model = getOpenAIModel();
+  const apiKey = await getOpenAIKey();
+  const model = await getOpenAIModel();
 
   if (!apiKey) {
     console.error("OpenAI API key not configured");
@@ -586,10 +505,11 @@ export const callOpenAIWithTools = async (
   dependencies = {}
 ) => {
   const {
-    apiKey = getOpenAIKey(),
-    model = getOpenAIModel(),
     fetch: injectedFetch = fetch,
   } = dependencies;
+
+  const model = dependencies.model || await getOpenAIModel();
+  const apiKey = dependencies.apiKey || await getOpenAIKey();
 
   if (!apiKey) {
     console.error("OpenAI API key not configured");
@@ -632,9 +552,8 @@ Do not include any other text, markdown, or explanation outside the JSON object.
 
   const messages = [
     { role: "system", content: systemPrompt },
+    { role: "user", content: userContent },
   ];
-  // Add user message to messages array (handle multimodal)
-  messages.push({ role: "user", content: userContent });
 
   // Observability: track tool usage across the loop
   const toolMeta = {
@@ -727,7 +646,7 @@ Do not include any other text, markdown, or explanation outside the JSON object.
           
           messages.push({
             role: "assistant",
-            content: message.content,
+            content: message.content || "",
             tool_calls: [toolCall],
           });
           

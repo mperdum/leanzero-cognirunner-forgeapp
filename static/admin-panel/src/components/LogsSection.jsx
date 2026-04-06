@@ -48,36 +48,40 @@ export const LogsSection = ({
     );
   }
 
-  return (
-    <div className="max-h-[500px] overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-      {logs.map((log) => (
-        <div key={log.id} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/30">
-          <div className="flex items-center gap-3 mb-2">
-            <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-semibold ${
-              log.isValid 
-                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
-            }`}>
-              {log.isValid ? "PASS" : "FAIL"}
-            </span>
-            <span className="font-medium text-blue-600 dark:text-blue-400">
-              {log.issueKey}
-            </span>
-            <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-              {formatTime(log.timestamp)}
-            </span>
-          </div>
-          <div className="ml-1 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 mb-2">
-            Field: 
-            <code className="rounded bg-gray-100 dark:bg-gray-700 px-2 py-0.5 font-mono text-xs text-blue-600 dark:text-blue-400">
-              {log.fieldId}
-            </code>
-          </div>
-          <div className="ml-1 rounded bg-gray-100 dark:bg-gray-900/50 p-2 text-sm text-gray-700 dark:text-gray-300 font-mono break-all">
-            {log.reason}
-          </div>
+  const renderLogEntry = (log) => {
+    return (
+      <div key={log.id} className="config-item" style={{ borderBottom: '1px solid var(--border-color)', padding: '8px 0' }}>
+        <div className="flex items-center gap-3 mb-2">
+          <span className="status-badge" style={{ 
+            backgroundColor: log.isValid ? 'var(--success-color)' : 'var(--error-color)',
+            color: 'white',
+            fontSize: '9px'
+          }}>
+            {log.isValid ? "PASS" : "FAIL"}
+          </span>
+          <span className="font-medium" style={{ color: 'var(--primary-color)' }}>
+            {log.issueKey}
+          </span>
+          <span className="transition-info" style={{ marginLeft: 'auto' }}>
+            {formatTime(log.timestamp)}
+          </span>
         </div>
-      ))}
+        <div className="config-item" style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+          Field: 
+          <code className="value" style={{ marginLeft: '4px', fontSize: '10px' }}>
+            {log.fieldId || "(post-function)"}
+          </code>
+        </div>
+        <div className="value" style={{ marginTop: '4px', padding: '8px', fontSize: '12px', backgroundColor: 'var(--code-bg)', color: 'var(--text-color)' }}>
+          {log.reason}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="container" style={{ maxHeight: '500px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '4px' }}>
+      {logs.map(renderLogEntry)}
     </div>
   );
 };

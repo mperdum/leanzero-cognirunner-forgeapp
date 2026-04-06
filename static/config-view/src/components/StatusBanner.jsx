@@ -37,13 +37,13 @@ export const StatusBanner = ({
 
   if (isDisabled === true) {
     return (
-      <div className="mb-4 flex items-center justify-between rounded-lg border border-red-500 bg-red-50 px-3 py-2 dark:bg-red-900/20">
+      <div className="alert alert-error" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div className="flex items-center gap-2">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="10" />
             <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
           </svg>
-          <span className="text-sm font-medium text-red-700 dark:text-red-400">
+          <span className="text-sm font-medium">
             This rule is <strong>disabled</strong>. It will not run on transitions.
           </span>
         </div>
@@ -56,12 +56,12 @@ export const StatusBanner = ({
 
   if (isDisabled === false) {
     return (
-      <div className="mb-4 flex items-center justify-between rounded-lg border border-green-500 bg-green-50 px-3 py-2 dark:bg-green-900/20">
+      <div className="alert alert-success" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div className="flex items-center gap-2">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M20 6L9 17l-5-5" />
           </svg>
-          <span className="text-sm font-medium text-green-700 dark:text-green-400">
+          <span className="text-sm font-medium">
             This rule is <strong>active</strong>.
           </span>
         </div>

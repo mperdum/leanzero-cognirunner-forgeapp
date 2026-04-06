@@ -184,4 +184,65 @@ describe('openai-client utility functions', () => {
       expect(promptRequiresTools(undefined)).toBe(false);
     });
   });
+
+  describe('getOpenAIKey', () => {
+    const originalEnv = process.env;
+
+    beforeEach(() => {
+      jest.resetModules();
+      process.env = { ...originalEnv };
+    });
+
+    afterAll(() => {
+      process.env = originalEnv;
+    });
+
+    test('should return key from KVS if available', async () => {
+      const { storage } = await import('@forge/api');
+      storage.get = jest.fn().mockResolvedValue('kvs-key-123');
+
+      // We need to re-import to pick up the mocked storage if it's used via module scope
+      // But since it's used inside the function, the mock should work.
+      const { getOpenAIKey } = require('../../../src/core/validator/openai-client.js');
+      
+      const key = await getOpenAIKey();
+      expect(key).toBe('kvs-key-123');
+      expect(storage.get).toHaveBeenCalledWith('COGNIRUNNER_OPENAI_API_KEY');
+    });
+
+    test('should fallback to process.env if KVS is empty', async () => {
+      const { storage } = await import('@forge/api');
+      storage.get = jest.fn().mockResolvedValue(null);
+      process.env.OPENAI_API_KEY = 'env-key-123';
+
+      const { getOpenAIKey } = require('../../../src/core/validator/openai-client.js');
+      
+      const key = await getOpenAIKey();
+      expect(key).toBe('env-key-123');
+    });
+
+    test('should fallback to process.env if KVS throws error', async () => {
+      const { storage } = await import('@forge/api');
+      storage.get = jest.fn().mockRejectedValue(new Error('KVS Error'));
+      process.env.OPENAI_API_KEY = 'env-key-123';
+
+      const { getOpenAIKey } = require('../../../src/core/validator/openai-client.js');
+      
+      const key = await getOpenAIKey();
+      expect(key).toBe('env-key-123');
+    });
+  });
+
+  describe('getOpenAIModel', () => {
+    test('should return default model if env is not set', () => {
+      const { getOpenAIModel } = require('../../../src/core/validator/openai-client.js');
+      expect(getOpenAIModel()).toBe('gpt-4o-mini');
+    });
+
+    test('should return model from env if set', () => {
+      process.env.OPENAI_MODEL = 'gpt-4-turbo';
+      const { getOpenAIModel } = require('../../../src/core/validator/openai-client.js');
+      expect(getOpenAIModel()).toBe('gpt-4-turbo');
+    });
+  });
 });
