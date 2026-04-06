@@ -91,6 +91,9 @@ export const fetchWorkflowTransitions = async (workflowName, dependencies = {}) 
         transitionRules.set(String(t.id), {
           validators,
           conditions,
+          name: t.name,
+          from: t.from,
+          to: t.to,
         });
       }
     }

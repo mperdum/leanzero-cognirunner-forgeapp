@@ -418,6 +418,47 @@ export const validate = async (args) => {
   }
 };
 
+/**
+ * General event handler for Forge events (e.g., avi:jira:created:issue)
+ * This is used for event-driven automation.
+ */
+export const handleEvent = async (event) => {
+  console.log("Handling Forge event:", JSON.stringify(event, null, 2));
+  
+  const { eventType } = event;
+
+  if (!eventType) {
+    console.error("Invalid event payload received: missing eventType");
+    return { success: false, error: "Invalid event payload" };
+  }
+
+  try {
+    // Routing logic based on event type
+    switch (eventType) {
+      case 'avi:jira:created:issue':
+      case 'avi:jira:updated:issue':
+        console.log(`Processing issue event: ${eventType} for ${issue.key}`);
+        // Future logic: trigger specific automation based on issue changes
+        return { success: true, message: `Processed ${eventType}` };
+
+      case 'avi:jira:commented:issue':
+        console.log(`Processing comment event for ${issue.key}`);
+        return { success: true, message: "Comment processed" };
+
+      case 'avi:jira:transitioned:issue':
+        console.log(`Processing transition event for ${issue.key}`);
+        return { success: true, message: "Transition processed" };
+
+      default:
+        console.log(`Unhandled event type: ${eventType}`);
+        return { success: true, message: "Event received but no handler registered" };
+    }
+  } catch (error) {
+    console.error("Error in handleEvent:", error);
+    return { success: false, error: error.message };
+  }
+};
+
 // === Resolver definitions (business logic only) ===
 
 resolver.define("getJiraPrompts", async () => {

@@ -145,4 +145,46 @@ describe('Jira API Workflows Integration', () => {
       expect(error).toContain('Jira API returned 403');
     });
   });
+
+  describe('Integration with Real-World Event Payload Structures', () => {
+    it('should correctly handle transitions as defined in real Jira event payloads', async () => {
+      // This test simulates the structure of a transition event seen in Context7
+      // to ensure our data mapping logic is consistent.
+      const mockEventTransition = {
+        "id": "11",
+        "name": "In progress",
+        "from": { "id": "1" },
+        "to": { "id": "2" }
+      };
+
+      // We'll verify if our fetching logic can handle a transition with this exact structure
+      mockRequestJira.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          values: [
+            {
+              name: 'Test Workflow',
+              transitions: [
+                {
+                  id: mockEventTransition.id,
+                  name: mockEventTransition.name,
+                  from: mockEventTransition.from,
+                  to: mockEventTransition.to,
+                  validators: [{ type: 'regex' }],
+                  conditions: [{ type: 'user' }]
+                }
+              ]
+            }
+          ]
+        }),
+      });
+
+      const { transitionRules, error } = await fetchWorkflowTransitions('Test Workflow', mockDependencies);
+
+      expect(error).toBeNull();
+      expect(transitionRules.get(mockEventTransition.id)).toBeDefined();
+      expect(transitionRules.get(mockEventTransition.id).name).toBe(mockEventTransition.name);
+      expect(transitionRules.get(mockEventTransition.id).from).toEqual(mockEventTransition.from);
+    });
+  });
 });

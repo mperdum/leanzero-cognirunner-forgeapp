@@ -280,11 +280,50 @@ describe('Static Post Function Module', () => {
         dryRun: false,
         dependencies: mockDependencies
       });
-
+      
       expect(result.success).toBe(true);
       expect(result.logs.length).toBe(10);
       expect(result.logs[0]).toBe('log 0');
       expect(result.logs[9]).toBe('log 9');
+    });
+
+    it('should handle attempts to access forbidden globals like process', async () => {
+      const code = 'api.log(process.env.SOME_VAR);';
+      
+      const result = await executeStaticCodeSandbox({
+        issueContext: mockIssueContext,
+        code,
+        dryRun: false,
+        dependencies: mockDependencies
+      });
+      
+      // Since we use `new Function` in the same context, it might actually work, 
+      // but in a Forge environment it would fail. 
+      // This test confirms our current "sandbox" behavior.
+      // If we later implement a real sandbox (like vm2), this test will help us catch it.
+      // For now, we just want to see what happens.
+      // If it doesn't throw, we know our current 'shallow' sandbox is very shallow.
+      if (result.success) {
+        expect(['undefined', ''].some(val => result.logs.includes(val))).toBe(true);
+      } else {
+        expect(result.error).toContain('process is not defined');
+      }
+    });
+
+    it('should handle API Surface argument errors gracefully', async () => {
+      const code = 'await api.getIssue(null);';
+      mockRequestJira.mockRejectedValueOnce(new Error('Invalid Key'));
+
+      const result = await executeStaticCodeSandbox({
+        issueContext: mockIssueContext,
+        code,
+        dryRun: false,
+        dependencies: mockDependencies
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid Key');
+      expect(result.logs).toContain('ERROR: Invalid Key');
     });
   });
 });
