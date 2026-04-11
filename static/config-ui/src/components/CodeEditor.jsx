@@ -5,95 +5,117 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import React, { useRef, useCallback } from "react";
+import React, { useMemo, useState, useEffect } from "react";
+import CodeMirror from "@uiw/react-codemirror";
+import { javascript } from "@codemirror/lang-javascript";
+import { createTheme } from "@uiw/codemirror-themes";
+import { tags as t } from "@lezer/highlight";
 
-/**
- * Lightweight code editor with line numbers and basic syntax highlighting.
- * Uses a textarea overlay on top of a highlighted pre block.
- */
+// LeanZero dark theme for CodeMirror
+const leanzeroDark = createTheme({
+  theme: "dark",
+  settings: {
+    background: "#0A0A0F",
+    foreground: "#F5F5F7",
+    caret: "#3b82f6",
+    selection: "#3b82f626",
+    selectionMatch: "#3b82f615",
+    lineHighlight: "#1e1e2e",
+    gutterBackground: "#0A0A0F",
+    gutterForeground: "#71717a",
+    gutterActiveForeground: "#A0A0B0",
+    gutterBorder: "1px solid #374151",
+    fontFamily: "SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace",
+  },
+  styles: [
+    { tag: t.comment, color: "#71717a", fontStyle: "italic" },
+    { tag: t.variableName, color: "#F5F5F7" },
+    { tag: [t.string, t.special(t.brace)], color: "#98c379" },
+    { tag: t.number, color: "#d19a66" },
+    { tag: t.bool, color: "#d19a66" },
+    { tag: t.null, color: "#d19a66" },
+    { tag: t.keyword, color: "#c678dd" },
+    { tag: t.operator, color: "#A0A0B0" },
+    { tag: t.className, color: "#e5c07b" },
+    { tag: t.definition(t.typeName), color: "#e5c07b" },
+    { tag: t.typeName, color: "#e5c07b" },
+    { tag: t.propertyName, color: "#61afef" },
+    { tag: t.function(t.variableName), color: "#61afef" },
+    { tag: t.definition(t.variableName), color: "#e06c75" },
+  ],
+});
 
-const KEYWORDS = /\b(const|let|var|function|async|await|return|if|else|for|while|try|catch|throw|new|typeof|instanceof|null|undefined|true|false)\b/g;
-const STRINGS = /(["'`])(?:(?!\1|\\).|\\.)*?\1/g;
-const COMMENTS = /(\/\/.*$|\/\*[\s\S]*?\*\/)/gm;
-const NUMBERS = /\b(\d+\.?\d*)\b/g;
-const METHODS = /\b(api\.\w+)/g;
+// LeanZero light theme for CodeMirror
+const leanzeroLight = createTheme({
+  theme: "light",
+  settings: {
+    background: "#f8fafc",
+    foreground: "#0f172a",
+    caret: "#2563eb",
+    selection: "#2563eb20",
+    selectionMatch: "#2563eb10",
+    lineHighlight: "#f1f5f9",
+    gutterBackground: "#f8fafc",
+    gutterForeground: "#94a3b8",
+    gutterActiveForeground: "#64748b",
+    gutterBorder: "1px solid #cbd5e1",
+    fontFamily: "SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace",
+  },
+  styles: [
+    { tag: t.comment, color: "#94a3b8", fontStyle: "italic" },
+    { tag: t.variableName, color: "#0f172a" },
+    { tag: [t.string, t.special(t.brace)], color: "#0a3069" },
+    { tag: t.number, color: "#0550ae" },
+    { tag: t.bool, color: "#0550ae" },
+    { tag: t.null, color: "#0550ae" },
+    { tag: t.keyword, color: "#8250df" },
+    { tag: t.operator, color: "#64748b" },
+    { tag: t.className, color: "#953800" },
+    { tag: t.definition(t.typeName), color: "#953800" },
+    { tag: t.typeName, color: "#953800" },
+    { tag: t.propertyName, color: "#0550ae" },
+    { tag: t.function(t.variableName), color: "#6639ba" },
+    { tag: t.definition(t.variableName), color: "#953800" },
+  ],
+});
 
-function highlightCode(code) {
-  if (!code) return "";
-  // Escape HTML first
-  let html = code
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+export default function CodeEditor({ value, onChange }) {
+  const extensions = useMemo(() => [javascript()], []);
 
-  // Apply highlighting in order (comments last since they override)
-  html = html.replace(STRINGS, '<span class="ce-string">$&</span>');
-  html = html.replace(NUMBERS, '<span class="ce-number">$1</span>');
-  html = html.replace(KEYWORDS, '<span class="ce-keyword">$&</span>');
-  html = html.replace(METHODS, '<span class="ce-method">$1</span>');
-  html = html.replace(COMMENTS, '<span class="ce-comment">$&</span>');
-
-  return html;
-}
-
-export default function CodeEditor({ value, onChange, rows = 12 }) {
-  const textareaRef = useRef(null);
-  const preRef = useRef(null);
-
-  const lines = (value || "").split("\n");
-  const lineCount = Math.max(lines.length, rows);
-
-  const handleScroll = useCallback(() => {
-    if (textareaRef.current && preRef.current) {
-      preRef.current.scrollTop = textareaRef.current.scrollTop;
-      preRef.current.scrollLeft = textareaRef.current.scrollLeft;
-    }
+  // Detect Jira theme mode
+  const [isDark, setIsDark] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      setIsDark(document.documentElement.getAttribute("data-color-mode") === "dark");
+    };
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-color-mode"] });
+    return () => observer.disconnect();
   }, []);
 
-  const handleKeyDown = (e) => {
-    // Tab inserts 2 spaces instead of switching focus
-    if (e.key === "Tab") {
-      e.preventDefault();
-      const ta = textareaRef.current;
-      const start = ta.selectionStart;
-      const end = ta.selectionEnd;
-      const newValue = value.substring(0, start) + "  " + value.substring(end);
-      onChange(newValue);
-      // Restore cursor position after React re-render
-      requestAnimationFrame(() => {
-        ta.selectionStart = ta.selectionEnd = start + 2;
-      });
-    }
-  };
-
   return (
-    <div className="ce-wrap" style={{ "--ce-rows": lineCount }}>
-      {/* Line numbers */}
-      <div className="ce-gutter" aria-hidden="true">
-        {Array.from({ length: lineCount }, (_, i) => (
-          <div key={i} className="ce-line-num">{i + 1}</div>
-        ))}
-      </div>
-      {/* Highlighted display layer */}
-      <pre
-        className="ce-highlight"
-        ref={preRef}
-        aria-hidden="true"
-        dangerouslySetInnerHTML={{ __html: highlightCode(value) + "\n" }}
-      />
-      {/* Editable textarea layer */}
-      <textarea
-        ref={textareaRef}
-        className="ce-textarea"
-        value={value || ""}
-        onChange={(e) => onChange(e.target.value)}
-        onScroll={handleScroll}
-        onKeyDown={handleKeyDown}
-        spellCheck={false}
-        autoComplete="off"
-        autoCorrect="off"
-        autoCapitalize="off"
-      />
-    </div>
+    <CodeMirror
+      value={value || ""}
+      onChange={onChange}
+      theme={isDark ? leanzeroDark : leanzeroLight}
+      extensions={extensions}
+      height="auto"
+      minHeight="180px"
+      maxHeight="500px"
+      basicSetup={{
+        lineNumbers: true,
+        highlightActiveLineGutter: true,
+        highlightActiveLine: true,
+        foldGutter: true,
+        bracketMatching: true,
+        closeBrackets: true,
+        indentOnInput: true,
+        tabSize: 2,
+        autocompletion: false,
+        searchKeymap: false,
+        highlightSelectionMatches: true,
+      }}
+    />
   );
 }

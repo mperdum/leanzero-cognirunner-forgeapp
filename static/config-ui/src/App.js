@@ -651,16 +651,6 @@ const injectStyles = () => {
       font-style: italic;
     }
 
-    /* Code editor */
-    .code-editor {
-      font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
-      font-size: 12px;
-      line-height: 1.6;
-      tab-size: 2;
-      white-space: pre;
-      background: var(--code-bg);
-      border-radius: 6px;
-    }
 
     /* Advanced section */
     .advanced-section {
@@ -758,94 +748,16 @@ const injectStyles = () => {
       gap: 6px;
     }
 
-    /* === Code Editor === */
-    .ce-wrap {
-      position: relative;
+    /* === CodeMirror overrides === */
+    .cm-editor {
       border: 2px solid var(--border-color);
       border-radius: 6px;
-      background: var(--code-bg);
       overflow: hidden;
-      font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
-      font-size: 12px;
-      line-height: 1.6;
-      tab-size: 2;
+      font-size: 13px;
     }
 
-    .ce-gutter {
-      position: absolute;
-      left: 0;
-      top: 0;
-      bottom: 0;
-      width: 40px;
-      background: var(--input-bg);
-      border-right: 1px solid var(--border-color);
-      padding: 8px 0;
-      text-align: right;
-      user-select: none;
-      overflow: hidden;
-      z-index: 2;
-    }
-
-    .ce-line-num {
-      padding: 0 8px 0 4px;
-      color: var(--text-muted);
-      font-size: 11px;
-      line-height: 1.6;
-    }
-
-    .ce-highlight,
-    .ce-textarea {
-      margin: 0;
-      padding: 8px 12px 8px 52px;
-      border: none;
-      background: transparent;
-      color: var(--text-color);
-      font: inherit;
-      line-height: inherit;
-      tab-size: inherit;
-      white-space: pre;
-      overflow: auto;
-      min-height: calc(1.6em * 12 + 16px);
-      width: 100%;
-      box-sizing: border-box;
-    }
-
-    .ce-highlight {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      pointer-events: none;
-      z-index: 1;
-    }
-
-    .ce-textarea {
-      position: relative;
-      z-index: 3;
-      color: transparent;
-      caret-color: var(--text-color);
-      resize: vertical;
-      outline: none;
-    }
-
-    .ce-textarea::selection { background: rgba(37, 99, 235, 0.25); }
-
-    /* Syntax colors */
-    .ce-keyword { color: #c678dd; }
-    .ce-string { color: #98c379; }
-    .ce-comment { color: var(--text-muted); font-style: italic; }
-    .ce-number { color: #d19a66; }
-    .ce-method { color: #61afef; }
-
-    html[data-color-mode="light"] .ce-keyword,
-    :root .ce-keyword { color: #8250df; }
-    html[data-color-mode="light"] .ce-string,
-    :root .ce-string { color: #0a3069; }
-    html[data-color-mode="light"] .ce-number,
-    :root .ce-number { color: #0550ae; }
-    html[data-color-mode="light"] .ce-method,
-    :root .ce-method { color: #6639ba; }
+    .cm-editor.cm-focused { border-color: var(--primary-color); outline: none; }
+    .cm-editor .cm-scroller { overflow: auto; }
 
     /* Code header with actions */
     .code-header {
