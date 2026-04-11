@@ -712,6 +712,41 @@ const injectStyles = () => {
     }
     .btn-add-function:disabled { opacity: 0.5; cursor: default; }
 
+    /* Context documents section */
+    .context-section {
+      margin: 12px 0;
+    }
+
+    .btn-context-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: none;
+      border: 1px dashed var(--border-color);
+      border-radius: 6px;
+      padding: 8px 12px;
+      color: var(--text-secondary);
+      font-size: 12px;
+      cursor: pointer;
+      width: 100%;
+      transition: all 0.15s ease;
+    }
+    .btn-context-toggle:hover {
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+    }
+
+    .context-body {
+      margin-top: 8px;
+    }
+
+    .context-textarea {
+      font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      background: var(--code-bg);
+    }
+
     /* Operation-specific fields */
     .op-fields {
       display: grid;

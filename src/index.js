@@ -1100,7 +1100,7 @@ resolver.define("getPostFunctionStatus", async ({ payload }) => {
  * from a natural language description.
  */
 resolver.define("generatePostFunctionCode", async ({ payload }) => {
-  const { prompt, operationType, endpoint, method, includeBackoff } = payload;
+  const { prompt, operationType, endpoint, method, includeBackoff, contextDocs } = payload;
   if (!prompt || typeof prompt !== "string") {
     return { success: false, error: "Please describe what this step should do" };
   }
@@ -1200,7 +1200,7 @@ ${operationType === "log_function" ? `- The user wants to log debug information.
         max_completion_tokens: 2000,
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `Generate JavaScript code for this post-function step:\n\n${prompt}` },
+          { role: "user", content: `Generate JavaScript code for this post-function step:\n\n${prompt}${contextDocs ? `\n\n## Additional Context / Reference Documentation\n\n${contextDocs.substring(0, 10000)}` : ""}` },
         ],
       }),
     });

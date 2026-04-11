@@ -76,11 +76,11 @@ modules:
         - company-managed
         - team-managed
 
-  # Admin page - global overview of all app usages
-  jira:adminPage:
-    - key: cognirunner-admin-panel
+  # Global page - shows under Apps in Jira sidebar navigation
+  jira:globalPage:
+    - key: cognirunner-global-page
       resource: admin-panel-resource
-      title: CogniRunner Admin
+      title: CogniRunner
       resolver:
         function: resolver
 

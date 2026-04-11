@@ -133,6 +133,7 @@ return { success: true };`)}`;
 export default function FunctionBlock({ index, functionData, onUpdate, onRemove, isOnly }) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [showApiRef, setShowApiRef] = useState(false);
+  const [showContext, setShowContext] = useState(!!(functionData.contextDocs));
   const [testRunning, setTestRunning] = useState(false);
   const [testResult, setTestResult] = useState(null);
 
@@ -147,6 +148,7 @@ export default function FunctionBlock({ index, functionData, onUpdate, onRemove,
         endpoint: functionData.endpoint || "",
         method: functionData.method || "GET",
         includeBackoff: functionData.includeBackoff || false,
+        contextDocs: functionData.contextDocs || "",
       });
       if (result.success && result.code) {
         onUpdate({ code: result.code });
@@ -306,6 +308,42 @@ export default function FunctionBlock({ index, functionData, onUpdate, onRemove,
           </div>
         </div>
       )}
+
+      {/* Context documents — additional knowledge for AI code generation */}
+      <div className="context-section">
+        <button
+          className="btn-context-toggle"
+          onClick={() => setShowContext(!showContext)}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+          </svg>
+          <span>{showContext ? "Hide" : "Add"} Context Documents</span>
+          <Tooltip text="Paste API documentation, JSON schemas, field mappings, or any reference material. The AI uses this context to generate more accurate code tailored to your specific setup." />
+          <span className={`toggle-chevron ${showContext ? "open" : ""}`}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+          </span>
+        </button>
+
+        {showContext && (
+          <div className="context-body">
+            <textarea
+              className="textarea context-textarea"
+              rows={8}
+              value={functionData.contextDocs || ""}
+              onChange={(e) => update("contextDocs", e.target.value)}
+              placeholder={"Paste any reference material here:\n\n- API documentation (endpoints, request/response formats)\n- JSON schemas for custom fields\n- Field ID mappings (e.g., customfield_10050 = Sprint)\n- Business rules or requirements\n- Example payloads or data structures"}
+            />
+            <p className="hint">
+              This context is sent to the AI alongside your description when generating code.
+              Supports plain text, JSON, or any documentation format. Max ~10,000 characters.
+            </p>
+          </div>
+        )}
+      </div>
 
       {/* Reliability options — always visible */}
       <div className="reliability-section">
