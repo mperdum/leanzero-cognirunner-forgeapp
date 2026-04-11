@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect } from "react";
+import CustomSelect from "./CustomSelect";
 
 export default function OpenAIConfig({ invoke }) {
   const [isByok, setIsByok] = useState(false);
@@ -243,24 +244,16 @@ export default function OpenAIConfig({ invoke }) {
                 </p>
               ) : (
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <select
-                    value={selectedModel}
-                    onChange={(e) => setSelectedModel(e.target.value)}
-                    style={{
-                      flex: 1,
-                      padding: "8px 12px",
-                      border: "1px solid var(--border-color)",
-                      borderRadius: "4px",
-                      background: "var(--input-bg)",
-                      color: "var(--text-color)",
-                      fontSize: "13px",
-                    }}
-                  >
-                    <option value="">Select a model...</option>
-                    {models.map((m) => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                  </select>
+                  <div style={{ flex: 1 }}>
+                    <CustomSelect
+                      value={selectedModel}
+                      onChange={setSelectedModel}
+                      placeholder="Select a model..."
+                      searchable
+                      searchPlaceholder="Search models..."
+                      options={models.map((m) => ({ value: m, label: m }))}
+                    />
+                  </div>
                   <button
                     className="btn-small btn-edit"
                     onClick={handleSaveModel}

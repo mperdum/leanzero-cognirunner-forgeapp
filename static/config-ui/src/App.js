@@ -20,6 +20,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { invoke } from "@forge/bridge";
 import SemanticConfig from "./components/SemanticConfig";
 import FunctionBuilder from "./components/FunctionBuilder";
+import CustomSelect from "./components/CustomSelect";
 
 // Inject styles directly - more reliable in Forge iframe
 const injectStyles = () => {
@@ -1341,19 +1342,15 @@ function App() {
 
         <div className="form-group">
           <label className="label">Jira Search (JQL)</label>
-          <select
+          <CustomSelect
             value={enableTools === null ? "auto" : enableTools ? "on" : "off"}
-            onChange={(e) => {
-              const v = e.target.value;
-              setEnableTools(v === "auto" ? null : v === "on");
-            }}
-            className="input"
-            style={{ cursor: "pointer" }}
-          >
-            <option value="auto">Auto-detect from prompt</option>
-            <option value="on">Always enabled</option>
-            <option value="off">Always disabled</option>
-          </select>
+            onChange={(v) => setEnableTools(v === "auto" ? null : v === "on")}
+            options={[
+              { value: "auto", label: "Auto-detect from prompt" },
+              { value: "on", label: "Always enabled" },
+              { value: "off", label: "Always disabled" },
+            ]}
+          />
           <p className="hint">
             When enabled, the AI can search Jira for similar or related issues during
             validation (e.g. duplicate detection). Auto-detect activates this when your

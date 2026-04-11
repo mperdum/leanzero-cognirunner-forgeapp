@@ -7,6 +7,7 @@
 
 import React from "react";
 import Tooltip from "./Tooltip";
+import CustomSelect from "./CustomSelect";
 
 export default function SemanticConfig({
   conditionPrompt,
@@ -89,28 +90,25 @@ export default function SemanticConfig({
             </p>
           </>
         ) : (
-          <select
+          <CustomSelect
             value={actionFieldId}
-            onChange={(e) => setActionFieldId(e.target.value)}
-            className={`input ${!actionFieldId ? "input-error" : ""}`}
-            style={{ cursor: "pointer" }}
-          >
-            <option value="">Select a field...</option>
-            {fields.filter((f) => !f.custom).length > 0 && (
-              <optgroup label="System Fields">
-                {fields.filter((f) => !f.custom).map((f) => (
-                  <option key={f.id} value={f.id}>{f.name} ({f.id})</option>
-                ))}
-              </optgroup>
-            )}
-            {fields.filter((f) => f.custom).length > 0 && (
-              <optgroup label="Custom Fields">
-                {fields.filter((f) => f.custom).map((f) => (
-                  <option key={f.id} value={f.id}>{f.name} ({f.id})</option>
-                ))}
-              </optgroup>
-            )}
-          </select>
+            onChange={setActionFieldId}
+            placeholder="Select a field..."
+            searchable
+            searchPlaceholder="Search fields..."
+            error={!actionFieldId}
+            options={fields.map((f) => ({
+              value: f.id,
+              label: f.name,
+              meta: f.id,
+              type: f.type?.replace(/^(System|Custom) \(|\)$/g, ""),
+              custom: f.custom,
+            }))}
+            groups={[
+              { label: "System Fields", filter: (o) => !o.custom },
+              { label: "Custom Fields", filter: (o) => !!o.custom },
+            ]}
+          />
         )}
       </div>
     </div>
