@@ -1095,6 +1095,136 @@ resolver.define("getPostFunctionStatus", async ({ payload }) => {
 });
 
 /**
+ * Generate JavaScript code for a static post-function using OpenAI.
+ * The AI knows the full sandbox API surface and generates working code
+ * from a natural language description.
+ */
+resolver.define("generatePostFunctionCode", async ({ payload }) => {
+  const { prompt, operationType, endpoint, method, includeBackoff } = payload;
+  if (!prompt || typeof prompt !== "string") {
+    return { success: false, error: "Please describe what this step should do" };
+  }
+
+  try {
+    const apiKey = await getOpenAIKey();
+    if (!apiKey) {
+      return { success: false, error: "No OpenAI API key configured. Set one in the Admin panel." };
+    }
+    const model = await getOpenAIModel();
+
+    const systemPrompt = `You are a code generator for Jira workflow post-functions. You write JavaScript code that runs inside a sandboxed environment after a Jira workflow transition.
+
+## Available API
+
+The code receives an \`api\` object with these methods:
+
+### api.getIssue(issueKey)
+Fetches a Jira issue by key. Returns the full issue object:
+\`\`\`json
+{
+  "key": "PROJ-123",
+  "fields": {
+    "summary": "Issue title",
+    "description": { /* ADF document */ },
+    "status": { "name": "To Do", "id": "10000" },
+    "issuetype": { "name": "Bug" },
+    "priority": { "name": "High" },
+    "assignee": { "displayName": "John", "accountId": "..." },
+    "reporter": { "displayName": "Jane", "accountId": "..." },
+    "labels": ["backend", "urgent"],
+    "components": [{ "name": "API" }],
+    "created": "2025-01-15T10:30:00.000+0000",
+    "updated": "2025-01-16T14:20:00.000+0000",
+    "customfield_XXXXX": "custom value"
+  }
+}
+\`\`\`
+
+### api.updateIssue(issueKey, fieldsObject)
+Updates fields on a Jira issue. The fieldsObject keys are field IDs:
+\`\`\`javascript
+await api.updateIssue("PROJ-123", {
+  summary: "New summary",
+  description: {
+    type: "doc", version: 1,
+    content: [{ type: "paragraph", content: [{ type: "text", text: "New description" }] }]
+  },
+  labels: ["bug", "reviewed"],
+  priority: { name: "High" },
+  assignee: { accountId: "user-account-id" }
+});
+\`\`\`
+
+### api.searchJql(jqlQuery)
+Searches Jira issues using JQL. Returns up to 20 results:
+\`\`\`javascript
+const results = await api.searchJql('project = PROJ AND status = "To Do" AND summary ~ "login"');
+// results.issues = [{ key, fields: { summary, status, ... } }, ...]
+// results.total = total number of matches
+\`\`\`
+
+### api.transitionIssue(issueKey, transitionId)
+Moves an issue to a different status. You need the transition ID (not the status name).
+
+### api.log(message)
+Logs a debug message. Visible in execution logs and test results.
+
+### api.context
+Object with: \`{ issueKey: "PROJ-123" }\` — the current issue being transitioned.
+
+## Rules
+- Write ONLY the function body (no function wrapper, no exports).
+- Use \`async/await\` for all API calls.
+- Always handle errors with try/catch.
+- Use \`api.log()\` for debugging and status messages.
+- Use \`return\` to pass results to the next step in the chain.
+- The code runs in a Forge runtime (Node.js 22). No browser APIs.
+- Keep code concise and production-ready.
+- For ADF (Atlassian Document Format) description fields, create proper ADF structures.
+${includeBackoff ? `- Include an exponential backoff retry wrapper with jitter for API calls (3 retries, delays 1s/2s/4s + random jitter up to 30% of delay).` : ""}
+${operationType === "rest_api_internal" ? `- The user wants to use the Jira REST API. Method: ${method || "GET"}. Endpoint hint: ${endpoint || "not specified"}.` : ""}
+${operationType === "rest_api_external" ? `- The user wants to call an external API. URL hint: ${endpoint || "not specified"}. Note: external domains must be whitelisted in manifest.yml.` : ""}
+${operationType === "confluence_api" ? `- The user wants to interact with Confluence. Operation: ${method || "GET_PAGE"}.` : ""}
+${operationType === "work_item_query" ? `- The user wants to search Jira issues using JQL.` : ""}
+${operationType === "log_function" ? `- The user wants to log debug information.` : ""}`;
+
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.2,
+        max_completion_tokens: 2000,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: `Generate JavaScript code for this post-function step:\n\n${prompt}` },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error("OpenAI code generation error:", response.status, errText);
+      return { success: false, error: `AI error (${response.status}). Check your API key.` };
+    }
+
+    const data = await response.json();
+    let code = data.choices?.[0]?.message?.content || "";
+
+    // Strip markdown code fences if present
+    code = code.replace(/^```(?:javascript|js)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+
+    return { success: true, code };
+  } catch (error) {
+    console.error("Code generation error:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
  * Test a static post-function code in dry-run mode.
  * Executes the code with a mock issue context — no actual changes are made.
  */

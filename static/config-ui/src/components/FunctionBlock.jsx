@@ -138,19 +138,43 @@ export default function FunctionBlock({ index, functionData, onUpdate, onRemove,
 
   const update = (field, value) => onUpdate({ [field]: value });
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     setIsGenerating(true);
-    const code = generateCode(
-      functionData.operationType,
-      functionData.operationPrompt,
-      functionData.endpoint,
-      functionData.method,
-      functionData.includeBackoff,
-    );
-    setTimeout(() => {
+    try {
+      const result = await invoke("generatePostFunctionCode", {
+        prompt: functionData.operationPrompt,
+        operationType: functionData.operationType || "work_item_query",
+        endpoint: functionData.endpoint || "",
+        method: functionData.method || "GET",
+        includeBackoff: functionData.includeBackoff || false,
+      });
+      if (result.success && result.code) {
+        onUpdate({ code: result.code });
+      } else {
+        // Fallback to local template if AI fails
+        const code = generateCode(
+          functionData.operationType,
+          functionData.operationPrompt,
+          functionData.endpoint,
+          functionData.method,
+          functionData.includeBackoff,
+        );
+        onUpdate({ code });
+        console.warn("AI generation failed, used template:", result.error);
+      }
+    } catch (e) {
+      // Fallback to local template on network error
+      const code = generateCode(
+        functionData.operationType,
+        functionData.operationPrompt,
+        functionData.endpoint,
+        functionData.method,
+        functionData.includeBackoff,
+      );
       onUpdate({ code });
-      setIsGenerating(false);
-    }, 400);
+      console.warn("AI generation error, used template:", e.message);
+    }
+    setIsGenerating(false);
   };
 
   const hasPrompt = functionData.operationPrompt?.trim();
