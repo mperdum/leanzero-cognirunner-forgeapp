@@ -928,6 +928,65 @@ const injectStyles = () => {
       color: var(--text-color);
     }
 
+    /* Test panel */
+    .test-panel {
+      margin-top: 10px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--input-bg);
+    }
+
+    .test-panel-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      background: var(--code-bg);
+      border-bottom: 1px solid var(--border-color);
+      color: var(--success-color);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .test-panel-title { color: var(--text-color); }
+
+    .test-panel-badge {
+      margin-left: auto;
+      font-size: 10px;
+      font-weight: 400;
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    .test-panel-target { padding: 10px 12px; }
+
+    .test-target-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .test-target-input {
+      flex: 1;
+      font-size: 12px;
+      font-family: SFMono-Regular, Consolas, monospace;
+    }
+
+    .btn-run-test {
+      padding: 6px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      border: none;
+      border-radius: 4px;
+      background: var(--success-color);
+      color: white;
+      cursor: pointer;
+      transition: opacity 0.15s ease;
+      white-space: nowrap;
+    }
+    .btn-run-test:hover:not(:disabled) { opacity: 0.85; }
+    .btn-run-test:disabled { opacity: 0.5; cursor: default; }
+
     /* Test result */
     .test-result {
       margin-top: 10px;

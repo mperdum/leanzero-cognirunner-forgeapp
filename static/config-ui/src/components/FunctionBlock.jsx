@@ -136,6 +136,8 @@ export default function FunctionBlock({ index, functionData, onUpdate, onRemove,
   const [showContext, setShowContext] = useState(!!(functionData.contextDocs));
   const [testRunning, setTestRunning] = useState(false);
   const [testResult, setTestResult] = useState(null);
+  const [testTarget, setTestTarget] = useState(""); // issue key or JQL
+  const [showTestPanel, setShowTestPanel] = useState(false);
 
   const update = (field, value) => onUpdate({ [field]: value });
 
@@ -415,23 +417,9 @@ export default function FunctionBlock({ index, functionData, onUpdate, onRemove,
               </button>
               <button
                 className="btn-test-run"
-                onClick={async () => {
-                  setTestRunning(true);
-                  setTestResult(null);
-                  try {
-                    const result = await invoke("testPostFunction", {
-                      code: functionData.code,
-                      type: "static",
-                    });
-                    setTestResult(result);
-                  } catch (e) {
-                    setTestResult({ success: false, logs: ["Test error: " + e.message] });
-                  }
-                  setTestRunning(false);
-                }}
-                disabled={testRunning}
+                onClick={() => setShowTestPanel(!showTestPanel)}
               >
-                {testRunning ? "Running..." : "Test Run"}
+                {showTestPanel ? "Hide" : "Test Run"}
               </button>
             </div>
           </div>
@@ -475,35 +463,93 @@ export default function FunctionBlock({ index, functionData, onUpdate, onRemove,
             rows={12}
           />
 
-          {/* Test result */}
-          {testResult && (
-            <div className={`test-result ${testResult.success ? "test-pass" : "test-fail"}`}>
-              <div className="test-result-header">
-                <span className={`test-badge ${testResult.success ? "test-badge-pass" : "test-badge-fail"}`}>
-                  {testResult.success ? "PASS" : "FAIL"}
-                </span>
-                <span className="test-result-meta">
-                  Dry run — no changes were made
-                  {testResult.executionTimeMs ? ` (${testResult.executionTimeMs}ms)` : ""}
-                </span>
-                <button className="test-dismiss" onClick={() => setTestResult(null)}>&times;</button>
+          {/* Test panel */}
+          {showTestPanel && (
+            <div className="test-panel">
+              <div className="test-panel-header">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polygon points="5 3 19 12 5 21 5 3" />
+                </svg>
+                <span className="test-panel-title">Test Run</span>
+                <span className="test-panel-badge">Dry run — writes are logged, not executed</span>
               </div>
-              {testResult.logs && testResult.logs.length > 0 && (
-                <div className="test-logs">
-                  <div className="test-logs-title">Logs:</div>
-                  {testResult.logs.map((log, i) => (
-                    <div key={i} className="test-log-line"><code>{log}</code></div>
-                  ))}
+
+              <div className="test-panel-target">
+                <label className="label" style={{ fontSize: "11px", marginBottom: "4px" }}>
+                  Test against
+                  <Tooltip text="Enter an issue key (e.g., PROJ-123) to test with real issue data. Or enter a JQL query to find an issue. Leave empty to use mock data." />
+                </label>
+                <div className="test-target-row">
+                  <input
+                    type="text"
+                    className="input test-target-input"
+                    value={testTarget}
+                    onChange={(e) => setTestTarget(e.target.value)}
+                    placeholder='Issue key (PROJ-123) or JQL (project = PROJ AND status = "To Do")'
+                  />
+                  <button
+                    className="btn-run-test"
+                    onClick={async () => {
+                      setTestRunning(true);
+                      setTestResult(null);
+                      try {
+                        const target = testTarget.trim();
+                        const isJql = target && (target.includes("=") || target.includes("~") || target.startsWith("project") || target.startsWith("status") || target.startsWith("issuetype"));
+                        const result = await invoke("testPostFunction", {
+                          code: functionData.code,
+                          issueKey: target && !isJql ? target : undefined,
+                          jql: isJql ? target : undefined,
+                        });
+                        setTestResult(result);
+                      } catch (e) {
+                        setTestResult({ success: false, logs: ["Test error: " + e.message] });
+                      }
+                      setTestRunning(false);
+                    }}
+                    disabled={testRunning}
+                  >
+                    {testRunning ? "Running..." : "Run"}
+                  </button>
                 </div>
-              )}
-              {testResult.changes && testResult.changes.length > 0 && (
-                <div className="test-logs">
-                  <div className="test-logs-title">Changes that would be made:</div>
-                  {testResult.changes.map((c, i) => (
-                    <div key={i} className="test-log-line">
-                      <code>{c.action}({c.key}{c.fields ? ", " + JSON.stringify(c.fields) : ""})</code>
+                <p className="hint" style={{ marginTop: "4px" }}>
+                  {testTarget.trim()
+                    ? "Reads will use real Jira data. Writes are always safe (dry run)."
+                    : "No issue specified — will use mock data. Enter an issue key for real data."
+                  }
+                </p>
+              </div>
+
+              {/* Test result */}
+              {testResult && (
+                <div className={`test-result ${testResult.success ? "test-pass" : "test-fail"}`}>
+                  <div className="test-result-header">
+                    <span className={`test-badge ${testResult.success ? "test-badge-pass" : "test-badge-fail"}`}>
+                      {testResult.success ? "PASS" : "FAIL"}
+                    </span>
+                    <span className="test-result-meta">
+                      {testResult.mode === "live" ? `Tested against ${testResult.issueKey}` : "Mock data"}
+                      {testResult.executionTimeMs ? ` — ${testResult.executionTimeMs}ms` : ""}
+                    </span>
+                    <button className="test-dismiss" onClick={() => setTestResult(null)}>&times;</button>
+                  </div>
+                  {testResult.logs && testResult.logs.length > 0 && (
+                    <div className="test-logs">
+                      <div className="test-logs-title">Execution log:</div>
+                      {testResult.logs.map((log, i) => (
+                        <div key={i} className="test-log-line"><code>{log}</code></div>
+                      ))}
                     </div>
-                  ))}
+                  )}
+                  {testResult.changes && testResult.changes.length > 0 && (
+                    <div className="test-logs">
+                      <div className="test-logs-title">Changes that would be made:</div>
+                      {testResult.changes.map((c, i) => (
+                        <div key={i} className="test-log-line">
+                          <code>{c.action}({c.key}{c.fields ? ", " + JSON.stringify(c.fields) : ""})</code>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -511,7 +557,6 @@ export default function FunctionBlock({ index, functionData, onUpdate, onRemove,
 
           <p className="hint">
             This code runs as-is on every transition. Edit directly if needed.
-            Use <strong>Test Run</strong> to verify without making changes.
           </p>
         </div>
       )}

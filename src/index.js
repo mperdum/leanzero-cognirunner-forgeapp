@@ -1110,7 +1110,12 @@ resolver.define("generatePostFunctionCode", async ({ payload }) => {
     if (!apiKey) {
       return { success: false, error: "No OpenAI API key configured. Set one in the Admin panel." };
     }
-    const model = await getOpenAIModel();
+    // Always use the best available model for code generation — code quality
+    // matters more than token cost here. Fall back to configured model only
+    // if the top model is unavailable.
+    const CODE_GEN_MODEL = "gpt-4.1";
+    const configuredModel = await getOpenAIModel();
+    const model = CODE_GEN_MODEL || configuredModel;
 
     const systemPrompt = `You are a code generator for Jira workflow post-functions. You write JavaScript code that runs inside a sandboxed environment after a Jira workflow transition.
 
@@ -1228,8 +1233,20 @@ ${operationType === "log_function" ? `- The user wants to log debug information.
  * Test a static post-function code in dry-run mode.
  * Executes the code with a mock issue context — no actual changes are made.
  */
+/**
+ * Test a static post-function code against real or mock Jira data.
+ *
+ * Modes:
+ *   - issueKey provided: fetches REAL issue data, but write operations are
+ *     intercepted and logged (dry-run). getIssue and searchJql return real data.
+ *   - jql provided (no issueKey): runs the JQL, uses the first result as the test issue.
+ *   - neither provided: uses mock data.
+ *
+ * Write operations (updateIssue, transitionIssue) are ALWAYS dry-run —
+ * they log what would happen but never mutate Jira data.
+ */
 resolver.define("testPostFunction", async ({ payload }) => {
-  const { code } = payload;
+  const { code, issueKey, jql } = payload;
   if (!code || typeof code !== "string") {
     return { success: false, logs: ["No code provided"] };
   }
@@ -1238,53 +1255,139 @@ resolver.define("testPostFunction", async ({ payload }) => {
   const testChanges = [];
   const startTime = Date.now();
 
-  // Build a mock API surface that logs actions instead of executing them
-  const mockApi = {
+  // Resolve the test issue key
+  let resolvedKey = issueKey || null;
+  let mode = "mock";
+
+  if (resolvedKey) {
+    mode = "live";
+    testLogs.push(`Testing against real issue: ${resolvedKey}`);
+  } else if (jql) {
+    mode = "live";
+    testLogs.push(`Running JQL to find test issue: ${jql}`);
+    try {
+      const searchRes = await api.asApp().requestJira(
+        route`/rest/api/3/search`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jql, maxResults: 1 }) },
+      );
+      if (searchRes.ok) {
+        const searchData = await searchRes.json();
+        if (searchData.issues && searchData.issues.length > 0) {
+          resolvedKey = searchData.issues[0].key;
+          testLogs.push(`Found: ${resolvedKey} (${searchData.total} total matches)`);
+        } else {
+          testLogs.push("JQL returned no results. Falling back to mock data.");
+          mode = "mock";
+        }
+      } else {
+        testLogs.push(`JQL search failed (${searchRes.status}). Falling back to mock data.`);
+        mode = "mock";
+      }
+    } catch (e) {
+      testLogs.push(`JQL search error: ${e.message}. Falling back to mock data.`);
+      mode = "mock";
+    }
+  }
+
+  if (mode === "mock") {
+    resolvedKey = "MOCK-1";
+    testLogs.push("Using mock issue data (no issue specified).");
+  }
+
+  // Build API surface — reads are live when an issue exists, writes are always dry-run
+  const testApi = {
     getIssue: async (key) => {
-      testLogs.push(`getIssue("${key}") called`);
+      const lookupKey = key || resolvedKey;
+      if (mode === "live") {
+        testLogs.push(`getIssue("${lookupKey}") — fetching real data`);
+        try {
+          const res = await api.asApp().requestJira(
+            route`/rest/api/3/issue/${lookupKey}?expand=renderedFields`,
+          );
+          if (!res.ok) {
+            testLogs.push(`getIssue failed (${res.status}) — using error placeholder`);
+            return { key: lookupKey, fields: {}, error: `HTTP ${res.status}` };
+          }
+          const data = await res.json();
+          testLogs.push(`getIssue("${lookupKey}") — OK (${data.fields?.summary || "no summary"})`);
+          return data;
+        } catch (e) {
+          testLogs.push(`getIssue error: ${e.message}`);
+          return { key: lookupKey, fields: {}, error: e.message };
+        }
+      }
+      testLogs.push(`getIssue("${lookupKey}") — mock data`);
       return {
-        key: key || "TEST-1",
+        key: lookupKey,
         fields: {
-          summary: "[Test] Sample issue",
+          summary: "[Mock] Sample issue for testing",
           status: { name: "To Do", id: "10000" },
           issuetype: { name: "Task" },
           priority: { name: "Medium" },
-          description: "This is a test issue for dry-run validation.",
+          description: "This is mock data. Specify an issue key or JQL for real data.",
           assignee: null,
           reporter: { displayName: "Test User" },
+          labels: [],
+          created: new Date().toISOString(),
         },
       };
     },
+
     updateIssue: async (key, fields) => {
-      testLogs.push(`updateIssue("${key}", ${JSON.stringify(fields)}) — dry run, no changes made`);
+      testLogs.push(`updateIssue("${key}", ${JSON.stringify(fields)}) — DRY RUN, no changes made`);
       testChanges.push({ action: "updateIssue", key, fields });
       return { success: true };
     },
-    searchJql: async (jql) => {
-      testLogs.push(`searchJql("${jql}") — dry run, returning empty results`);
+
+    searchJql: async (searchJql) => {
+      if (mode === "live") {
+        testLogs.push(`searchJql("${searchJql}") — running real search`);
+        try {
+          const res = await api.asApp().requestJira(
+            route`/rest/api/3/search`,
+            { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jql: searchJql, maxResults: 10 }) },
+          );
+          if (!res.ok) {
+            testLogs.push(`searchJql failed (${res.status})`);
+            return { issues: [], total: 0 };
+          }
+          const data = await res.json();
+          testLogs.push(`searchJql — found ${data.total} issues (returning first ${data.issues?.length || 0})`);
+          return data;
+        } catch (e) {
+          testLogs.push(`searchJql error: ${e.message}`);
+          return { issues: [], total: 0 };
+        }
+      }
+      testLogs.push(`searchJql("${searchJql}") — mock, returning empty`);
       return { issues: [], total: 0 };
     },
+
     transitionIssue: async (key, transitionId) => {
-      testLogs.push(`transitionIssue("${key}", "${transitionId}") — dry run, no transition made`);
+      testLogs.push(`transitionIssue("${key}", "${transitionId}") — DRY RUN, no transition made`);
       testChanges.push({ action: "transitionIssue", key, transitionId });
       return { success: true };
     },
+
     log: (...args) => {
       const msg = args.map((a) => typeof a === "object" ? JSON.stringify(a) : String(a)).join(" ");
       testLogs.push(msg);
     },
-    context: { issueKey: "TEST-1" },
+
+    context: { issueKey: resolvedKey },
   };
 
   try {
     const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
     const sandboxFn = new AsyncFunction("api", code);
-    const result = await sandboxFn(mockApi);
+    const result = await sandboxFn(testApi);
     if (result !== undefined) {
       testLogs.push("Return value: " + (typeof result === "object" ? JSON.stringify(result) : String(result)));
     }
     return {
       success: true,
+      mode,
+      issueKey: resolvedKey,
       logs: testLogs,
       changes: testChanges,
       executionTimeMs: Date.now() - startTime,
@@ -1293,6 +1396,8 @@ resolver.define("testPostFunction", async ({ payload }) => {
     testLogs.push("ERROR: " + error.message);
     return {
       success: false,
+      mode,
+      issueKey: resolvedKey,
       logs: testLogs,
       changes: testChanges,
       executionTimeMs: Date.now() - startTime,
