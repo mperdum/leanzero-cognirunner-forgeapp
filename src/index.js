@@ -1094,6 +1094,82 @@ resolver.define("getPostFunctionStatus", async ({ payload }) => {
   }
 });
 
+/**
+ * Test a static post-function code in dry-run mode.
+ * Executes the code with a mock issue context — no actual changes are made.
+ */
+resolver.define("testPostFunction", async ({ payload }) => {
+  const { code } = payload;
+  if (!code || typeof code !== "string") {
+    return { success: false, logs: ["No code provided"] };
+  }
+
+  const testLogs = [];
+  const testChanges = [];
+  const startTime = Date.now();
+
+  // Build a mock API surface that logs actions instead of executing them
+  const mockApi = {
+    getIssue: async (key) => {
+      testLogs.push(`getIssue("${key}") called`);
+      return {
+        key: key || "TEST-1",
+        fields: {
+          summary: "[Test] Sample issue",
+          status: { name: "To Do", id: "10000" },
+          issuetype: { name: "Task" },
+          priority: { name: "Medium" },
+          description: "This is a test issue for dry-run validation.",
+          assignee: null,
+          reporter: { displayName: "Test User" },
+        },
+      };
+    },
+    updateIssue: async (key, fields) => {
+      testLogs.push(`updateIssue("${key}", ${JSON.stringify(fields)}) — dry run, no changes made`);
+      testChanges.push({ action: "updateIssue", key, fields });
+      return { success: true };
+    },
+    searchJql: async (jql) => {
+      testLogs.push(`searchJql("${jql}") — dry run, returning empty results`);
+      return { issues: [], total: 0 };
+    },
+    transitionIssue: async (key, transitionId) => {
+      testLogs.push(`transitionIssue("${key}", "${transitionId}") — dry run, no transition made`);
+      testChanges.push({ action: "transitionIssue", key, transitionId });
+      return { success: true };
+    },
+    log: (...args) => {
+      const msg = args.map((a) => typeof a === "object" ? JSON.stringify(a) : String(a)).join(" ");
+      testLogs.push(msg);
+    },
+    context: { issueKey: "TEST-1" },
+  };
+
+  try {
+    const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+    const sandboxFn = new AsyncFunction("api", code);
+    const result = await sandboxFn(mockApi);
+    if (result !== undefined) {
+      testLogs.push("Return value: " + (typeof result === "object" ? JSON.stringify(result) : String(result)));
+    }
+    return {
+      success: true,
+      logs: testLogs,
+      changes: testChanges,
+      executionTimeMs: Date.now() - startTime,
+    };
+  } catch (error) {
+    testLogs.push("ERROR: " + error.message);
+    return {
+      success: false,
+      logs: testLogs,
+      changes: testChanges,
+      executionTimeMs: Date.now() - startTime,
+    };
+  }
+});
+
 export const handler = resolver.getDefinitions();
 
 /**

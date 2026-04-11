@@ -6,8 +6,10 @@
  */
 
 import React, { useState } from "react";
+import { invoke } from "@forge/bridge";
 import Tooltip from "./Tooltip";
 import CustomSelect from "./CustomSelect";
+import CodeEditor from "./CodeEditor";
 
 const OPERATION_TYPES = [
   {
@@ -130,6 +132,9 @@ return { success: true };`)}`;
 
 export default function FunctionBlock({ index, functionData, onUpdate, onRemove, isOnly }) {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showApiRef, setShowApiRef] = useState(false);
+  const [testRunning, setTestRunning] = useState(false);
+  const [testResult, setTestResult] = useState(null);
 
   const update = (field, value) => onUpdate({ [field]: value });
 
@@ -334,18 +339,117 @@ export default function FunctionBlock({ index, functionData, onUpdate, onRemove,
 
       {hasCode && (
         <div className="form-group">
-          <label className="label">
-            Generated Code
-            <Tooltip text="This JavaScript runs on every workflow transition with no AI cost. You can edit it directly. Available API: api.getIssue(key), api.updateIssue(key, fields), api.searchJql(jql), api.transitionIssue(key, id), api.log(msg), api.context.issueKey." />
-          </label>
-          <textarea
-            className="textarea code-editor"
-            rows={12}
+          <div className="code-header">
+            <label className="label" style={{ margin: 0 }}>
+              Generated Code
+              <Tooltip text="This JavaScript runs on every workflow transition with no AI cost. You can edit it directly." />
+            </label>
+            <div className="code-header-actions">
+              <button
+                className="btn-api-ref"
+                onClick={() => setShowApiRef(!showApiRef)}
+              >
+                {showApiRef ? "Hide" : "Show"} API Reference
+              </button>
+              <button
+                className="btn-test-run"
+                onClick={async () => {
+                  setTestRunning(true);
+                  setTestResult(null);
+                  try {
+                    const result = await invoke("testPostFunction", {
+                      code: functionData.code,
+                      type: "static",
+                    });
+                    setTestResult(result);
+                  } catch (e) {
+                    setTestResult({ success: false, logs: ["Test error: " + e.message] });
+                  }
+                  setTestRunning(false);
+                }}
+                disabled={testRunning}
+              >
+                {testRunning ? "Running..." : "Test Run"}
+              </button>
+            </div>
+          </div>
+
+          {/* API Reference panel */}
+          {showApiRef && (
+            <div className="api-ref-panel">
+              <div className="api-ref-title">Available API</div>
+              <div className="api-ref-grid">
+                <div className="api-ref-item">
+                  <code>api.getIssue(key)</code>
+                  <span>Fetch issue data by key. Returns full issue object with fields.</span>
+                </div>
+                <div className="api-ref-item">
+                  <code>api.updateIssue(key, fields)</code>
+                  <span>Update issue fields. Pass an object like <code>{`{summary: "New title"}`}</code></span>
+                </div>
+                <div className="api-ref-item">
+                  <code>api.searchJql(jql)</code>
+                  <span>Search issues by JQL query. Returns <code>{`{issues: [...]}`}</code> (max 20 results).</span>
+                </div>
+                <div className="api-ref-item">
+                  <code>api.transitionIssue(key, id)</code>
+                  <span>Move an issue to a different status using the transition ID.</span>
+                </div>
+                <div className="api-ref-item">
+                  <code>api.log(message)</code>
+                  <span>Log a debug message. Visible in test results and execution logs.</span>
+                </div>
+                <div className="api-ref-item">
+                  <code>api.context.issueKey</code>
+                  <span>The current issue key (e.g., "PROJ-123") being transitioned.</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <CodeEditor
             value={functionData.code || ""}
-            onChange={(e) => update("code", e.target.value)}
+            onChange={(v) => update("code", v)}
+            rows={12}
           />
+
+          {/* Test result */}
+          {testResult && (
+            <div className={`test-result ${testResult.success ? "test-pass" : "test-fail"}`}>
+              <div className="test-result-header">
+                <span className={`test-badge ${testResult.success ? "test-badge-pass" : "test-badge-fail"}`}>
+                  {testResult.success ? "PASS" : "FAIL"}
+                </span>
+                <span className="test-result-meta">
+                  Dry run — no changes were made
+                  {testResult.executionTimeMs ? ` (${testResult.executionTimeMs}ms)` : ""}
+                </span>
+                <button className="test-dismiss" onClick={() => setTestResult(null)}>&times;</button>
+              </div>
+              {testResult.logs && testResult.logs.length > 0 && (
+                <div className="test-logs">
+                  <div className="test-logs-title">Logs:</div>
+                  {testResult.logs.map((log, i) => (
+                    <div key={i} className="test-log-line"><code>{log}</code></div>
+                  ))}
+                </div>
+              )}
+              {testResult.changes && testResult.changes.length > 0 && (
+                <div className="test-logs">
+                  <div className="test-logs-title">Changes that would be made:</div>
+                  {testResult.changes.map((c, i) => (
+                    <div key={i} className="test-log-line">
+                      <code>{c.action}({c.key}{c.fields ? ", " + JSON.stringify(c.fields) : ""})</code>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <p className="hint">
             This code runs as-is on every transition. Edit directly if needed.
+            Use <strong>Test Run</strong> to verify without making changes.
           </p>
         </div>
       )}
