@@ -425,27 +425,168 @@ const injectStyles = () => {
 
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* Post-function styles */
+    /* === Tooltip === */
+    .tooltip-wrap {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      margin-left: 4px;
+      vertical-align: middle;
+    }
+
+    .tooltip-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--border-color);
+      color: var(--text-secondary);
+      font-size: 10px;
+      font-weight: 700;
+      cursor: help;
+      line-height: 1;
+    }
+
+    .tooltip-bubble {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+      padding: 8px 12px;
+      border-radius: 6px;
+      background: var(--text-color);
+      color: var(--card-bg);
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 1.4;
+      white-space: normal;
+      width: 260px;
+      pointer-events: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .tooltip-bottom { top: calc(100% + 6px); }
+    .tooltip-top { bottom: calc(100% + 6px); }
+
+    /* === Post-function type selector cards === */
+    .pf-type-selector {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .pf-type-card {
+      border: 2px solid var(--border-color);
+      border-radius: 10px;
+      padding: 14px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: var(--card-bg);
+    }
+
+    .pf-type-card:hover {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 1px var(--primary-color);
+    }
+
+    .pf-type-active {
+      border-color: var(--primary-color);
+      background: var(--icon-bg);
+      box-shadow: 0 0 0 1px var(--primary-color);
+    }
+
+    .pf-type-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+      color: var(--text-color);
+    }
+
+    .pf-type-desc {
+      margin: 0 0 8px 0;
+      font-size: 12px;
+      line-height: 1.4;
+      color: var(--text-secondary);
+    }
+
+    .pf-type-tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .pf-tag-semantic {
+      background: rgba(220, 38, 38, 0.1);
+      color: var(--error-color);
+    }
+
+    .pf-tag-static {
+      background: rgba(22, 163, 106, 0.1);
+      color: var(--success-color);
+    }
+
+    /* === How it works banner === */
+    .pf-how-it-works {
+      background: var(--icon-bg);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+    }
+
+    .pf-how-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+      font-size: 13px;
+      color: var(--primary-color);
+    }
+
+    .pf-how-steps {
+      margin: 0;
+      padding-left: 20px;
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--text-secondary);
+    }
+
+    .pf-how-steps strong {
+      color: var(--text-color);
+    }
+
+    /* === Function builder === */
     .function-builder { padding: 16px; }
-    .function-builder-header { margin-bottom: 12px; }
 
     .function-block {
       border: 1px solid var(--border-color);
-      border-radius: 8px;
+      border-radius: 10px;
       padding: 16px;
       margin-bottom: 12px;
       background: var(--input-bg);
+      transition: border-color 0.2s ease;
+    }
+
+    .function-block:hover {
+      border-color: var(--primary-color);
     }
 
     .function-header {
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-bottom: 12px;
+      margin-bottom: 14px;
     }
 
     .function-number {
-      font-weight: 600;
+      font-weight: 700;
       font-size: 13px;
       color: var(--primary-color);
       min-width: 24px;
@@ -459,51 +600,119 @@ const injectStyles = () => {
     .btn-remove {
       background: none;
       border: 1px solid var(--border-color);
-      border-radius: 4px;
+      border-radius: 6px;
       color: var(--error-color);
       cursor: pointer;
       font-size: 18px;
       line-height: 1;
       padding: 4px 8px;
+      transition: all 0.2s ease;
     }
-    .btn-remove:hover { background: rgba(222, 53, 11, 0.1); }
+    .btn-remove:hover { background: rgba(220, 38, 38, 0.1); border-color: var(--error-color); }
 
+    /* Generate button */
+    .generate-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .btn-generate {
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      border: none;
+      border-radius: 6px;
+      background: var(--primary-color);
+      color: white;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .btn-generate:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+    .btn-generate:disabled { opacity: 0.5; cursor: default; transform: none; }
+
+    .btn-generate-secondary {
+      background: transparent;
+      color: var(--primary-color);
+      border: 1px solid var(--primary-color);
+    }
+    .btn-generate-secondary:hover:not(:disabled) { background: var(--icon-bg); opacity: 1; }
+
+    .generate-hint {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    /* Code editor */
     .code-editor {
       font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
       font-size: 12px;
-      line-height: 1.5;
+      line-height: 1.6;
       tab-size: 2;
       white-space: pre;
       background: var(--code-bg);
+      border-radius: 6px;
     }
 
-    .btn-regenerate {
+    /* Advanced section */
+    .advanced-section {
       margin-top: 8px;
-      padding: 6px 12px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .btn-advanced-toggle {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 11px;
+      cursor: pointer;
+      padding: 4px 0;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .btn-advanced-toggle:hover { color: var(--text-secondary); }
+
+    .toggle-chevron {
+      display: inline-flex;
+      transition: transform 0.2s ease;
+    }
+    .toggle-chevron.open { transform: rotate(180deg); }
+
+    .advanced-options {
+      padding-top: 10px;
+    }
+
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
       font-size: 12px;
-      border: 1px solid var(--primary-color);
-      border-radius: 4px;
-      background: var(--card-bg);
-      color: var(--primary-color);
+      color: var(--text-secondary);
       cursor: pointer;
     }
-    .btn-regenerate:hover { background: rgba(0, 82, 204, 0.1); }
-    .btn-regenerate:disabled { opacity: 0.6; cursor: default; }
 
+    /* Add function button */
     .btn-add-function {
       width: 100%;
       padding: 12px;
       border: 2px dashed var(--border-color);
-      border-radius: 8px;
+      border-radius: 10px;
       background: transparent;
       color: var(--text-secondary);
       font-size: 13px;
+      font-weight: 500;
       cursor: pointer;
       margin-top: 8px;
+      transition: all 0.2s ease;
     }
     .btn-add-function:hover:not(:disabled) {
       border-color: var(--primary-color);
       color: var(--primary-color);
+      background: var(--icon-bg);
     }
     .btn-add-function:disabled { opacity: 0.5; cursor: default; }
 
@@ -927,18 +1136,35 @@ function App() {
 
       {/* Post-function type selector */}
       {isPostFunction && (
-        <div className="card" style={{ marginBottom: "16px" }}>
-          <div className="form-group">
-            <label className="label">Post Function Type</label>
-            <select
-              value={postFunctionType || "semantic"}
-              onChange={(e) => setPostFunctionType(e.target.value)}
-              className="input"
-              style={{ cursor: "pointer" }}
-            >
-              <option value="semantic">Semantic Post Function — AI evaluates condition and modifies a field</option>
-              <option value="static">Static Post Function (Builder) — Chain multiple operations with code</option>
-            </select>
+        <div className="pf-type-selector">
+          <div
+            className={`pf-type-card ${postFunctionType === "semantic" ? "pf-type-active" : ""}`}
+            onClick={() => setPostFunctionType("semantic")}
+          >
+            <div className="pf-type-header">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              <strong>Semantic</strong>
+            </div>
+            <p className="pf-type-desc">AI runs on every transition to evaluate and act. Best for decisions requiring judgment.</p>
+            <span className="pf-type-tag pf-tag-semantic">AI cost per run</span>
+          </div>
+          <div
+            className={`pf-type-card ${postFunctionType === "static" ? "pf-type-active" : ""}`}
+            onClick={() => setPostFunctionType("static")}
+          >
+            <div className="pf-type-header">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="16 18 22 12 16 6" />
+                <polyline points="8 6 2 12 8 18" />
+              </svg>
+              <strong>Static</strong>
+            </div>
+            <p className="pf-type-desc">AI generates code once during setup. That code runs on every transition with zero AI cost.</p>
+            <span className="pf-type-tag pf-tag-static">No AI cost at runtime</span>
           </div>
         </div>
       )}

@@ -6,95 +6,83 @@
  */
 
 import React, { useState } from "react";
-
-const OPERATION_TYPES = [
-  { id: "work_item_query", label: "JQL Search" },
-  { id: "rest_api_internal", label: "Jira REST API" },
-  { id: "rest_api_external", label: "External API" },
-  { id: "confluence_api", label: "Confluence API" },
-  { id: "log_function", label: "Debug Log" },
-];
-
-const CONFLUENCE_OPERATIONS = [
-  "GET_PAGE", "UPDATE_PAGE", "CREATE_PAGE", "DELETE_PAGE", "ADD_COMMENT",
-];
-
-const HTTP_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH"];
+import Tooltip from "./Tooltip";
 
 /**
- * Generate a code template stub based on operation type and prompts.
+ * Generate a starter code template from a natural language description.
+ * This is a client-side stub — in production, this would call the backend
+ * to use OpenAI for real code generation.
  */
-function generateFunctionCode(conditionPrompt, operationType, operationPrompt, endpoint, method) {
-  const lines = [
-    `// Condition: ${(conditionPrompt || "").substring(0, 80)}`,
-    `// Operation: ${operationType} - ${(operationPrompt || "").substring(0, 80)}`,
-    ``,
-  ];
+function generateCodeFromPrompt(prompt) {
+  const p = (prompt || "").toLowerCase();
 
-  switch (operationType) {
-    case "work_item_query":
-      lines.push(
-        `// JQL Search`,
-        `const results = await api.searchJql("${(operationPrompt || "project = PROJ").replace(/"/g, '\\"')}");`,
-        `return results.issues || [];`,
-      );
-      break;
-    case "rest_api_internal":
-      lines.push(
-        `// Jira REST API: ${method || "GET"} ${endpoint || "/rest/api/3/issue/{key}"}`,
-        `const issue = await api.getIssue(api.context.issueKey);`,
-        `return issue;`,
-      );
-      break;
-    case "rest_api_external":
-      lines.push(
-        `// External API call`,
-        `// Note: External URLs must be whitelisted in manifest.yml`,
-        `api.log("External call to: ${(endpoint || "").replace(/"/g, '\\"')}");`,
-        `return null;`,
-      );
-      break;
-    case "confluence_api":
-      lines.push(
-        `// Confluence API operation`,
-        `api.log("Confluence operation: ${method || "GET_PAGE"}");`,
-        `return null;`,
-      );
-      break;
-    case "log_function":
-      lines.push(
-        `// Debug log`,
-        `api.log("${(operationPrompt || "Debug message").replace(/"/g, '\\"')}");`,
-      );
-      break;
-    default:
-      lines.push(`// Unknown operation type`);
+  if (p.includes("jql") || p.includes("search") || p.includes("find") || p.includes("duplicate")) {
+    return `// ${prompt}
+const results = await api.searchJql("project = " + api.context.issueKey.split("-")[0] + " AND summary ~ \\"keyword\\"");
+api.log("Found " + (results.issues?.length || 0) + " results");
+return results.issues || [];`;
   }
 
-  return lines.join("\n");
+  if (p.includes("update") || p.includes("set") || p.includes("change") || p.includes("modify")) {
+    return `// ${prompt}
+const issue = await api.getIssue(api.context.issueKey);
+await api.updateIssue(api.context.issueKey, {
+  // Add fields to update here
+  // summary: "Updated summary",
+});
+api.log("Updated issue " + api.context.issueKey);
+return { success: true };`;
+  }
+
+  if (p.includes("transition") || p.includes("move") || p.includes("status")) {
+    return `// ${prompt}
+// Find the target transition ID first
+await api.transitionIssue(api.context.issueKey, "TRANSITION_ID");
+api.log("Transitioned issue " + api.context.issueKey);
+return { success: true };`;
+  }
+
+  if (p.includes("log") || p.includes("debug") || p.includes("print")) {
+    return `// ${prompt}
+const issue = await api.getIssue(api.context.issueKey);
+api.log("Issue: " + issue.key + " Status: " + issue.fields.status.name);`;
+  }
+
+  // Generic template
+  return `// ${prompt}
+const issue = await api.getIssue(api.context.issueKey);
+api.log("Processing issue: " + issue.key);
+
+// Your logic here — use the available API:
+//   api.getIssue(key)        - Fetch issue data
+//   api.updateIssue(key, {}) - Update issue fields
+//   api.searchJql(jql)       - Search issues by JQL
+//   api.transitionIssue(key, transitionId) - Move issue
+//   api.log(message)         - Debug logging
+//   api.context.issueKey     - Current issue key
+
+return { success: true };`;
 }
 
-export default function FunctionBlock({ index, functionData, onUpdate, onRemove }) {
+export default function FunctionBlock({ index, functionData, onUpdate, onRemove, isOnly }) {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(
+    !!(functionData.variableName || functionData.includeBackoff),
+  );
 
   const update = (field, value) => onUpdate({ [field]: value });
 
-  const handleRegenerate = () => {
+  const handleGenerate = () => {
     setIsGenerating(true);
-    const code = generateFunctionCode(
-      functionData.conditionPrompt,
-      functionData.operationType,
-      functionData.operationPrompt,
-      functionData.endpoint,
-      functionData.method,
-    );
+    const code = generateCodeFromPrompt(functionData.operationPrompt);
     setTimeout(() => {
       onUpdate({ code });
       setIsGenerating(false);
-    }, 300);
+    }, 400);
   };
 
-  const hasPrompts = functionData.conditionPrompt?.trim() && functionData.operationPrompt?.trim();
+  const hasPrompt = functionData.operationPrompt?.trim();
+  const hasCode = functionData.code?.trim();
 
   return (
     <div className="function-block">
@@ -105,211 +93,108 @@ export default function FunctionBlock({ index, functionData, onUpdate, onRemove 
           className="input function-name-input"
           value={functionData.name || ""}
           onChange={(e) => update("name", e.target.value)}
-          placeholder="Function name (optional)"
+          placeholder={`Step ${index + 1} name (optional)`}
         />
-        <button
-          className="btn-remove"
-          onClick={() => onRemove(functionData.id)}
-          title="Remove function"
-        >
-          &times;
-        </button>
+        {!isOnly && (
+          <button
+            className="btn-remove"
+            onClick={() => onRemove(functionData.id)}
+            title="Remove this step"
+          >
+            &times;
+          </button>
+        )}
       </div>
 
+      {/* Main prompt — the core input */}
       <div className="form-group">
-        <label className="label">Condition Prompt</label>
+        <label className="label">
+          What should this step do?
+          <Tooltip text="Describe the action in plain language. AI will generate JavaScript code that runs automatically on every transition — no AI cost at runtime." />
+        </label>
         <textarea
           className="textarea"
-          rows={3}
-          value={functionData.conditionPrompt || ""}
-          onChange={(e) => update("conditionPrompt", e.target.value)}
-          placeholder="AI evaluates: run (true) or skip (false)"
+          rows={4}
+          value={functionData.operationPrompt || ""}
+          onChange={(e) => update("operationPrompt", e.target.value)}
+          placeholder={"Example: \"Find all issues in this project with the same summary and add a comment linking to them\""}
         />
-        <p className="hint">AI evaluates if this condition is met. Returns true (run) or false (skip).</p>
       </div>
 
-      <div className="form-group">
-        <label className="label">Operation Type</label>
-        <select
-          className="input"
-          value={functionData.operationType || "work_item_query"}
-          onChange={(e) => update("operationType", e.target.value)}
-          style={{ cursor: "pointer" }}
+      {/* Generate button */}
+      <div className="generate-row">
+        <button
+          className={`btn-generate ${hasCode ? "btn-generate-secondary" : ""}`}
+          onClick={handleGenerate}
+          disabled={isGenerating || !hasPrompt}
         >
-          {OPERATION_TYPES.map((t) => (
-            <option key={t.id} value={t.id}>{t.label}</option>
-          ))}
-        </select>
+          {isGenerating ? "Generating..." : hasCode ? "Regenerate Code" : "Generate Code"}
+        </button>
+        {!hasPrompt && (
+          <span className="generate-hint">Describe what this step does to enable code generation</span>
+        )}
       </div>
 
-      {/* Operation-specific fields */}
-      {functionData.operationType === "work_item_query" && (
+      {/* Generated code — only shown after generation or if already has code */}
+      {hasCode && (
         <div className="form-group">
-          <label className="label">JQL Search Prompt</label>
+          <label className="label">
+            Generated Code
+            <Tooltip text="This JavaScript runs on every workflow transition. You can edit it directly. The code has access to api.getIssue(), api.updateIssue(), api.searchJql(), api.transitionIssue(), api.log(), and api.context." />
+          </label>
           <textarea
-            className="textarea"
-            rows={4}
-            value={functionData.operationPrompt || ""}
-            onChange={(e) => update("operationPrompt", e.target.value)}
-            placeholder="Describe what to search for. AI generates JQL."
-          />
-        </div>
-      )}
-
-      {functionData.operationType === "rest_api_internal" && (
-        <>
-          <div className="form-group">
-            <label className="label">Endpoint Template</label>
-            <input
-              type="text"
-              className="input"
-              value={functionData.endpoint || ""}
-              onChange={(e) => update("endpoint", e.target.value)}
-              placeholder="/rest/api/3/issue/${issueKey}"
-            />
-          </div>
-          <div className="form-group">
-            <label className="label">HTTP Method</label>
-            <select
-              className="input"
-              value={functionData.method || "GET"}
-              onChange={(e) => update("method", e.target.value)}
-              style={{ cursor: "pointer" }}
-            >
-              {HTTP_METHODS.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <label className="label">Operation Description</label>
-            <textarea
-              className="textarea"
-              rows={3}
-              value={functionData.operationPrompt || ""}
-              onChange={(e) => update("operationPrompt", e.target.value)}
-              placeholder="Describe the REST API operation"
-            />
-          </div>
-        </>
-      )}
-
-      {functionData.operationType === "rest_api_external" && (
-        <>
-          <div className="form-group">
-            <label className="label">External URL Template</label>
-            <input
-              type="text"
-              className="input"
-              value={functionData.endpoint || ""}
-              onChange={(e) => update("endpoint", e.target.value)}
-              placeholder="https://api.example.com/resource/${variable}"
-            />
-            <p className="hint">{"Supports ${variable} references from previous functions."}</p>
-          </div>
-          <div className="form-group">
-            <label className="label">Operation Description</label>
-            <textarea
-              className="textarea"
-              rows={3}
-              value={functionData.operationPrompt || ""}
-              onChange={(e) => update("operationPrompt", e.target.value)}
-              placeholder="Describe the external API operation"
-            />
-          </div>
-        </>
-      )}
-
-      {functionData.operationType === "confluence_api" && (
-        <>
-          <div className="form-group">
-            <label className="label">Confluence Operation</label>
-            <select
-              className="input"
-              value={functionData.method || "GET_PAGE"}
-              onChange={(e) => update("method", e.target.value)}
-              style={{ cursor: "pointer" }}
-            >
-              {CONFLUENCE_OPERATIONS.map((op) => (
-                <option key={op} value={op}>{op.replace(/_/g, " ")}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <label className="label">Space Key (optional)</label>
-            <input
-              type="text"
-              className="input"
-              value={functionData.operationPrompt || ""}
-              onChange={(e) => update("operationPrompt", e.target.value)}
-              placeholder="e.g., ENG"
-            />
-          </div>
-        </>
-      )}
-
-      {functionData.operationType === "log_function" && (
-        <div className="form-group">
-          <label className="label">Log Message Template</label>
-          <textarea
-            className="textarea"
-            rows={3}
-            value={functionData.operationPrompt || ""}
-            onChange={(e) => update("operationPrompt", e.target.value)}
-            placeholder={"Issue ${issueKey} processed with result: ${previousResult}"}
-          />
-          <p className="hint">{"Supports ${variable} references from previous functions."}</p>
-        </div>
-      )}
-
-      {/* Variable name — hidden for log_function */}
-      {functionData.operationType !== "log_function" && (
-        <div className="form-group">
-          <label className="label">Variable Name</label>
-          <input
-            type="text"
-            className="input"
-            value={functionData.variableName || ""}
-            onChange={(e) => update("variableName", e.target.value)}
-            placeholder={`result${index + 1}`}
+            className="textarea code-editor"
+            rows={10}
+            value={functionData.code || ""}
+            onChange={(e) => update("code", e.target.value)}
           />
           <p className="hint">
-            {"Other functions can reference this result using ${" + (functionData.variableName || `result${index + 1}`) + "}."}
+            This code runs as-is on every transition. Edit directly if needed.
           </p>
         </div>
       )}
 
-      {/* Generated code */}
-      <div className="form-group">
-        <label className="label">Generated Code</label>
-        <textarea
-          className="textarea code-editor"
-          rows={8}
-          value={functionData.code || ""}
-          onChange={(e) => update("code", e.target.value)}
-          readOnly={!hasPrompts}
-          placeholder={hasPrompts ? "" : "Fill in condition and operation prompts to enable code editing"}
-        />
-        {hasPrompts && (
+      {/* Advanced options — collapsed by default */}
+      {hasCode && (
+        <div className="advanced-section">
           <button
-            className="btn-regenerate"
-            onClick={handleRegenerate}
-            disabled={isGenerating}
+            className="btn-advanced-toggle"
+            onClick={() => setShowAdvanced(!showAdvanced)}
           >
-            {isGenerating ? "Generating..." : "Regenerate Code"}
+            {showAdvanced ? "Hide" : "Show"} advanced options
+            <span className={`toggle-chevron ${showAdvanced ? "open" : ""}`}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+            </span>
           </button>
-        )}
-        <div className="form-group" style={{ marginTop: "4px" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--text-secondary)", cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={functionData.includeBackoff || false}
-              onChange={(e) => update("includeBackoff", e.target.checked)}
-            />
-            Include exponential backoff for API calls (3 retries)
-          </label>
+
+          {showAdvanced && (
+            <div className="advanced-options">
+              <div className="form-group">
+                <label className="label">
+                  Result Variable Name
+                  <Tooltip text="If you chain multiple steps, this step's return value is available to later steps via ${variableName}. Leave empty if this step doesn't produce a result needed by other steps." />
+                </label>
+                <input
+                  type="text"
+                  className="input"
+                  value={functionData.variableName || ""}
+                  onChange={(e) => update("variableName", e.target.value)}
+                  placeholder={`result${index + 1}`}
+                />
+              </div>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={functionData.includeBackoff || false}
+                  onChange={(e) => update("includeBackoff", e.target.checked)}
+                />
+                Include retry logic with exponential backoff (3 retries)
+                <Tooltip text="Wraps API calls in retry logic so transient failures (rate limits, timeouts) are handled automatically." />
+              </label>
+            </div>
+          )}
         </div>
-      </div>
+      )}
     </div>
   );
 }

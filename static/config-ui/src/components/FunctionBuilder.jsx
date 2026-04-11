@@ -7,6 +7,7 @@
 
 import React from "react";
 import FunctionBlock from "./FunctionBlock";
+import Tooltip from "./Tooltip";
 
 const MAX_FUNCTIONS = 50;
 
@@ -42,11 +43,21 @@ export default function FunctionBuilder({ functions, setFunctions }) {
 
   return (
     <div className="function-builder">
-      <div className="function-builder-header">
-        <p className="hint" style={{ marginTop: 0 }}>
-          Chain up to {MAX_FUNCTIONS} operations. Each function can reference results from previous
-          functions using <code>{"${variableName}"}</code> syntax.
-        </p>
+      {/* How it works banner */}
+      <div className="pf-how-it-works">
+        <div className="pf-how-header">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="16" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+          <strong>How it works</strong>
+        </div>
+        <ol className="pf-how-steps">
+          <li><strong>Describe</strong> what each step should do in plain language</li>
+          <li><strong>Generate</strong> — AI writes the JavaScript code for you</li>
+          <li><strong>Review &amp; save</strong> — the code runs on every transition with no AI cost</li>
+        </ol>
       </div>
 
       {functions.map((fn, i) => (
@@ -56,6 +67,7 @@ export default function FunctionBuilder({ functions, setFunctions }) {
           functionData={fn}
           onUpdate={(updates) => updateFunction(fn.id, updates)}
           onRemove={removeFunction}
+          isOnly={functions.length === 1}
         />
       ))}
 
@@ -64,9 +76,19 @@ export default function FunctionBuilder({ functions, setFunctions }) {
         onClick={addFunction}
         disabled={functions.length >= MAX_FUNCTIONS}
       >
-        + Add Another Function
+        + Add Another Step
         {functions.length >= MAX_FUNCTIONS && " (max reached)"}
       </button>
+
+      {functions.length > 1 && (
+        <p className="hint" style={{ marginTop: "8px", textAlign: "center" }}>
+          Steps run in order. Use{" "}
+          <Tooltip text="Each step can store its return value in a named variable. Later steps can reference it using ${variableName} in their code.">
+            <code style={{ cursor: "help" }}>{"${variableName}"}</code>
+          </Tooltip>
+          {" "}to pass results between steps.
+        </p>
+      )}
     </div>
   );
 }
