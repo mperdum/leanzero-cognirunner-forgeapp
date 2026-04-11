@@ -3,6 +3,7 @@
  * Improves duplicate handling with smarter merge strategies and conflict resolution
  */
 
+import { storage } from '@forge/kvs';
 import { LOGS_STORAGE_KEY, storeLog } from './logger.js';
 
 // Re-export logger utilities for external access

@@ -198,11 +198,35 @@ const executePostFunctionInternal = async ({ issueKey, config, dryRun = false, c
       postFunctionConfig = loadedConfig;
     }
 
-    const { type, code, conditionPrompt, actionPrompt, actionFieldId } = postFunctionConfig;
+    const { type, conditionPrompt, actionPrompt, actionFieldId } = postFunctionConfig;
+    // Support both `code` (string) and `functions` (array from function builder)
+    const code = postFunctionConfig.code || (
+      Array.isArray(postFunctionConfig.functions)
+        ? postFunctionConfig.functions.map(f => f.code || "").filter(Boolean).join("\n")
+        : undefined
+    );
     const fieldId = postFunctionConfig.fieldId || actionFieldId;
-    const issueContext = { key: issueKey, modifiedFields: postFunctionConfig.modifiedFields || null };
 
-    if (type === "postfunction-semantic") {
+    // Build issueContext with projectKey and summary for AI context
+    let projectKey = null;
+    let summary = "";
+    if (issueKey) {
+      const dashIndex = issueKey.indexOf("-");
+      if (dashIndex > 0) projectKey = issueKey.substring(0, dashIndex);
+      try {
+        const issueResponse = await api.asApp().requestJira(route`/rest/api/3/issue/${issueKey}?fields=summary`);
+        if (issueResponse.ok) {
+          const issueData = await issueResponse.json();
+          summary = issueData.fields?.summary || "";
+        }
+      } catch (e) {
+        console.log("Could not fetch issue summary for post-function context:", e);
+      }
+    }
+
+    const issueContext = { key: issueKey, modifiedFields: postFunctionConfig.modifiedFields || null, projectKey, summary };
+
+    if (type === "postfunction-semantic" || type === "semantic") {
       return await executeSemanticPostFunction({ 
         issueContext, 
         conditionPrompt, 
@@ -216,7 +240,7 @@ const executePostFunctionInternal = async ({ issueKey, config, dryRun = false, c
       });
     }
 
-    if (type === "postfunction-static") {
+    if (type === "postfunction-static" || type === "static") {
       return await executeStaticCodeSandbox({ issueContext, code, dryRun, simulationMode: !dryRun, changelog, transition, workflow });
     }
 
@@ -431,20 +455,23 @@ export const handleEvent = async (event) => {
   }
 
   try {
+    const issue = event?.issue || event?.payload?.issue || {};
+    const issueKey = issue.key || "(unknown)";
+
     // Routing logic based on event type
     switch (eventType) {
       case 'avi:jira:created:issue':
       case 'avi:jira:updated:issue':
-        console.log(`Processing issue event: ${eventType} for ${issue.key}`);
+        console.log(`Processing issue event: ${eventType} for ${issueKey}`);
         // Future logic: trigger specific automation based on issue changes
         return { success: true, message: `Processed ${eventType}` };
 
       case 'avi:jira:commented:issue':
-        console.log(`Processing comment event for ${issue.key}`);
+        console.log(`Processing comment event for ${issueKey}`);
         return { success: true, message: "Comment processed" };
 
       case 'avi:jira:transitioned:issue':
-        console.log(`Processing transition event for ${issue.key}`);
+        console.log(`Processing transition event for ${issueKey}`);
         return { success: true, message: "Transition processed" };
 
       default:
@@ -555,11 +582,13 @@ resolver.define("saveOpenAIKey", async ({ payload }) => {
 
 resolver.define("getOpenAIKey", async () => {
   try {
-    const key = await storage.get('COGNIRUNNER_OPENAI_API_KEY');
-    return { success: true, key: key };
+    const kvsKey = await storage.get('COGNIRUNNER_OPENAI_API_KEY');
+    // Check if user has configured their own key (BYOK)
+    const isByok = !!kvsKey;
+    return { success: true, key: kvsKey || null, isByok };
   } catch (error) {
     console.error("Failed to retrieve OpenAI key:", error);
-    return { success: false, error: error.message };
+    return { success: false, error: error.message, isByok: false };
   }
 });
 
@@ -575,11 +604,34 @@ resolver.define("removeOpenAIKey", async () => {
 
 resolver.define("getOpenAIModels", async () => {
   try {
-    const apiKey = await storage.get('COGNIRUNNER_OPENAI_API_KEY');
+    // Check for BYOK first, then fallback to default env key
+    const kvsKey = await storage.get('COGNIRUNNER_OPENAI_API_KEY');
+    const apiKey = kvsKey || process.env.OPENAI_API_KEY;
+    const isByok = !!kvsKey;
+
     if (!apiKey) {
-      return { success: false, error: "No OpenAI API key configured" };
+      return { 
+        success: false, 
+        error: "No OpenAI API key configured. Please configure either a BYOK key in the Admin Panel or set OPENAI_API_KEY environment variable.",
+        models: [],
+        isByok: false
+      };
     }
 
+    // If using default key (not BYOK), return a limited predefined list
+    if (!isByok) {
+      console.log("Using default app key - returning limited model list");
+      const defaultModel = process.env.OPENAI_MODEL || "gpt-4o-mini";
+      return { 
+        success: true, 
+        models: [defaultModel],
+        isByok: false,
+        message: `Limited to default model: ${defaultModel}`
+      };
+    }
+
+    // If using BYOK, fetch all available models from OpenAI
+    console.log("Using BYOK - fetching full model list from OpenAI");
     const response = await fetch("https://api.openai.com/v1/models", {
       method: "GET",
       headers: {
@@ -591,15 +643,37 @@ resolver.define("getOpenAIModels", async () => {
     if (!response.ok) {
       const errorText = await response.text();
       console.error("Failed to fetch OpenAI models:", response.status, errorText);
-      return { success: false, error: `Failed to fetch models: ${response.status}` };
+      return { 
+        success: false, 
+        error: `Failed to fetch models: ${response.status}`,
+        models: [],
+        isByok: true
+      };
     }
 
     const data = await response.json();
-    const models = (data.data || []).map(m => m.id);
-    return { success: true, models };
+    // Filter to only show chat/completion models that are commonly used
+    const allModels = (data.data || []).map(m => m.id);
+    const chatModels = allModels.filter(id => 
+      id.includes('gpt-4') || 
+      id.includes('gpt-3.5') || 
+      id.includes('o1') ||
+      id.includes('o3')
+    );
+
+    return { 
+      success: true, 
+      models: chatModels.length > 0 ? chatModels : allModels.slice(0, 20),
+      isByok: true
+    };
   } catch (error) {
     console.error("Error in getOpenAIModels:", error);
-    return { success: false, error: error.message };
+    return { 
+      success: false, 
+      error: error.message,
+      models: [],
+      isByok: false
+    };
   }
 });
 

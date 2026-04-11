@@ -1,0 +1,8 @@
+# Treat webpack build output as binary to prevent massive diffs
+# These files are generated and should not be diffed line-by-line
+static/admin-panel/build/*.js binary
+static/admin-panel/build/*.js.LICENSE.txt binary
+static/config-ui/build/*.js binary
+static/config-ui/build/*.js.LICENSE.txt binary
+static/config-view/build/*.js binary
+static/config-view/build/*.js.LICENSE.txt binary

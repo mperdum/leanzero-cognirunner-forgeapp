@@ -36,7 +36,7 @@ export const getOpenAIKey = async () => {
 };
 
 /**
- * Get the OpenAI model from KVS or environment variables (defaults to gpt-mini 5.4)
+ * Get the OpenAI model from KVS or environment variables (defaults to gpt-4o-mini)
  */
 export const getOpenAIModel = async () => {
   try {
@@ -47,7 +47,7 @@ export const getOpenAIModel = async () => {
   } catch (error) {
     console.error("Error reading OpenAI model from KVS:", error);
   }
-  return process.env.OPENAI_MODEL || "gpt-mini 5.4";
+  return process.env.OPENAI_MODEL || "gpt-4o-mini";
 };
 
 // Export for testing
@@ -56,7 +56,7 @@ export const mockGetOpenAIKey = () => {
 };
 
 export const mockGetOpenAIModel = () => {
-  return "gpt-mini 5.4";
+  return "gpt-4o-mini";
 };
 
 // Tool trigger patterns for agentic mode

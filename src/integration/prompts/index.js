@@ -2,6 +2,8 @@
  * JIRA Prompts Module - Main entry point for JIRA prompt functionality
  */
 
+import { storage } from '@forge/kvs';
+
 // Import all category modules
 import { issues } from './categories/issues.js';
 import { projects } from './categories/projects.js';
@@ -172,7 +174,7 @@ export default {
         return stored;
       }
       
-      await storePrompts(key);
+      await storage.set(key, JIRA_PROMPTS);
       return JIRA_PROMPTS;
     } catch (error) {
       console.error('Failed to load prompts, using defaults:', error);

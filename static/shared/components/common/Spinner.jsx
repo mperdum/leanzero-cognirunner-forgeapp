@@ -34,16 +34,22 @@ export const Spinner = ({
 
   const sizeStyles = sizes[size];
 
+  const spinnerStyle = {
+    ...sizeStyles,
+    borderStyle: "solid",
+    borderColor: "var(--border-color, #cbd5e1)",
+    borderTopColor: "var(--primary-color, #2563eb)",
+    borderRadius: "50%",
+    animation: "spin 0.8s linear infinite",
+  };
+
   if (fullPage) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 dark:bg-black/80 backdrop-blur-sm">
-        <div className="flex flex-col items-center">
-          <div
-            className="animate-spin rounded-full border-t-blue-600"
-            style={{ ...sizeStyles, borderWidth: sizeStyles.borderWidth }}
-          />
+      <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-secondary, rgba(255,255,255,0.8))", backdropFilter: "blur(4px)" }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <div style={spinnerStyle} />
           {text && (
-            <p className="mt-4 text-gray-700 dark:text-gray-300">{text}</p>
+            <p style={{ marginTop: "16px", color: "var(--text-secondary, #64748b)" }}>{text}</p>
           )}
         </div>
       </div>
@@ -51,12 +57,9 @@ export const Spinner = ({
   }
 
   return (
-    <div className="flex flex-col items-center justify-center p-8">
-      <div
-        className="animate-spin rounded-full border-t-blue-600"
-        style={{ ...sizeStyles, borderWidth: sizeStyles.borderWidth }}
-      />
-      {text && <p className="mt-4 text-gray-700 dark:text-gray-300">{text}</p>}
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "32px" }}>
+      <div style={spinnerStyle} />
+      {text && <p style={{ marginTop: "16px", color: "var(--text-secondary, #64748b)" }}>{text}</p>}
     </div>
   );
 };

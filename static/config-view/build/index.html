@@ -1,21 +1,31 @@
-<!doctype html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>AI Validator Configuration View</title><style>/* CSS Custom Properties - Light theme (default) */
+<!doctype html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>AI Validator Configuration View</title><style>/* LeanZero Design System - CSS Custom Properties */
             :root {
                 --bg-color: transparent;
-                --text-color: #172b4d;
-                --text-secondary: #5e6c84;
-                --text-muted: #7a869a;
-                --primary-color: #0052cc;
-                --code-bg: #f4f5f7;
+                --text-color: #0f172a;
+                --text-secondary: #64748b;
+                --text-muted: #94a3b8;
+                --primary-color: #2563eb;
+                --code-bg: #f1f5f9;
+                --success-color: #16a34a;
+                --error-color: #dc2626;
+                --warning-color: #d97706;
+                --border-color: #cbd5e1;
+                --card-bg: #ffffff;
             }
 
             /* Dark theme */
             html[data-color-mode="dark"] {
                 --bg-color: transparent;
-                --text-color: #b6c2cf;
-                --text-secondary: #9fadbc;
-                --text-muted: #8c9bab;
-                --primary-color: #579dff;
-                --code-bg: #1d2125;
+                --text-color: #F5F5F7;
+                --text-secondary: #A0A0B0;
+                --text-muted: #6b7280;
+                --primary-color: #3b82f6;
+                --code-bg: #1e293b;
+                --success-color: #22c55e;
+                --error-color: #ef4444;
+                --warning-color: #f59e0b;
+                --border-color: #374151;
+                --card-bg: #13131A;
             }
 
             *,
@@ -29,8 +39,8 @@
                 margin: 0;
                 padding: 0;
                 font-family:
-                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-                    Oxygen, Ubuntu, sans-serif;
+                    "Inter", system-ui, -apple-system, BlinkMacSystemFont,
+                    "Segoe UI", Roboto, sans-serif;
                 background: var(--bg-color);
                 color: var(--text-color);
                 font-size: 13px;
@@ -105,25 +115,15 @@
             }
 
             .license-active {
-                background: rgba(0, 102, 68, 0.1);
-                border-color: #006644;
-                color: #006644;
-            }
-
-            html[data-color-mode="dark"] .license-active {
-                border-color: #4bce97;
-                color: #4bce97;
+                background: rgba(22, 163, 74, 0.1);
+                border-color: var(--success-color);
+                color: var(--success-color);
             }
 
             .license-inactive {
-                background: rgba(222, 53, 11, 0.1);
-                border-color: #de350b;
-                color: #de350b;
-            }
-
-            html[data-color-mode="dark"] .license-inactive {
-                border-color: #f87168;
-                color: #f87168;
+                background: rgba(220, 38, 38, 0.1);
+                border-color: var(--error-color);
+                color: var(--error-color);
             }
 
             .rule-status-banner {
@@ -139,25 +139,15 @@
             }
 
             .status-disabled-banner {
-                border-color: #de350b;
-                background: rgba(222, 53, 11, 0.08);
-                color: #de350b;
-            }
-
-            html[data-color-mode="dark"] .status-disabled-banner {
-                border-color: #f87168;
-                color: #f87168;
+                border-color: var(--error-color);
+                background: rgba(220, 38, 38, 0.08);
+                color: var(--error-color);
             }
 
             .status-active-banner {
-                border-color: #006644;
-                background: rgba(0, 102, 68, 0.08);
-                color: #006644;
-            }
-
-            html[data-color-mode="dark"] .status-active-banner {
-                border-color: #4bce97;
-                color: #4bce97;
+                border-color: var(--success-color);
+                background: rgba(22, 163, 74, 0.08);
+                color: var(--success-color);
             }
 
             .rule-status-content {
@@ -167,33 +157,23 @@
             }
 
             .btn-enable {
-                color: #006644;
-                border-color: #006644;
+                color: var(--success-color);
+                border-color: var(--success-color);
                 flex-shrink: 0;
-            }
-
-            html[data-color-mode="dark"] .btn-enable {
-                color: #4bce97;
-                border-color: #4bce97;
             }
 
             .btn-enable:hover {
-                background: rgba(0, 102, 68, 0.1);
+                background: rgba(22, 163, 74, 0.1);
             }
 
             .btn-danger {
-                color: #de350b;
-                border-color: #de350b;
+                color: var(--error-color);
+                border-color: var(--error-color);
                 flex-shrink: 0;
             }
 
-            html[data-color-mode="dark"] .btn-danger {
-                color: #f87168;
-                border-color: #f87168;
-            }
-
             .btn-danger:hover {
-                background: rgba(222, 53, 11, 0.1);
+                background: rgba(220, 38, 38, 0.1);
             }
 
             .alert {
@@ -208,25 +188,15 @@
             }
 
             .alert-error {
-                background: rgba(222, 53, 11, 0.08);
-                border-color: #de350b;
-                color: #de350b;
-            }
-
-            html[data-color-mode="dark"] .alert-error {
-                border-color: #f87168;
-                color: #f87168;
+                background: rgba(220, 38, 38, 0.08);
+                border-color: var(--error-color);
+                color: var(--error-color);
             }
 
             .alert-warning {
-                background: rgba(255, 153, 31, 0.08);
-                border-color: #ff991f;
-                color: #ff991f;
-            }
-
-            html[data-color-mode="dark"] .alert-warning {
-                color: #f5cd47;
-                border-color: #f5cd47;
+                background: rgba(217, 119, 6, 0.08);
+                border-color: var(--warning-color);
+                color: var(--warning-color);
             }
 
             .alert-dismiss {
@@ -257,14 +227,13 @@
                 border-radius: 3px;
                 font-size: 10px;
                 font-weight: 600;
-                background: rgba(0, 82, 204, 0.1);
-                color: #0052cc;
+                background: rgba(37, 99, 235, 0.1);
+                color: var(--primary-color);
                 margin-right: 6px;
             }
 
             html[data-color-mode="dark"] .log-tools-badge {
-                background: rgba(87, 157, 255, 0.15);
-                color: #579dff;
+                background: rgba(59, 130, 246, 0.15);
             }
 
             .log-queries {
@@ -276,4 +245,4 @@
                 font-size: 10px;
                 word-break: break-all;
                 color: var(--text-secondary);
-            }</style><script defer="defer" src="./bundle.850f7b87.js"></script></head><body><div id="root"></div></body></html>
+            }</style><script defer="defer" src="./bundle.c58b51c9.js"></script></head><body><div id="root"></div></body></html>

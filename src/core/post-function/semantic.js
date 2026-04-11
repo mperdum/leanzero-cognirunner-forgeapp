@@ -12,17 +12,18 @@ export const isTestEnv = process.env.NODE_ENV === 'test';
  * Execute a semantic post-function using an agentic approach.
  * This combines condition checking and action generation into a single AI call
  * to reduce latency/cost and allow the use of Jira tools for smarter decisions.
- * 
+ *
  * @param {Object} issueContext - The context of the issue being transitioned (includes projectKey, etc.).
- * @param {string} combinedPrompt - A unified prompt that describes both the condition AND the action.
- *                                 Example: "Check if the description contains 'Urgent'. If it does, set the Priority field to 'High'."
+ * @param {string} [combinedPrompt] - A unified prompt that describes both the condition AND the action.
+ * @param {string} [conditionPrompt] - Condition criteria (used when combinedPrompt is not provided).
+ * @param {string} [actionPrompt] - Action description (used when combinedPrompt is not provided).
  * @param {string} fieldId - The ID of the field used in the condition (for context).
  * @param {string} actionFieldId - The ID of the field that should be updated.
  * @param {Object} options - Additional options like dryRun, transition, etc.
  * @returns {Promise<Object>} An object indicating success or failure and whether the post-function was skipped.
  */
 export const executeSemanticPostFunction = async (
-  { issueContext, combinedPrompt, fieldId, actionFieldId, dryRun, transition },
+  { issueContext, combinedPrompt, conditionPrompt, actionPrompt, fieldId, actionFieldId, dryRun, transition },
   dependencies = {}
 ) => {
   const {
@@ -47,14 +48,18 @@ export const executeSemanticPostFunction = async (
     // 2. Use Agentic AI to evaluate condition and decide on action in one pass
     console.log("Running agentic decision loop...");
     const deadline = Date.now() + 20000; // 20s budget for the process
-    
+
+    // Build the criteria text from either combinedPrompt or conditionPrompt+actionPrompt
+    const criteriaText = combinedPrompt
+      || [conditionPrompt, actionPrompt].filter(Boolean).join("\n\nACTION INSTRUCTIONS:\n");
+
     // Construct a specialized prompt that instructs the AI to return a structured JSON verdict
     const unifiedPrompt = `
       You are an automated Jira workflow agent. Your goal is to evaluate a condition and perform an action based on it.
 
       CONDITION:
-      Does the current state of the issue satisfy this criteria? 
-      Criteria: ${combinedPrompt}
+      Does the current state of the issue satisfy this criteria?
+      Criteria: ${criteriaText}
       Current value of "${fieldId}": ${fieldValue || "(empty)"}
 
       ACTION:
@@ -87,7 +92,7 @@ export const executeSemanticPostFunction = async (
     );
 
     // Handle AI service failures or timeouts (fail open to allow transition)
-    if (!agenticResult.isValid && agenticResult.reason?.includes("timed out")) {
+    if (agenticResult.reason?.includes("timed out")) {
         console.log("Agentic loop timed out. Failing open (allowing transition).");
         return { success: true, skipped: true };
     }
