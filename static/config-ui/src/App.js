@@ -950,6 +950,19 @@ const injectStyles = () => {
       color: var(--text-color);
     }
 
+    /* BYOK cost notice */
+    .byok-cost-notice {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      margin: 0 0 0 0;
+      background: rgba(220, 38, 38, 0.06);
+      border-bottom: 1px solid rgba(220, 38, 38, 0.15);
+      color: var(--error-color);
+      font-size: 12px;
+    }
+
     .semantic-config { padding: 16px; }
   `;
   document.head.appendChild(style);
@@ -1010,6 +1023,9 @@ function App() {
   const searchInputRef = useRef(null);
   const listRef = useRef(null);
   const [dropdownFlipUp, setDropdownFlipUp] = useState(false);
+
+  // BYOK state — used to show cost notice when user's own key is active
+  const [isByok, setIsByok] = useState(false);
 
   // Post-function state
   const [isPostFunction, setIsPostFunction] = useState(false);
@@ -1328,6 +1344,14 @@ function App() {
         }
       }
 
+      // Check BYOK status for cost notice
+      try {
+        const keyStatus = await invoke("getOpenAIKey");
+        if (keyStatus?.isByok) setIsByok(true);
+      } catch (e) {
+        // Ignore — default is false (no cost notice)
+      }
+
       setLoading(false);
     };
     init();
@@ -1420,6 +1444,16 @@ function App() {
       {/* Semantic post-function: condition/action prompts + field selector */}
       {isPostFunction && postFunctionType === "semantic" && (
         <div className="card">
+          {isByok && (
+            <div className="byok-cost-notice">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <span>Uses your OpenAI API key. Each transition consumes tokens from your account.</span>
+            </div>
+          )}
           <SemanticConfig
             conditionPrompt={conditionPrompt}
             setConditionPrompt={setConditionPrompt}
@@ -1437,6 +1471,16 @@ function App() {
       {/* Standard validator/condition form */}
       {!isPostFunction && (
       <div className="card">
+        {isByok && (
+          <div className="byok-cost-notice">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+            <span>Uses your OpenAI API key. Each validation consumes tokens from your account.</span>
+          </div>
+        )}
         <div className="form-group">
           <label className="label">
             Field to Validate <span className="required">*</span>
