@@ -223,6 +223,11 @@ const injectStyles = () => {
       box-shadow: 0 4px 16px rgba(0,0,0,0.4);
     }
 
+    .dropdown-panel-up {
+      top: auto;
+      bottom: calc(100% + 4px);
+    }
+
     .dropdown-search {
       padding: 8px;
       border-bottom: 1px solid var(--border-color);
@@ -776,6 +781,7 @@ function App() {
   const dropdownRef = useRef(null);
   const searchInputRef = useRef(null);
   const listRef = useRef(null);
+  const [dropdownFlipUp, setDropdownFlipUp] = useState(false);
 
   // Post-function state
   const [isPostFunction, setIsPostFunction] = useState(false);
@@ -827,10 +833,16 @@ function App() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Focus search input when dropdown opens
+  // Focus search input and measure viewport when dropdown opens
   useEffect(() => {
-    if (dropdownOpen && searchInputRef.current) {
-      searchInputRef.current.focus();
+    if (dropdownOpen) {
+      if (searchInputRef.current) searchInputRef.current.focus();
+      if (dropdownRef.current) {
+        const rect = dropdownRef.current.getBoundingClientRect();
+        const spaceBelow = window.innerHeight - rect.bottom - 8;
+        const spaceAbove = rect.top - 8;
+        setDropdownFlipUp(spaceBelow < 320 && spaceAbove > spaceBelow);
+      }
     }
   }, [dropdownOpen]);
 
@@ -1236,7 +1248,7 @@ function App() {
                 </span>
               </button>
               {dropdownOpen && (
-                <div className="dropdown-panel">
+                <div className={`dropdown-panel${dropdownFlipUp ? " dropdown-panel-up" : ""}`}>
                   <div className="dropdown-search">
                     <input
                       ref={searchInputRef}

@@ -499,6 +499,11 @@ const injectStyles = () => {
 
     html[data-color-mode="dark"] .dropdown-panel { box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
 
+    .dropdown-panel-up {
+      top: auto;
+      bottom: calc(100% + 4px);
+    }
+
     .dropdown-search {
       padding: 8px;
       border-bottom: 1px solid var(--border-color);

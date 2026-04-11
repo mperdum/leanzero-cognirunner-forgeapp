@@ -5,10 +5,11 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 
 /**
  * Custom dropdown select matching the LeanZero design system.
+ * Automatically flips to open upward when near the bottom of the viewport.
  *
  * Props:
  *   value        - currently selected value
@@ -35,7 +36,9 @@ export default function CustomSelect({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [highlighted, setHighlighted] = useState(-1);
+  const [flipUp, setFlipUp] = useState(false);
   const wrapRef = useRef(null);
+  const panelRef = useRef(null);
   const searchRef = useRef(null);
   const listRef = useRef(null);
 
@@ -60,6 +63,21 @@ export default function CustomSelect({
   // Find selected option's label
   const selectedOpt = normalized.find((o) => o.value === value);
 
+  // Measure available space and decide direction
+  const measureDirection = useCallback(() => {
+    if (!wrapRef.current) return;
+    const triggerRect = wrapRef.current.getBoundingClientRect();
+    const panelHeight = 280; // max-height of dropdown-panel
+    const spaceBelow = window.innerHeight - triggerRect.bottom - 8;
+    const spaceAbove = triggerRect.top - 8;
+
+    if (spaceBelow < panelHeight && spaceAbove > spaceBelow) {
+      setFlipUp(true);
+    } else {
+      setFlipUp(false);
+    }
+  }, []);
+
   // Close on outside click
   useEffect(() => {
     const handler = (e) => {
@@ -71,12 +89,15 @@ export default function CustomSelect({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Focus search on open
+  // Measure direction and focus search on open
   useEffect(() => {
-    if (open && showSearch && searchRef.current) {
-      searchRef.current.focus();
+    if (open) {
+      measureDirection();
+      if (showSearch && searchRef.current) {
+        searchRef.current.focus();
+      }
     }
-  }, [open, showSearch]);
+  }, [open, showSearch, measureDirection]);
 
   // Reset highlight on search change
   useEffect(() => { setHighlighted(0); }, [search]);
@@ -173,7 +194,10 @@ export default function CustomSelect({
         </span>
       </button>
       {open && (
-        <div className="dropdown-panel">
+        <div
+          className={`dropdown-panel${flipUp ? " dropdown-panel-up" : ""}`}
+          ref={panelRef}
+        >
           {showSearch && (
             <div className="dropdown-search">
               <input
