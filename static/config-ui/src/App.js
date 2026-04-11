@@ -436,7 +436,7 @@ const injectStyles = () => {
       position: relative;
       display: inline-flex;
       align-items: center;
-      margin-left: 4px;
+      margin-left: 6px;
       vertical-align: middle;
     }
 
@@ -447,34 +447,80 @@ const injectStyles = () => {
       width: 16px;
       height: 16px;
       border-radius: 50%;
-      background: var(--border-color);
-      color: var(--text-secondary);
-      font-size: 10px;
+      background: var(--primary-color);
+      color: #fff;
+      font-size: 9px;
       font-weight: 700;
       cursor: help;
       line-height: 1;
+      opacity: 0.7;
+      transition: opacity 0.15s ease;
     }
+
+    .tooltip-wrap:hover .tooltip-icon { opacity: 1; }
 
     .tooltip-bubble {
       position: absolute;
       left: 50%;
       transform: translateX(-50%);
-      z-index: 100;
-      padding: 8px 12px;
-      border-radius: 6px;
-      background: var(--text-color);
-      color: var(--card-bg);
+      z-index: 1000;
+      padding: 10px 14px;
+      border-radius: 8px;
+      background: #0f172a;
+      color: #e2e8f0;
       font-size: 12px;
       font-weight: 400;
-      line-height: 1.4;
+      font-style: normal;
+      line-height: 1.5;
+      letter-spacing: normal;
+      text-transform: none;
       white-space: normal;
-      width: 260px;
+      width: 280px;
       pointer-events: none;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.25), 0 0 0 1px rgba(255,255,255,0.06);
+      animation: tooltipFadeIn 0.15s ease;
     }
 
-    .tooltip-bottom { top: calc(100% + 6px); }
-    .tooltip-top { bottom: calc(100% + 6px); }
+    html[data-color-mode="dark"] .tooltip-bubble {
+      background: #1e293b;
+      color: #e2e8f0;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.08);
+    }
+
+    /* Arrow */
+    .tooltip-bubble::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 6px solid transparent;
+    }
+
+    .tooltip-bottom { top: calc(100% + 10px); }
+    .tooltip-bottom::after {
+      bottom: 100%;
+      border-bottom-color: #0f172a;
+    }
+    html[data-color-mode="dark"] .tooltip-bottom::after { border-bottom-color: #1e293b; }
+
+    .tooltip-top { bottom: calc(100% + 10px); }
+    .tooltip-top::after {
+      top: 100%;
+      border-top-color: #0f172a;
+    }
+    html[data-color-mode="dark"] .tooltip-top::after { border-top-color: #1e293b; }
+
+    @keyframes tooltipFadeIn {
+      from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+
+    .tooltip-top { animation-name: tooltipFadeInUp; }
+
+    @keyframes tooltipFadeInUp {
+      from { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
 
     /* === Post-function type selector cards === */
     .pf-type-selector {
