@@ -2,7 +2,7 @@
  * JIRA Workflows Module - Handles workflow-related API operations
  */
 
-import api, { route } from '@forge/api';
+import forgeApi, { route as forgeRoute } from '@forge/api';
 
 // For testing purposes
 export const isTestEnv = process.env.NODE_ENV === 'test';
@@ -13,8 +13,8 @@ export const isTestEnv = process.env.NODE_ENV === 'test';
  */
 export const fetchProjectsForWorkflow = async (workflowId, dependencies = {}) => {
   const {
-    api = api,
-    route = route,
+    api = forgeApi,
+    route = forgeRoute,
   } = dependencies;
   console.log(`fetchProjectsForWorkflow: workflowId="${workflowId}"`);
   const projectIds = [];
@@ -55,8 +55,8 @@ export const fetchProjectsForWorkflow = async (workflowId, dependencies = {}) =>
  */
 export const fetchWorkflowTransitions = async (workflowName, dependencies = {}) => {
   const {
-    api = api,
-    route = route,
+    api = forgeApi,
+    route = forgeRoute,
   } = dependencies;
 
   console.log(`fetchWorkflowTransitions: workflowName="${workflowName}"`);

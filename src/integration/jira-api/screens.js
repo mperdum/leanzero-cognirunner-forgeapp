@@ -2,7 +2,7 @@
  * JIRA Screens Module - Handles screen-related API operations
  */
 
-import api, { route } from '@forge/api';
+import forgeApi, { route as forgeRoute } from '@forge/api';
 
 // For testing purposes
 export const isTestEnv = process.env.NODE_ENV === 'test';
@@ -12,8 +12,8 @@ export const isTestEnv = process.env.NODE_ENV === 'test';
  */
 export const getIssueTypeScreenSchemeForProject = async (projectId, dependencies = {}) => {
   const {
-    api = api,
-    route = route,
+    api = forgeApi,
+    route = forgeRoute,
   } = dependencies;
   const response = await api.asApp().requestJira(
     route`/rest/api/3/issuetypescreenscheme/project?projectId=${projectId}`,
@@ -38,8 +38,8 @@ export const getIssueTypeScreenSchemeForProject = async (projectId, dependencies
  */
 export const getScreenSchemeMappings = async (issueTypeScreenSchemeId, dependencies = {}) => {
   const {
-    api = api,
-    route = route,
+    api = forgeApi,
+    route = forgeRoute,
   } = dependencies;
 
   const response = await api.asApp().requestJira(
@@ -61,8 +61,8 @@ export const getScreenSchemeMappings = async (issueTypeScreenSchemeId, dependenc
  */
 export const getScreenSchemeById = async (screenSchemeId, dependencies = {}) => {
   const {
-    api = api,
-    route = route,
+    api = forgeApi,
+    route = forgeRoute,
   } = dependencies;
 
   const response = await api.asApp().requestJira(
@@ -86,8 +86,8 @@ export const getScreenSchemeById = async (screenSchemeId, dependencies = {}) => 
  */
 export const getFieldsFromScreen = async (screenId, dependencies = {}) => {
   const {
-    api = api,
-    route = route,
+    api = forgeApi,
+    route = forgeRoute,
   } = dependencies;
 
   // Step 1: Get all tabs for the screen

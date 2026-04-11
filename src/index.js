@@ -54,6 +54,10 @@ import {
   FIELDS_UNAVAILABLE_ON_CREATE,
   fetchProjectsForWorkflow,
   fetchWorkflowTransitions,
+  getIssueTypeScreenSchemeForProject,
+  getScreenSchemeMappings,
+  getScreenSchemeById,
+  getFieldsFromScreen,
 } from "./integration/jira-api/index.js";
 
 // Import config module
@@ -1026,24 +1030,95 @@ resolver.define("getScreenFields", async ({ payload }) => {
 
   let projectId = directProjectId;
   if (!projectId && workflowId) {
+    console.log(`getScreenFields: no projectId, resolving from workflowId="${workflowId}"`);
     const projectIds = await fetchProjectsForWorkflow(workflowId);
     if (projectIds && projectIds.length > 0) {
       projectId = projectIds[0];
+      console.log(`getScreenFields: resolved projectId=${projectId} from workflow (${projectIds.length} project(s) total)`);
     }
   }
 
+  console.log(`getScreenFields: projectId=${projectId}, transitionId=${transitionId}, isCreateTransition=${isCreateTransition}`);
+
   if (!projectId) {
+    console.log("getScreenFields: no projectId available, falling back to all fields");
     return await getFallbackFields(isCreateTransition);
   }
 
   try {
-    // Use JIRA API helpers
-    const itsScheme = await fetchWorkflowTransitions(""); // Simplified for now
-    
-    // This would be implemented with the actual screen resolution logic
-    return await getFallbackFields(isCreateTransition);
+    // Step 1: Get issue type screen scheme for this project
+    const itsScheme = await getIssueTypeScreenSchemeForProject(projectId);
+    if (!itsScheme) throw new Error("No issue type screen scheme found for project");
+    console.log(`Screen resolution: issueTypeScreenScheme id=${itsScheme.id}`);
+
+    // Step 2: Get mappings (issueType → screenScheme)
+    const mappings = await getScreenSchemeMappings(itsScheme.id);
+    if (!mappings || mappings.length === 0) throw new Error("No screen scheme mappings found");
+
+    const defaultMapping = mappings.find((m) => m.issueTypeId === "default");
+    if (!defaultMapping) throw new Error("No default screen scheme mapping found");
+    console.log(`Screen resolution: default screenSchemeId=${defaultMapping.screenSchemeId}`);
+
+    // Step 3: Get screen scheme (maps operations → screen IDs)
+    const screenScheme = await getScreenSchemeById(defaultMapping.screenSchemeId);
+    if (!screenScheme) throw new Error("Screen scheme not found");
+
+    const screens = screenScheme.screens || {};
+    console.log(`Screen resolution: screens=`, JSON.stringify(screens));
+
+    // Step 4: Pick the right screen(s) based on transition type
+    let screenIds = [];
+    if (isCreateTransition) {
+      const createScreenId = screens.create || screens.default;
+      if (createScreenId) screenIds.push(createScreenId);
+    } else {
+      const editScreenId = screens.edit || screens.default;
+      const viewScreenId = screens.view || screens.default;
+      if (editScreenId) screenIds.push(editScreenId);
+      if (viewScreenId && viewScreenId !== editScreenId) screenIds.push(viewScreenId);
+    }
+
+    if (screenIds.length === 0) throw new Error("No screen IDs found for transition type");
+
+    // Step 5: Get fields from all target screens (union)
+    const screenFieldMap = new Map();
+    for (const screenId of screenIds) {
+      const screenFields = await getFieldsFromScreen(screenId);
+      if (screenFields) {
+        for (const sf of screenFields) {
+          screenFieldMap.set(sf.id, sf);
+        }
+      }
+    }
+
+    if (screenFieldMap.size === 0) throw new Error("No fields found on target screens");
+    console.log(`Screen resolution: found ${screenFieldMap.size} unique fields from ${screenIds.length} screen(s)`);
+
+    // Step 6: Get full field metadata and filter to screen fields only
+    const allFieldsResponse = await api.asApp().requestJira(
+      route`/rest/api/3/field`,
+      { headers: { Accept: "application/json" } },
+    );
+
+    if (!allFieldsResponse.ok) throw new Error(`Failed to fetch field metadata: ${allFieldsResponse.status}`);
+
+    const allFields = await allFieldsResponse.json();
+    let fields = allFields
+      .filter((f) => screenFieldMap.has(f.id))
+      .map(formatField);
+
+    if (isCreateTransition) {
+      fields = fields.filter((f) => !FIELDS_UNAVAILABLE_ON_CREATE.has(f.id));
+    }
+
+    return {
+      success: true,
+      fields: sortFields(fields),
+      source: "screen",
+      isCreateTransition,
+    };
   } catch (error) {
-    console.log("Screen-based field resolution failed:", error.message);
+    console.log(`Screen-based field resolution failed, falling back (isCreateTransition=${isCreateTransition}):`, error.message);
     return await getFallbackFields(isCreateTransition);
   }
 });
