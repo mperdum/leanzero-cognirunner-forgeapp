@@ -131,7 +131,7 @@ export const FunctionBlock = ({
               className="input"
             />
             <p className="hint">
-              Use ${variable} syntax to reference issue fields or previous function results.
+              Use {"${variable}"} syntax to reference issue fields or previous function results.
               <br />Example: /rest/api/3/issue/{`{${"parentIssue"}}`} or {`{${"duplicates.result1"}}`}
             </p>
           </div>
@@ -175,7 +175,7 @@ export const FunctionBlock = ({
             className="input"
           />
           <p className="hint">
-            Use ${variable} syntax to reference issue fields or previous function results.
+            Use {"${variable}"} syntax to reference issue fields or previous function results.
           </p>
         </div>
       )}
@@ -232,7 +232,7 @@ export const FunctionBlock = ({
             rows={3}
           />
           <p className="hint">
-            Use ${variable} syntax to include issue fields in the log.
+            Use {"${variable}"} syntax to include issue fields in the log.
           </p>
         </div>
       )}

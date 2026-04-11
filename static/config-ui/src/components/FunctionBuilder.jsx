@@ -95,7 +95,7 @@ export const FunctionBuilder = ({
                <p className="title" style={{ fontSize: "12px", margin: 0 }}>Function Builder Features</p>
                <p className="subtitle" style={{ fontSize: "12px", margin: "4px 0 0 0" }}>
                  Add up to 50 functions. Each function can perform a different operation with AI-generated code.
-                 Use variable names to share data between functions (e.g., ${duplicates}, ${api_response}).
+                 Use variable names to share data between functions (e.g., {"${duplicates}"}, {"${api_response}"}).
                </p>
              </div>
            </div>
