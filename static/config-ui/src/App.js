@@ -722,6 +722,42 @@ const injectStyles = () => {
     }
     .btn-add-function:disabled { opacity: 0.5; cursor: default; }
 
+    /* Operation-specific fields */
+    .op-fields {
+      display: grid;
+      grid-template-columns: 1fr 2fr;
+      gap: 12px;
+    }
+
+    /* Reliability section */
+    .reliability-section {
+      margin: 12px 0;
+      padding: 10px 14px;
+      border-radius: 8px;
+      background: var(--code-bg);
+      border: 1px solid var(--border-color);
+    }
+
+    .reliability-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .reliability-title { color: var(--text-secondary); }
+
+    .reliability-options {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
     .semantic-config { padding: 16px; }
   `;
   document.head.appendChild(style);

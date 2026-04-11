@@ -7,74 +7,141 @@
 
 import React, { useState } from "react";
 import Tooltip from "./Tooltip";
+import CustomSelect from "./CustomSelect";
+
+const OPERATION_TYPES = [
+  {
+    value: "work_item_query",
+    label: "JQL Search",
+    meta: "Search Jira issues using JQL queries",
+  },
+  {
+    value: "rest_api_internal",
+    label: "Jira REST API",
+    meta: "Call any Jira REST endpoint",
+  },
+  {
+    value: "rest_api_external",
+    label: "External API",
+    meta: "Call an external HTTP endpoint",
+  },
+  {
+    value: "confluence_api",
+    label: "Confluence API",
+    meta: "Read or write Confluence pages",
+  },
+  {
+    value: "log_function",
+    label: "Debug Log",
+    meta: "Log a message for troubleshooting",
+  },
+];
+
+const HTTP_METHODS = [
+  { value: "GET", label: "GET", meta: "Read data" },
+  { value: "POST", label: "POST", meta: "Create data" },
+  { value: "PUT", label: "PUT", meta: "Update data" },
+  { value: "DELETE", label: "DELETE", meta: "Delete data" },
+  { value: "PATCH", label: "PATCH", meta: "Partial update" },
+];
+
+const CONFLUENCE_OPS = [
+  { value: "GET_PAGE", label: "Get Page" },
+  { value: "UPDATE_PAGE", label: "Update Page" },
+  { value: "CREATE_PAGE", label: "Create Page" },
+  { value: "DELETE_PAGE", label: "Delete Page" },
+  { value: "ADD_COMMENT", label: "Add Comment" },
+];
 
 /**
- * Generate a starter code template from a natural language description.
- * This is a client-side stub — in production, this would call the backend
- * to use OpenAI for real code generation.
+ * Generate a code template based on operation type and description.
  */
-function generateCodeFromPrompt(prompt) {
-  const p = (prompt || "").toLowerCase();
-
-  if (p.includes("jql") || p.includes("search") || p.includes("find") || p.includes("duplicate")) {
-    return `// ${prompt}
-const results = await api.searchJql("project = " + api.context.issueKey.split("-")[0] + " AND summary ~ \\"keyword\\"");
-api.log("Found " + (results.issues?.length || 0) + " results");
-return results.issues || [];`;
+function generateCode(operationType, prompt, endpoint, method, includeBackoff) {
+  const header = `// ${(prompt || "").substring(0, 100)}`;
+  const backoffPre = includeBackoff
+    ? `\n// Retry wrapper with exponential backoff + jitter
+async function withRetry(fn, maxRetries = 3) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt === maxRetries) throw err;
+      const delay = Math.min(1000 * Math.pow(2, attempt), 8000);
+      const jitter = Math.random() * delay * 0.3;
+      await new Promise(r => setTimeout(r, delay + jitter));
+      api.log("Retry " + (attempt + 1) + "/" + maxRetries + ": " + err.message);
+    }
   }
+}\n`
+    : "";
 
-  if (p.includes("update") || p.includes("set") || p.includes("change") || p.includes("modify")) {
-    return `// ${prompt}
-const issue = await api.getIssue(api.context.issueKey);
-await api.updateIssue(api.context.issueKey, {
-  // Add fields to update here
-  // summary: "Updated summary",
+  const wrap = (code) => includeBackoff
+    ? `return await withRetry(async () => {\n  ${code.split("\n").join("\n  ")}\n});`
+    : code;
+
+  switch (operationType) {
+    case "work_item_query":
+      return `${header}${backoffPre}
+${wrap(`const results = await api.searchJql("project = " + api.context.issueKey.split("-")[0] + " AND summary ~ \\"keyword\\"");
+api.log("Found " + (results.issues?.length || 0) + " matching issues");
+return results.issues || [];`)}`;
+
+    case "rest_api_internal":
+      if ((method || "GET") === "GET") {
+        return `${header}${backoffPre}
+${wrap(`const issue = await api.getIssue(api.context.issueKey);
+api.log("Fetched issue: " + issue.key);
+return issue;`)}`;
+      }
+      return `${header}${backoffPre}
+// ${method} ${endpoint || "/rest/api/3/issue/{key}"}
+${wrap(`await api.updateIssue(api.context.issueKey, {
+  // fields to update
 });
 api.log("Updated issue " + api.context.issueKey);
-return { success: true };`;
-  }
+return { success: true };`)}`;
 
-  if (p.includes("transition") || p.includes("move") || p.includes("status")) {
-    return `// ${prompt}
-// Find the target transition ID first
-await api.transitionIssue(api.context.issueKey, "TRANSITION_ID");
-api.log("Transitioned issue " + api.context.issueKey);
-return { success: true };`;
-  }
+    case "rest_api_external":
+      return `${header}${backoffPre}
+// External API: ${endpoint || "https://api.example.com/..."}
+// Note: The domain must be whitelisted in manifest.yml > permissions.external.fetch
+${wrap(`api.log("External call to: ${(endpoint || "").replace(/"/g, '\\"')}");
+// Use fetch() for external calls — configure in manifest.yml
+return null;`)}`;
 
-  if (p.includes("log") || p.includes("debug") || p.includes("print")) {
-    return `// ${prompt}
+    case "confluence_api":
+      return `${header}${backoffPre}
+// Confluence: ${method || "GET_PAGE"}
+${wrap(`api.log("Confluence operation: ${method || "GET_PAGE"}");
+return null;`)}`;
+
+    case "log_function":
+      return `${header}
 const issue = await api.getIssue(api.context.issueKey);
-api.log("Issue: " + issue.key + " Status: " + issue.fields.status.name);`;
+api.log("Issue: " + issue.key + " | Status: " + issue.fields.status.name + " | ${(prompt || "debug").replace(/"/g, '\\"')}");`;
+
+    default:
+      return `${header}${backoffPre}
+${wrap(`const issue = await api.getIssue(api.context.issueKey);
+api.log("Processing: " + issue.key);
+return { success: true };`)}`;
   }
-
-  // Generic template
-  return `// ${prompt}
-const issue = await api.getIssue(api.context.issueKey);
-api.log("Processing issue: " + issue.key);
-
-// Your logic here — use the available API:
-//   api.getIssue(key)        - Fetch issue data
-//   api.updateIssue(key, {}) - Update issue fields
-//   api.searchJql(jql)       - Search issues by JQL
-//   api.transitionIssue(key, transitionId) - Move issue
-//   api.log(message)         - Debug logging
-//   api.context.issueKey     - Current issue key
-
-return { success: true };`;
 }
 
 export default function FunctionBlock({ index, functionData, onUpdate, onRemove, isOnly }) {
   const [isGenerating, setIsGenerating] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(
-    !!(functionData.variableName || functionData.includeBackoff),
-  );
 
   const update = (field, value) => onUpdate({ [field]: value });
 
   const handleGenerate = () => {
     setIsGenerating(true);
-    const code = generateCodeFromPrompt(functionData.operationPrompt);
+    const code = generateCode(
+      functionData.operationType,
+      functionData.operationPrompt,
+      functionData.endpoint,
+      functionData.method,
+      functionData.includeBackoff,
+    );
     setTimeout(() => {
       onUpdate({ code });
       setIsGenerating(false);
@@ -83,9 +150,11 @@ export default function FunctionBlock({ index, functionData, onUpdate, onRemove,
 
   const hasPrompt = functionData.operationPrompt?.trim();
   const hasCode = functionData.code?.trim();
+  const opType = functionData.operationType || "work_item_query";
 
   return (
     <div className="function-block">
+      {/* Header */}
       <div className="function-header">
         <span className="function-number">#{index + 1}</span>
         <input
@@ -106,7 +175,7 @@ export default function FunctionBlock({ index, functionData, onUpdate, onRemove,
         )}
       </div>
 
-      {/* Main prompt — the core input */}
+      {/* Description — what this step does */}
       <div className="form-group">
         <label className="label">
           What should this step do?
@@ -114,14 +183,142 @@ export default function FunctionBlock({ index, functionData, onUpdate, onRemove,
         </label>
         <textarea
           className="textarea"
-          rows={4}
+          rows={3}
           value={functionData.operationPrompt || ""}
           onChange={(e) => update("operationPrompt", e.target.value)}
-          placeholder={"Example: \"Find all issues in this project with the same summary and add a comment linking to them\""}
+          placeholder={'Example: "Find all issues in this project with the same summary and add a comment linking to them"'}
         />
       </div>
 
-      {/* Generate button */}
+      {/* Operation type */}
+      <div className="form-group">
+        <label className="label">
+          Operation Type
+          <Tooltip text="Choose what kind of operation this step performs. This tells the AI code generator what APIs and patterns to use in the generated code." />
+        </label>
+        <CustomSelect
+          value={opType}
+          onChange={(v) => update("operationType", v)}
+          options={OPERATION_TYPES}
+        />
+      </div>
+
+      {/* Operation-specific fields */}
+      {opType === "rest_api_internal" && (
+        <div className="op-fields">
+          <div className="form-group">
+            <label className="label">
+              HTTP Method
+              <Tooltip text="The HTTP method for the Jira REST API call. GET reads data, POST creates, PUT replaces, PATCH partially updates, DELETE removes." />
+            </label>
+            <CustomSelect
+              value={functionData.method || "GET"}
+              onChange={(v) => update("method", v)}
+              options={HTTP_METHODS}
+            />
+          </div>
+          <div className="form-group">
+            <label className="label">
+              Endpoint
+              <Tooltip text="The Jira REST API path. Use ${issueKey} for the current issue. Example: /rest/api/3/issue/${issueKey}/comment" />
+            </label>
+            <input
+              type="text"
+              className="input"
+              value={functionData.endpoint || ""}
+              onChange={(e) => update("endpoint", e.target.value)}
+              placeholder="/rest/api/3/issue/${issueKey}"
+            />
+          </div>
+        </div>
+      )}
+
+      {opType === "rest_api_external" && (
+        <div className="form-group">
+          <label className="label">
+            External URL
+            <Tooltip text="The full URL of the external API. The domain must be whitelisted in manifest.yml under permissions.external.fetch. Use ${variableName} to reference results from previous steps." />
+          </label>
+          <input
+            type="text"
+            className="input"
+            value={functionData.endpoint || ""}
+            onChange={(e) => update("endpoint", e.target.value)}
+            placeholder="https://api.example.com/webhook"
+          />
+        </div>
+      )}
+
+      {opType === "confluence_api" && (
+        <div className="op-fields">
+          <div className="form-group">
+            <label className="label">
+              Confluence Operation
+              <Tooltip text="The type of Confluence operation. Get, create, update, or delete pages, or add comments." />
+            </label>
+            <CustomSelect
+              value={functionData.method || "GET_PAGE"}
+              onChange={(v) => update("method", v)}
+              options={CONFLUENCE_OPS}
+            />
+          </div>
+          <div className="form-group">
+            <label className="label">
+              Space Key
+              <Tooltip text="The Confluence space key to operate in (e.g., ENG, DOCS). Leave empty to let the code determine it." />
+            </label>
+            <input
+              type="text"
+              className="input"
+              value={functionData.endpoint || ""}
+              onChange={(e) => update("endpoint", e.target.value)}
+              placeholder="e.g., ENG"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Reliability options — always visible */}
+      <div className="reliability-section">
+        <div className="reliability-header">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+          </svg>
+          <span className="reliability-title">Reliability</span>
+        </div>
+        <div className="reliability-options">
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={functionData.includeBackoff || false}
+              onChange={(e) => update("includeBackoff", e.target.checked)}
+            />
+            <span>
+              Exponential backoff with jitter
+              <Tooltip text="Automatically retries failed API calls up to 3 times with increasing delays (1s, 2s, 4s) plus random jitter to avoid thundering herd. Essential for external APIs and high-traffic Jira instances." />
+            </span>
+          </label>
+        </div>
+      </div>
+
+      {/* Variable name — for chaining steps */}
+      {opType !== "log_function" && (
+        <div className="form-group">
+          <label className="label">
+            Result Variable
+            <Tooltip text="Name for this step's return value so later steps can reference it. For example, if you name it 'searchResults', step 2 can use ${searchResults} to access the data. Leave empty if no other step needs this result." />
+          </label>
+          <input
+            type="text"
+            className="input"
+            value={functionData.variableName || ""}
+            onChange={(e) => update("variableName", e.target.value)}
+            placeholder={`result${index + 1}`}
+          />
+        </div>
+      )}
+
+      {/* Generate / code section */}
       <div className="generate-row">
         <button
           className={`btn-generate ${hasCode ? "btn-generate-secondary" : ""}`}
@@ -135,64 +332,21 @@ export default function FunctionBlock({ index, functionData, onUpdate, onRemove,
         )}
       </div>
 
-      {/* Generated code — only shown after generation or if already has code */}
       {hasCode && (
         <div className="form-group">
           <label className="label">
             Generated Code
-            <Tooltip text="This JavaScript runs on every workflow transition. You can edit it directly. The code has access to api.getIssue(), api.updateIssue(), api.searchJql(), api.transitionIssue(), api.log(), and api.context." />
+            <Tooltip text="This JavaScript runs on every workflow transition with no AI cost. You can edit it directly. Available API: api.getIssue(key), api.updateIssue(key, fields), api.searchJql(jql), api.transitionIssue(key, id), api.log(msg), api.context.issueKey." />
           </label>
           <textarea
             className="textarea code-editor"
-            rows={10}
+            rows={12}
             value={functionData.code || ""}
             onChange={(e) => update("code", e.target.value)}
           />
           <p className="hint">
             This code runs as-is on every transition. Edit directly if needed.
           </p>
-        </div>
-      )}
-
-      {/* Advanced options — collapsed by default */}
-      {hasCode && (
-        <div className="advanced-section">
-          <button
-            className="btn-advanced-toggle"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-          >
-            {showAdvanced ? "Hide" : "Show"} advanced options
-            <span className={`toggle-chevron ${showAdvanced ? "open" : ""}`}>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
-            </span>
-          </button>
-
-          {showAdvanced && (
-            <div className="advanced-options">
-              <div className="form-group">
-                <label className="label">
-                  Result Variable Name
-                  <Tooltip text="If you chain multiple steps, this step's return value is available to later steps via ${variableName}. Leave empty if this step doesn't produce a result needed by other steps." />
-                </label>
-                <input
-                  type="text"
-                  className="input"
-                  value={functionData.variableName || ""}
-                  onChange={(e) => update("variableName", e.target.value)}
-                  placeholder={`result${index + 1}`}
-                />
-              </div>
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={functionData.includeBackoff || false}
-                  onChange={(e) => update("includeBackoff", e.target.checked)}
-                />
-                Include retry logic with exponential backoff (3 retries)
-                <Tooltip text="Wraps API calls in retry logic so transient failures (rate limits, timeouts) are handled automatically." />
-              </label>
-            </div>
-          )}
         </div>
       )}
     </div>
