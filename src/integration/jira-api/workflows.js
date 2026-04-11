@@ -2,20 +2,13 @@
  * JIRA Workflows Module - Handles workflow-related API operations
  */
 
-import forgeApi, { route as forgeRoute } from '@forge/api';
-
-// For testing purposes
-export const isTestEnv = process.env.NODE_ENV === 'test';
+import api, { route } from '@forge/api';
 
 /**
  * Helper: Fetch all project IDs that use a given workflow.
  * Returns array of project ID strings, or null on failure.
  */
-export const fetchProjectsForWorkflow = async (workflowId, dependencies = {}) => {
-  const {
-    api = forgeApi,
-    route = forgeRoute,
-  } = dependencies;
+export const fetchProjectsForWorkflow = async (workflowId) => {
   console.log(`fetchProjectsForWorkflow: workflowId="${workflowId}"`);
   const projectIds = [];
   let nextPageToken = null;
@@ -50,15 +43,9 @@ export const fetchProjectsForWorkflow = async (workflowId, dependencies = {}) =>
 
 /**
  * Helper: Search workflows via /rest/api/3/workflows/search and return
- * a Set of transition IDs for the given workflow.
- * Returns { transitionRules: Map<string, { validators, conditions }>|null, error: string|null }
+ * a Map of transition IDs for the given workflow.
  */
-export const fetchWorkflowTransitions = async (workflowName, dependencies = {}) => {
-  const {
-    api = forgeApi,
-    route = forgeRoute,
-  } = dependencies;
-
+export const fetchWorkflowTransitions = async (workflowName) => {
   console.log(`fetchWorkflowTransitions: workflowName="${workflowName}"`);
 
   const url = route`/rest/api/3/workflows/search?queryString=${workflowName}&expand=values.transitions`;
@@ -78,7 +65,6 @@ export const fetchWorkflowTransitions = async (workflowName, dependencies = {}) 
   const transitionRules = new Map();
   const workflows = data.values || [];
   for (const wf of workflows) {
-    // Only match workflows whose name exactly matches
     if (wf.name !== workflowName) continue;
     const transitions = wf.transitions || [];
     for (const t of transitions) {

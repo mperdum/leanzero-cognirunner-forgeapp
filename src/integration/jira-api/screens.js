@@ -2,19 +2,12 @@
  * JIRA Screens Module - Handles screen-related API operations
  */
 
-import forgeApi, { route as forgeRoute } from '@forge/api';
-
-// For testing purposes
-export const isTestEnv = process.env.NODE_ENV === 'test';
+import api, { route } from '@forge/api';
 
 /**
  * Helper: Get the issue type screen scheme ID for a project.
  */
-export const getIssueTypeScreenSchemeForProject = async (projectId, dependencies = {}) => {
-  const {
-    api = forgeApi,
-    route = forgeRoute,
-  } = dependencies;
+export const getIssueTypeScreenSchemeForProject = async (projectId) => {
   const response = await api.asApp().requestJira(
     route`/rest/api/3/issuetypescreenscheme/project?projectId=${projectId}`,
     { headers: { Accept: "application/json" } },
@@ -36,12 +29,7 @@ export const getIssueTypeScreenSchemeForProject = async (projectId, dependencies
 /**
  * Helper: Get issue type → screen scheme mappings.
  */
-export const getScreenSchemeMappings = async (issueTypeScreenSchemeId, dependencies = {}) => {
-  const {
-    api = forgeApi,
-    route = forgeRoute,
-  } = dependencies;
-
+export const getScreenSchemeMappings = async (issueTypeScreenSchemeId) => {
   const response = await api.asApp().requestJira(
     route`/rest/api/3/issuetypescreenscheme/mapping?issueTypeScreenSchemeId=${issueTypeScreenSchemeId}`,
     { headers: { Accept: "application/json" } },
@@ -59,12 +47,7 @@ export const getScreenSchemeMappings = async (issueTypeScreenSchemeId, dependenc
 /**
  * Helper: Get a screen scheme by ID.
  */
-export const getScreenSchemeById = async (screenSchemeId, dependencies = {}) => {
-  const {
-    api = forgeApi,
-    route = forgeRoute,
-  } = dependencies;
-
+export const getScreenSchemeById = async (screenSchemeId) => {
   const response = await api.asApp().requestJira(
     route`/rest/api/3/screenscheme?id=${screenSchemeId}`,
     { headers: { Accept: "application/json" } },
@@ -84,13 +67,7 @@ export const getScreenSchemeById = async (screenSchemeId, dependencies = {}) => 
  * Helper: Get all field IDs from a screen by reading all its tabs and their fields.
  * Returns array of { id, name } or null on failure.
  */
-export const getFieldsFromScreen = async (screenId, dependencies = {}) => {
-  const {
-    api = forgeApi,
-    route = forgeRoute,
-  } = dependencies;
-
-  // Step 1: Get all tabs for the screen
+export const getFieldsFromScreen = async (screenId) => {
   const tabsResponse = await api.asApp().requestJira(
     route`/rest/api/3/screens/${screenId}/tabs`,
     { headers: { Accept: "application/json" } },
@@ -104,7 +81,6 @@ export const getFieldsFromScreen = async (screenId, dependencies = {}) => {
   const tabs = await tabsResponse.json();
   const allFields = [];
 
-  // Step 2: Get fields for each tab
   for (const tab of tabs) {
     const fieldsResponse = await api.asApp().requestJira(
       route`/rest/api/3/screens/${screenId}/tabs/${tab.id}/fields`,
