@@ -32,19 +32,21 @@ export const SemanticConfig = ({
              value={conditionPrompt}
              onChange={(e) => setConditionPrompt(e.target.value)}
              placeholder="Describe when this post function should run. Example: Only execute if the issue priority is High or Critical."
+             className={`textarea ${!conditionPrompt?.trim() ? "input-error" : ""}`}
              rows={4}
            />
            <p className="hint">
              The AI will evaluate if this condition is met. Returns true (run) or false (skip).
            </p>
          </div>
- 
+
          <div className="form-group">
            <label className="label">Action Prompt</label>
            <textarea
              value={actionPrompt}
              onChange={(e) => setActionPrompt(e.target.value)}
              placeholder="Describe what field changes to make. Example: Set the resolution to 'Won't Fix' and add a comment explaining why."
+             className="textarea"
              rows={6}
            />
            <p className="hint">

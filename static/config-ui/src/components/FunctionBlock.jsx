@@ -75,6 +75,7 @@ export const FunctionBlock = ({
           value={conditionPrompt}
           onChange={(e) => onUpdate({ conditionPrompt: e.target.value })}
           placeholder="When should this function execute? Leave empty to always run."
+          className="textarea"
           rows={3}
         />
         <p className="hint">
@@ -109,6 +110,7 @@ export const FunctionBlock = ({
             value={operationPrompt}
             onChange={(e) => onUpdate({ operationPrompt: e.target.value })}
             placeholder="Describe what issues to search for. Example: Find all open tickets with the same summary as this one."
+            className="textarea"
             rows={4}
           />
           <p className="hint">
@@ -126,6 +128,7 @@ export const FunctionBlock = ({
               value={endpoint}
               onChange={(e) => onUpdate({ endpoint: e.target.value })}
               placeholder="/rest/api/3/issue/${issueKey}"
+              className="input"
             />
             <p className="hint">
               Use ${variable} syntax to reference issue fields or previous function results.
@@ -169,6 +172,7 @@ export const FunctionBlock = ({
             value={endpoint}
             onChange={(e) => onUpdate({ endpoint: e.target.value })}
             placeholder="https://api.example.com/v1/resource/${issueKey}"
+            className="input"
           />
           <p className="hint">
             Use ${variable} syntax to reference issue fields or previous function results.
@@ -200,6 +204,7 @@ export const FunctionBlock = ({
               value={operationPrompt}
               onChange={(e) => onUpdate({ operationPrompt: e.target.value })}
               placeholder="Use space key from issue if empty"
+              className="input"
             />
           </div>
 
@@ -223,6 +228,7 @@ export const FunctionBlock = ({
             value={operationPrompt}
             onChange={(e) => onUpdate({ operationPrompt: e.target.value })}
             placeholder="Log message with variables: Issue ${issueKey} has status ${status}"
+            className="textarea"
             rows={3}
           />
           <p className="hint">
