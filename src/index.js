@@ -853,19 +853,287 @@ resolver.define("getFields", async () => {
   }
 });
 
+// === BYOK (Bring Your Own Key) Resolvers ===
+
+/**
+ * Save a user-provided OpenAI API key (BYOK).
+ * Validates the key format before storing.
+ */
+resolver.define("saveOpenAIKey", async ({ payload }) => {
+  try {
+    const { key } = payload;
+    if (!key || typeof key !== "string" || !key.startsWith("sk-")) {
+      return { success: false, error: "Invalid API key format. Must start with sk-" };
+    }
+    await storage.set("COGNIRUNNER_OPENAI_API_KEY", key);
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to save OpenAI key:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Get BYOK status. Never returns the actual key to the frontend.
+ */
+resolver.define("getOpenAIKey", async () => {
+  try {
+    const byokKey = await storage.get("COGNIRUNNER_OPENAI_API_KEY");
+    return {
+      success: true,
+      hasKey: !!byokKey || !!process.env.OPENAI_API_KEY,
+      isByok: !!byokKey,
+    };
+  } catch (error) {
+    console.error("Failed to check OpenAI key:", error);
+    return { success: false, hasKey: !!process.env.OPENAI_API_KEY, isByok: false };
+  }
+});
+
+/**
+ * Remove the BYOK key, reverting to factory key.
+ * Also clears the saved model selection since factory key has no model choice.
+ */
+resolver.define("removeOpenAIKey", async () => {
+  try {
+    await storage.delete("COGNIRUNNER_OPENAI_API_KEY");
+    await storage.delete("COGNIRUNNER_OPENAI_MODEL");
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to remove OpenAI key:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Get available OpenAI models.
+ * - If BYOK: fetches from OpenAI /v1/models API using user's key.
+ * - If factory: returns empty array (no model choice — factory model is fixed).
+ */
+resolver.define("getOpenAIModels", async () => {
+  try {
+    const byokKey = await storage.get("COGNIRUNNER_OPENAI_API_KEY");
+    if (!byokKey) {
+      // Factory key — no model selection available
+      const factoryModel = process.env.OPENAI_MODEL || "gpt-5-mini";
+      return { success: true, models: [], isByok: false, currentModel: factoryModel };
+    }
+
+    // BYOK — fetch available models from OpenAI
+    const response = await fetch("https://api.openai.com/v1/models", {
+      method: "GET",
+      headers: { Authorization: `Bearer ${byokKey}` },
+    });
+
+    if (!response.ok) {
+      return { success: false, error: "Failed to fetch models. Check your API key.", models: [], isByok: true };
+    }
+
+    const data = await response.json();
+    const chatModels = (data.data || [])
+      .filter((m) => /^(gpt-|o1-|o3-|o4-)/.test(m.id))
+      .map((m) => m.id)
+      .sort();
+
+    return { success: true, models: chatModels.slice(0, 30), isByok: true };
+  } catch (error) {
+    console.error("Failed to get OpenAI models:", error);
+    return { success: false, error: error.message, models: [], isByok: false };
+  }
+});
+
+/**
+ * Save the user's model selection. Only works when BYOK is active.
+ */
+resolver.define("saveOpenAIModel", async ({ payload }) => {
+  try {
+    const { model } = payload;
+    if (!model || typeof model !== "string") {
+      return { success: false, error: "Invalid model selection" };
+    }
+    const byokKey = await storage.get("COGNIRUNNER_OPENAI_API_KEY");
+    if (!byokKey) {
+      return { success: false, error: "Model selection requires a BYOK API key" };
+    }
+    await storage.set("COGNIRUNNER_OPENAI_MODEL", model);
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to save OpenAI model:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Get the currently saved model from KVS (or null if factory).
+ */
+resolver.define("getOpenAIModelFromKVS", async () => {
+  try {
+    const byokKey = await storage.get("COGNIRUNNER_OPENAI_API_KEY");
+    if (!byokKey) {
+      const factoryModel = process.env.OPENAI_MODEL || "gpt-5-mini";
+      return { success: true, model: factoryModel, isByok: false };
+    }
+    const savedModel = await storage.get("COGNIRUNNER_OPENAI_MODEL");
+    return { success: true, model: savedModel || null, isByok: true };
+  } catch (error) {
+    console.error("Failed to get model from KVS:", error);
+    return { success: false, model: null, isByok: false };
+  }
+});
+
+// === Post-Function Configuration Resolvers ===
+
+/**
+ * Register (create/update) a post-function configuration.
+ */
+resolver.define("registerPostFunction", async ({ payload }) => {
+  try {
+    const { id, type, fieldId, prompt, conditionPrompt, actionPrompt, actionFieldId, functions, workflow } = payload;
+    if (!id) return { success: false, error: "Missing post-function ID" };
+    if (!type) return { success: false, error: "Missing post-function type" };
+
+    let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+
+    const existing = configs.findIndex((c) => c.id === id);
+    const entry = {
+      id,
+      type,
+      fieldId: fieldId || "",
+      prompt: prompt || "",
+      conditionPrompt: (conditionPrompt || "").substring(0, 500),
+      actionPrompt: (actionPrompt || "").substring(0, 500),
+      actionFieldId: actionFieldId || "",
+      functions: functions || [],
+      workflow: workflow || {},
+      disabled: existing >= 0 ? configs[existing].disabled : false,
+      createdAt: existing >= 0 ? configs[existing].createdAt : new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (existing >= 0) {
+      configs[existing] = entry;
+    } else {
+      configs.push(entry);
+    }
+
+    await storage.set(CONFIG_REGISTRY_KEY, configs);
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to register post-function:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Remove a post-function configuration by ID.
+ */
+resolver.define("removePostFunction", async ({ payload }) => {
+  try {
+    const { id } = payload;
+    let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    configs = configs.filter((c) => c.id !== id);
+    await storage.set(CONFIG_REGISTRY_KEY, configs);
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to remove post-function:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Disable a post-function (skip execution without removing config).
+ */
+resolver.define("disablePostFunction", async ({ payload }) => {
+  try {
+    const { id } = payload;
+    let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    const idx = configs.findIndex((c) => c.id === id);
+    if (idx < 0) return { success: false, error: "Post-function not found" };
+    configs[idx].disabled = true;
+    configs[idx].updatedAt = new Date().toISOString();
+    await storage.set(CONFIG_REGISTRY_KEY, configs);
+    return { success: true, disabled: true };
+  } catch (error) {
+    console.error("Failed to disable post-function:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Re-enable a disabled post-function.
+ */
+resolver.define("enablePostFunction", async ({ payload }) => {
+  try {
+    const { id } = payload;
+    let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    const idx = configs.findIndex((c) => c.id === id);
+    if (idx < 0) return { success: false, error: "Post-function not found" };
+    configs[idx].disabled = false;
+    configs[idx].updatedAt = new Date().toISOString();
+    await storage.set(CONFIG_REGISTRY_KEY, configs);
+    return { success: true, disabled: false };
+  } catch (error) {
+    console.error("Failed to enable post-function:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Check if a post-function exists and its disabled status.
+ */
+resolver.define("getPostFunctionStatus", async ({ payload }) => {
+  try {
+    const { id } = payload;
+    const configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    const config = configs.find((c) => c.id === id);
+    if (!config) return { success: true, exists: false };
+    return { success: true, exists: true, disabled: config.disabled === true };
+  } catch (error) {
+    console.error("Failed to get post-function status:", error);
+    return { success: false, error: error.message };
+  }
+});
+
 export const handler = resolver.getDefinitions();
 
 /**
- * Get the OpenAI API key from environment variables
+ * Get the OpenAI API key — checks BYOK (user-provided) key first, falls back to factory key.
  */
-const getOpenAIKey = () => {
+const getOpenAIKey = async () => {
+  try {
+    const byokKey = await storage.get("COGNIRUNNER_OPENAI_API_KEY");
+    if (byokKey) return byokKey;
+  } catch (error) {
+    console.error("Error reading BYOK API key from storage:", error);
+  }
   return process.env.OPENAI_API_KEY;
 };
 
 /**
- * Get the OpenAI model from environment variables (defaults to gpt-5-mini)
+ * Check if a BYOK key is configured (does not return the key itself).
  */
-const getOpenAIModel = () => {
+const isByokActive = async () => {
+  try {
+    const byokKey = await storage.get("COGNIRUNNER_OPENAI_API_KEY");
+    return !!byokKey;
+  } catch (error) {
+    return false;
+  }
+};
+
+/**
+ * Get the OpenAI model — if BYOK, checks user-saved model; if factory, returns env var model.
+ */
+const getOpenAIModel = async () => {
+  try {
+    const byok = await isByokActive();
+    if (byok) {
+      const savedModel = await storage.get("COGNIRUNNER_OPENAI_MODEL");
+      if (savedModel) return savedModel;
+    }
+  } catch (error) {
+    console.error("Error reading OpenAI model from storage:", error);
+  }
   return process.env.OPENAI_MODEL || "gpt-5-mini";
 };
 
@@ -1312,7 +1580,7 @@ const TOOL_REGISTRY = {
  * @param {Array} [attachmentParts] - Optional OpenAI content parts for attachments (images/files)
  */
 const callOpenAI = async (fieldValue, validationPrompt, attachmentParts) => {
-  const apiKey = getOpenAIKey();
+  const apiKey = await getOpenAIKey();
   if (!apiKey) {
     console.error("OpenAI API key not configured");
     return {
@@ -1322,7 +1590,7 @@ const callOpenAI = async (fieldValue, validationPrompt, attachmentParts) => {
     };
   }
 
-  const model = getOpenAIModel();
+  const model = await getOpenAIModel();
 
   const hasAttachments = attachmentParts && attachmentParts.length > 0;
 
@@ -1436,7 +1704,7 @@ Respond with JSON only.`;
  * @returns {{ isValid: boolean, reason: string, toolMeta?: object }}
  */
 const callOpenAIWithTools = async (fieldValue, validationPrompt, attachmentParts, issueContext, projectKey, validatedFieldId, deadline) => {
-  const apiKey = getOpenAIKey();
+  const apiKey = await getOpenAIKey();
   if (!apiKey) {
     console.error("OpenAI API key not configured");
     return {
@@ -1445,7 +1713,7 @@ const callOpenAIWithTools = async (fieldValue, validationPrompt, attachmentParts
     };
   }
 
-  const model = getOpenAIModel();
+  const model = await getOpenAIModel();
   const hasAttachments = attachmentParts && attachmentParts.length > 0;
 
   // Build tool definitions from registry
@@ -1896,4 +2164,272 @@ export const validate = async (args) => {
       errorMessage: `AI Validation failed: ${validationResult.reason}`,
     };
   }
+};
+
+// === Post-Function Execution ===
+
+/**
+ * Execute a semantic post-function: AI evaluates condition, then updates target field.
+ * Returns { success, decision, value?, reason } — never throws.
+ */
+const executeSemanticPostFunction = async (issueKey, config) => {
+  const { conditionPrompt, actionPrompt, actionFieldId, fieldId } = config;
+
+  // Fetch the current value of the source field
+  const fieldValue = await getFieldValue(issueKey, fieldId || "description", null);
+
+  // Build unified prompt: condition evaluation + action instruction
+  const systemPrompt = `You are a workflow automation assistant. You will be given a field value and two instructions:
+1. CONDITION: Evaluate whether this condition is met based on the field value.
+2. ACTION: If the condition is met, generate the new value for the target field.
+
+You MUST respond with ONLY a valid JSON object (no markdown, no explanation):
+{
+  "decision": "UPDATE" or "SKIP",
+  "value": "the new field value (only if UPDATE)",
+  "reason": "brief explanation of your decision"
+}`;
+
+  const userContent = `Field value:\n${fieldValue || "(empty)"}\n\nCONDITION: ${conditionPrompt}\n\nACTION: ${actionPrompt || "Generate an appropriate value for the target field."}`;
+
+  try {
+    const apiKey = await getOpenAIKey();
+    if (!apiKey) {
+      return { success: false, decision: "SKIP", reason: "No OpenAI API key configured" };
+    }
+    const model = await getOpenAIModel();
+
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.1,
+        max_completion_tokens: 1000,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userContent },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error("OpenAI API error in semantic PF:", response.status, errText);
+      return { success: false, decision: "SKIP", reason: `OpenAI error: ${response.status}` };
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) {
+      return { success: false, decision: "SKIP", reason: "Empty response from AI" };
+    }
+
+    const result = JSON.parse(content);
+    if (result.decision === "UPDATE" && actionFieldId && result.value !== undefined) {
+      // Update the target field via Jira REST API
+      const updateBody = { fields: { [actionFieldId]: result.value } };
+      const updateResponse = await api.asApp().requestJira(
+        route`/rest/api/3/issue/${issueKey}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updateBody),
+        },
+      );
+      if (!updateResponse.ok) {
+        const errText = await updateResponse.text();
+        console.error("Failed to update field:", updateResponse.status, errText);
+        return { success: false, decision: "UPDATE", reason: `Field update failed: ${updateResponse.status}` };
+      }
+      console.log(`Semantic PF: Updated field ${actionFieldId} on ${issueKey}`);
+      return { success: true, decision: "UPDATE", value: result.value, reason: result.reason };
+    }
+
+    return { success: true, decision: "SKIP", reason: result.reason || "Condition not met" };
+  } catch (error) {
+    console.error("Semantic post-function error:", error);
+    return { success: false, decision: "SKIP", reason: error.message };
+  }
+};
+
+/**
+ * Execute a static post-function: runs sandboxed JavaScript code with an API surface.
+ * Each function block runs sequentially; results are shared via variable chaining.
+ */
+const executeStaticPostFunction = async (issueKey, config) => {
+  const functions = config.functions || [];
+  if (functions.length === 0) {
+    return { success: true, changes: [], logs: ["No function blocks to execute"] };
+  }
+
+  const executionLogs = [];
+  const changes = [];
+  const variables = {};
+  const startTime = Date.now();
+
+  // Build API surface for sandbox
+  const createApi = () => ({
+    getIssue: async (key) => {
+      const res = await api.asApp().requestJira(route`/rest/api/3/issue/${key}`);
+      if (!res.ok) throw new Error(`getIssue failed: ${res.status}`);
+      return res.json();
+    },
+    updateIssue: async (key, fields) => {
+      const res = await api.asApp().requestJira(
+        route`/rest/api/3/issue/${key}`,
+        { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) },
+      );
+      if (!res.ok) throw new Error(`updateIssue failed: ${res.status}`);
+      changes.push({ action: "updateIssue", key, fields });
+      return { success: true };
+    },
+    searchJql: async (jql) => {
+      const res = await api.asApp().requestJira(
+        route`/rest/api/3/search`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jql, maxResults: 20 }) },
+      );
+      if (!res.ok) throw new Error(`searchJql failed: ${res.status}`);
+      return res.json();
+    },
+    transitionIssue: async (key, transitionId) => {
+      const res = await api.asApp().requestJira(
+        route`/rest/api/3/issue/${key}/transitions`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ transition: { id: transitionId } }) },
+      );
+      if (!res.ok) throw new Error(`transitionIssue failed: ${res.status}`);
+      changes.push({ action: "transitionIssue", key, transitionId });
+      return { success: true };
+    },
+    log: (...args) => {
+      const msg = args.map((a) => typeof a === "object" ? JSON.stringify(a) : String(a)).join(" ");
+      executionLogs.push(msg);
+    },
+    context: { issueKey },
+  });
+
+  for (let i = 0; i < functions.length; i++) {
+    const fn = functions[i];
+    const fnName = fn.name || `Function ${i + 1}`;
+
+    // Check deadline (leave 5s buffer)
+    if (Date.now() - startTime > 25000) {
+      executionLogs.push(`Timeout: skipping ${fnName} and remaining functions`);
+      break;
+    }
+
+    if (!fn.code || fn.code.trim().length === 0) {
+      executionLogs.push(`${fnName}: No code to execute, skipping`);
+      continue;
+    }
+
+    try {
+      const sandboxApi = createApi();
+
+      // Inject variable references into code
+      let code = fn.code;
+      for (const [varName, varValue] of Object.entries(variables)) {
+        const placeholder = "${" + varName + "}";
+        if (code.includes(placeholder)) {
+          code = code.split(placeholder).join(JSON.stringify(varValue));
+        }
+      }
+
+      // Execute in sandbox via Function constructor
+      const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+      const sandboxFn = new AsyncFunction("api", code);
+      const result = await sandboxFn(sandboxApi);
+
+      // Store result for variable chaining
+      if (fn.variableName) {
+        variables[fn.variableName] = result;
+      }
+
+      executionLogs.push(`${fnName}: completed successfully`);
+    } catch (error) {
+      executionLogs.push(`${fnName}: ERROR - ${error.message}`);
+      console.error(`Static PF ${fnName} error:`, error);
+    }
+  }
+
+  return {
+    success: true,
+    changes,
+    logs: executionLogs,
+    executionTimeMs: Date.now() - startTime,
+  };
+};
+
+/**
+ * Post-function handler — called by Forge after a workflow transition completes.
+ * Always returns { result: true } to never block transitions.
+ */
+export const executePostFunction = async (args) => {
+  console.log("Post-function called with args:", JSON.stringify(args, null, 2));
+
+  const { issue, configuration } = args;
+
+  // License check: skip silently if unlicensed
+  const license = args?.context?.license;
+  if (license && license.isActive === false) {
+    console.log("License inactive — skipping post-function");
+    return { result: true };
+  }
+
+  if (!issue?.key) {
+    console.log("No issue key — cannot execute post-function");
+    return { result: true };
+  }
+
+  // Parse configuration (comes as JSON string from Custom UI onConfigure)
+  let config = configuration;
+  if (typeof configuration === "string") {
+    try {
+      config = JSON.parse(configuration);
+    } catch (e) {
+      console.error("Failed to parse post-function configuration:", e);
+      return { result: true };
+    }
+  }
+
+  if (!config) {
+    console.log("No configuration — skipping post-function");
+    return { result: true };
+  }
+
+  // Check if disabled in KVS
+  try {
+    const configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    const ruleId = config.ruleId || config.id;
+    if (ruleId) {
+      const match = configs.find((c) => c.id === ruleId);
+      if (match?.disabled) {
+        console.log(`Post-function "${ruleId}" is disabled — skipping`);
+        return { result: true };
+      }
+    }
+  } catch (e) {
+    console.log("Could not check disabled status:", e);
+  }
+
+  try {
+    const type = config.type || "";
+    if (type.includes("semantic")) {
+      const result = await executeSemanticPostFunction(issue.key, config);
+      console.log("Semantic PF result:", result);
+    } else if (type.includes("static")) {
+      const result = await executeStaticPostFunction(issue.key, config);
+      console.log("Static PF result:", JSON.stringify(result));
+    } else {
+      console.log("Unknown post-function type:", type);
+    }
+  } catch (error) {
+    // Fail open — never block the transition
+    console.error("Post-function execution error:", error);
+  }
+
+  return { result: true };
 };

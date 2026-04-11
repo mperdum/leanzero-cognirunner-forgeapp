@@ -17,6 +17,7 @@
  */
 
 import React, { useState, useEffect } from "react";
+import OpenAIConfig from "./components/OpenAIConfig";
 
 const injectStyles = () => {
   if (document.getElementById("app-styles")) return;
@@ -26,34 +27,34 @@ const injectStyles = () => {
   style.textContent = `
     :root {
       --bg-color: transparent;
-      --text-color: #172B4D;
-      --text-secondary: #5E6C84;
-      --text-muted: #7A869A;
-      --primary-color: #0052CC;
-      --error-color: #DE350B;
-      --success-color: #006644;
-      --border-color: #DFE1E6;
-      --card-bg: #FFFFFF;
-      --input-bg: #FAFBFC;
-      --code-bg: #F4F5F7;
-      --icon-bg: #DEEBFF;
-      --hover-bg: #F4F5F7;
+      --text-color: #0f172a;
+      --text-secondary: #64748b;
+      --text-muted: #94a3b8;
+      --primary-color: #2563eb;
+      --error-color: #dc2626;
+      --success-color: #16a34a;
+      --border-color: #cbd5e1;
+      --card-bg: #ffffff;
+      --input-bg: #f8fafc;
+      --code-bg: #f1f5f9;
+      --icon-bg: #dbeafe;
+      --hover-bg: #f1f5f9;
     }
 
     html[data-color-mode="dark"] {
       --bg-color: transparent;
-      --text-color: #B6C2CF;
-      --text-secondary: #9FADBC;
-      --text-muted: #8C9BAB;
-      --primary-color: #579DFF;
-      --error-color: #F87168;
-      --success-color: #4BCE97;
-      --border-color: #454F59;
-      --card-bg: #22272B;
-      --input-bg: #1D2125;
-      --code-bg: #1D2125;
-      --icon-bg: #1C2B41;
-      --hover-bg: #2C333A;
+      --text-color: #F5F5F7;
+      --text-secondary: #A0A0B0;
+      --text-muted: #71717a;
+      --primary-color: #3b82f6;
+      --error-color: #ef4444;
+      --success-color: #22c55e;
+      --border-color: #374151;
+      --card-bg: #13131A;
+      --input-bg: #0A0A0F;
+      --code-bg: #0A0A0F;
+      --icon-bg: #1e3a5f;
+      --hover-bg: #1f1f2e;
     }
 
     *, *::before, *::after { box-sizing: border-box; }
@@ -61,7 +62,7 @@ const injectStyles = () => {
     html, body {
       margin: 0;
       padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: var(--bg-color);
       color: var(--text-color);
       font-size: 14px;
@@ -115,13 +116,13 @@ const injectStyles = () => {
     }
 
     .license-active {
-      background: rgba(0, 102, 68, 0.1);
+      background: rgba(22, 163, 106, 0.1);
       border-color: var(--success-color);
       color: var(--success-color);
     }
 
     .license-inactive {
-      background: rgba(222, 53, 11, 0.1);
+      background: rgba(220, 38, 38, 0.1);
       border-color: var(--error-color);
       color: var(--error-color);
     }
@@ -169,7 +170,7 @@ const injectStyles = () => {
     }
 
     .btn-danger:hover {
-      background: rgba(222, 53, 11, 0.1);
+      background: rgba(220, 38, 38, 0.1);
     }
 
     .card {
@@ -234,7 +235,7 @@ const injectStyles = () => {
     }
 
     .btn-edit:hover {
-      background: rgba(0, 82, 204, 0.1);
+      background: rgba(37, 99, 235, 0.1);
     }
 
     .row-actions {
@@ -263,7 +264,7 @@ const injectStyles = () => {
     }
 
     .status-disabled {
-      background: rgba(222, 53, 11, 0.1);
+      background: rgba(220, 38, 38, 0.1);
       color: var(--error-color);
     }
 
@@ -273,7 +274,7 @@ const injectStyles = () => {
     }
 
     .btn-enable:hover {
-      background: rgba(0, 102, 68, 0.1);
+      background: rgba(22, 163, 106, 0.1);
     }
 
     .type-badge {
@@ -287,12 +288,12 @@ const injectStyles = () => {
     }
 
     .type-validator {
-      background: rgba(0, 82, 204, 0.1);
+      background: rgba(37, 99, 235, 0.1);
       color: var(--primary-color);
     }
 
     .type-condition {
-      background: rgba(0, 102, 68, 0.1);
+      background: rgba(22, 163, 106, 0.1);
       color: var(--success-color);
     }
 
@@ -347,12 +348,12 @@ const injectStyles = () => {
     }
 
     .log-status.valid {
-      background: rgba(0, 102, 68, 0.1);
+      background: rgba(22, 163, 106, 0.1);
       color: var(--success-color);
     }
 
     .log-status.invalid {
-      background: rgba(222, 53, 11, 0.1);
+      background: rgba(220, 38, 38, 0.1);
       color: var(--error-color);
     }
 
@@ -419,6 +420,12 @@ const injectStyles = () => {
       background: rgba(222, 53, 11, 0.08);
       border-color: var(--error-color);
       color: var(--error-color);
+    }
+
+    .alert-success {
+      background: rgba(0, 102, 68, 0.08);
+      border-color: var(--success-color);
+      color: var(--success-color);
     }
 
     .alert-warning {
@@ -639,6 +646,8 @@ function App() {
       </div>
 
       {licenseBanner}
+
+      <OpenAIConfig invoke={invoke} />
 
       {toggleError && (
         <div className="alert alert-error">

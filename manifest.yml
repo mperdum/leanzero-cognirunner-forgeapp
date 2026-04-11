@@ -38,6 +38,44 @@ modules:
         - company-managed
         - team-managed
 
+  # Workflow Post Functions - execute after transition
+  jira:workflowPostFunction:
+    - key: ai-semantic-post-function
+      name: CogniRunner Semantic Post Function
+      description:
+        AI evaluates a condition and modifies a target field after workflow
+        transition.
+      function: executePostFunction
+      resolver:
+        function: resolver
+      create:
+        resource: config-ui-resource
+      edit:
+        resource: config-ui-resource
+      view:
+        resource: config-view-resource
+      projectTypes:
+        - company-managed
+        - team-managed
+
+    - key: ai-static-post-function
+      name: CogniRunner Static Post Function
+      description:
+        Chains multiple operations with AI-generated code after workflow
+        transition.
+      function: executePostFunction
+      resolver:
+        function: resolver
+      create:
+        resource: config-ui-resource
+      edit:
+        resource: config-ui-resource
+      view:
+        resource: config-view-resource
+      projectTypes:
+        - company-managed
+        - team-managed
+
   # Admin page - global overview of all app usages
   jira:adminPage:
     - key: cognirunner-admin-panel
@@ -50,6 +88,8 @@ modules:
   function:
     - key: validate
       handler: index.validate
+    - key: executePostFunction
+      handler: index.executePostFunction
     - key: resolver
       handler: index.handler
 
@@ -69,6 +109,8 @@ permissions:
       - "unsafe-inline"
   scopes:
     - read:jira-work
+    - write:jira-work
+    - read:jira-user
     - read:workflow:jira
     - read:project:jira
     - storage:app

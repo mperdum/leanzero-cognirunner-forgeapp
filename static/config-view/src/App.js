@@ -27,28 +27,28 @@ const injectStyles = () => {
   style.textContent = `
     :root {
       --bg-color: transparent;
-      --text-color: #172B4D;
-      --text-secondary: #5E6C84;
-      --text-muted: #7A869A;
-      --primary-color: #0052CC;
-      --code-bg: #F4F5F7;
-      --success-color: #006644;
-      --error-color: #DE350B;
-      --border-color: #DFE1E6;
-      --card-bg: #FFFFFF;
+      --text-color: #0f172a;
+      --text-secondary: #64748b;
+      --text-muted: #94a3b8;
+      --primary-color: #2563eb;
+      --code-bg: #f1f5f9;
+      --success-color: #16a34a;
+      --error-color: #dc2626;
+      --border-color: #cbd5e1;
+      --card-bg: #ffffff;
     }
 
     html[data-color-mode="dark"] {
       --bg-color: transparent;
-      --text-color: #B6C2CF;
-      --text-secondary: #9FADBC;
-      --text-muted: #8C9BAB;
-      --primary-color: #579DFF;
-      --code-bg: #1D2125;
-      --success-color: #4BCE97;
-      --error-color: #F87168;
-      --border-color: #454F59;
-      --card-bg: #22272B;
+      --text-color: #F5F5F7;
+      --text-secondary: #A0A0B0;
+      --text-muted: #71717a;
+      --primary-color: #3b82f6;
+      --code-bg: #0A0A0F;
+      --success-color: #22c55e;
+      --error-color: #ef4444;
+      --border-color: #374151;
+      --card-bg: #13131A;
     }
 
     *, *::before, *::after { box-sizing: border-box; }
@@ -56,7 +56,7 @@ const injectStyles = () => {
     html, body {
       margin: 0;
       padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: var(--bg-color);
       color: var(--text-color);
       font-size: 13px;

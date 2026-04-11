@@ -18,6 +18,8 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { invoke } from "@forge/bridge";
+import SemanticConfig from "./components/SemanticConfig";
+import FunctionBuilder from "./components/FunctionBuilder";
 
 // Inject styles directly - more reliable in Forge iframe
 const injectStyles = () => {
@@ -28,42 +30,42 @@ const injectStyles = () => {
   style.textContent = `
     :root {
       --bg-color: transparent;
-      --text-color: #172B4D;
-      --text-secondary: #5E6C84;
-      --text-muted: #7A869A;
-      --primary-color: #0052CC;
-      --error-color: #DE350B;
-      --success-color: #006644;
-      --border-color: #DFE1E6;
-      --card-bg: #FFFFFF;
-      --input-bg: #FAFBFC;
-      --code-bg: #F4F5F7;
-      --icon-bg: #DEEBFF;
-      --alert-error-bg: #FFEBE6;
-      --alert-error-border: #FFBDAD;
-      --alert-success-bg: #E3FCEF;
-      --alert-success-border: #ABF5D1;
-      --button-disabled-bg: #B3D4FF;
+      --text-color: #0f172a;
+      --text-secondary: #64748b;
+      --text-muted: #94a3b8;
+      --primary-color: #2563eb;
+      --error-color: #dc2626;
+      --success-color: #16a34a;
+      --border-color: #cbd5e1;
+      --card-bg: #ffffff;
+      --input-bg: #f8fafc;
+      --code-bg: #f1f5f9;
+      --icon-bg: #dbeafe;
+      --alert-error-bg: #fef2f2;
+      --alert-error-border: #fecaca;
+      --alert-success-bg: #f0fdf4;
+      --alert-success-border: #bbf7d0;
+      --button-disabled-bg: #93c5fd;
     }
 
     html[data-color-mode="dark"] {
       --bg-color: transparent;
-      --text-color: #B6C2CF;
-      --text-secondary: #9FADBC;
-      --text-muted: #8C9BAB;
-      --primary-color: #579DFF;
-      --error-color: #F87168;
-      --success-color: #4BCE97;
-      --border-color: #454F59;
-      --card-bg: #22272B;
-      --input-bg: #1D2125;
-      --code-bg: #1D2125;
-      --icon-bg: #1C2B41;
-      --alert-error-bg: #42221F;
-      --alert-error-border: #5D1F1A;
-      --alert-success-bg: #1C3329;
-      --alert-success-border: #216E4E;
-      --button-disabled-bg: #1C2B41;
+      --text-color: #F5F5F7;
+      --text-secondary: #A0A0B0;
+      --text-muted: #71717a;
+      --primary-color: #3b82f6;
+      --error-color: #ef4444;
+      --success-color: #22c55e;
+      --border-color: #374151;
+      --card-bg: #13131A;
+      --input-bg: #0A0A0F;
+      --code-bg: #0A0A0F;
+      --icon-bg: #1e3a5f;
+      --alert-error-bg: #450a0a;
+      --alert-error-border: #7f1d1d;
+      --alert-success-bg: #052e16;
+      --alert-success-border: #166534;
+      --button-disabled-bg: #1e3a5f;
     }
 
     *, *::before, *::after { box-sizing: border-box; }
@@ -71,7 +73,7 @@ const injectStyles = () => {
     html, body {
       margin: 0;
       padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: var(--bg-color);
       color: var(--text-color);
       font-size: 14px;
@@ -422,6 +424,90 @@ const injectStyles = () => {
     }
 
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Post-function styles */
+    .function-builder { padding: 16px; }
+    .function-builder-header { margin-bottom: 12px; }
+
+    .function-block {
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 12px;
+      background: var(--input-bg);
+    }
+
+    .function-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .function-number {
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--primary-color);
+      min-width: 24px;
+    }
+
+    .function-name-input {
+      flex: 1;
+      font-size: 13px;
+    }
+
+    .btn-remove {
+      background: none;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      color: var(--error-color);
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+      padding: 4px 8px;
+    }
+    .btn-remove:hover { background: rgba(222, 53, 11, 0.1); }
+
+    .code-editor {
+      font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      tab-size: 2;
+      white-space: pre;
+      background: var(--code-bg);
+    }
+
+    .btn-regenerate {
+      margin-top: 8px;
+      padding: 6px 12px;
+      font-size: 12px;
+      border: 1px solid var(--primary-color);
+      border-radius: 4px;
+      background: var(--card-bg);
+      color: var(--primary-color);
+      cursor: pointer;
+    }
+    .btn-regenerate:hover { background: rgba(0, 82, 204, 0.1); }
+    .btn-regenerate:disabled { opacity: 0.6; cursor: default; }
+
+    .btn-add-function {
+      width: 100%;
+      padding: 12px;
+      border: 2px dashed var(--border-color);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 13px;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    .btn-add-function:hover:not(:disabled) {
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+    }
+    .btn-add-function:disabled { opacity: 0.5; cursor: default; }
+
+    .semantic-config { padding: 16px; }
   `;
   document.head.appendChild(style);
 };
@@ -456,6 +542,12 @@ let currentFieldId = "";
 let currentPrompt = "";
 let currentEnableTools = null; // null = auto-detect, true = always on, false = always off
 let currentContext = null;
+// Post-function refs
+let currentPostFunctionType = null; // null | "semantic" | "static"
+let currentConditionPrompt = "";
+let currentActionPrompt = "";
+let currentActionFieldId = "";
+let currentFunctions = [];
 
 function App() {
   const [fieldId, setFieldId] = useState("");
@@ -475,6 +567,25 @@ function App() {
   const searchInputRef = useRef(null);
   const listRef = useRef(null);
 
+  // Post-function state
+  const [isPostFunction, setIsPostFunction] = useState(false);
+  const [postFunctionType, setPostFunctionType] = useState(null); // null | "semantic" | "static"
+  const [conditionPrompt, setConditionPrompt] = useState("");
+  const [actionPrompt, setActionPrompt] = useState("");
+  const [actionFieldId, setActionFieldId] = useState("");
+  const [functions, setFunctions] = useState([{
+    id: `func_${Date.now()}_initial`,
+    name: "",
+    conditionPrompt: "",
+    operationType: "work_item_query",
+    operationPrompt: "",
+    endpoint: "",
+    method: "GET",
+    variableName: "",
+    code: "",
+    includeBackoff: false,
+  }]);
+
   // Keep refs in sync with state
   useEffect(() => {
     currentFieldId = fieldId;
@@ -487,6 +598,13 @@ function App() {
   useEffect(() => {
     currentEnableTools = enableTools;
   }, [enableTools]);
+
+  // Post-function ref sync
+  useEffect(() => { currentPostFunctionType = postFunctionType; }, [postFunctionType]);
+  useEffect(() => { currentConditionPrompt = conditionPrompt; }, [conditionPrompt]);
+  useEffect(() => { currentActionPrompt = actionPrompt; }, [actionPrompt]);
+  useEffect(() => { currentActionFieldId = actionFieldId; }, [actionFieldId]);
+  useEffect(() => { currentFunctions = functions; }, [functions]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -590,6 +708,16 @@ function App() {
             }
           }
 
+          // Detect if this is a post-function module
+          const extType = context?.extension?.type;
+          if (extType === "jira:workflowPostFunction") {
+            setIsPostFunction(true);
+            // Determine sub-type from existing config or default to semantic
+            const pfType = config?.type?.includes("static") ? "static" : "semantic";
+            setPostFunctionType(pfType);
+            currentPostFunctionType = pfType;
+          }
+
           if (config) {
             existingFieldId = config.fieldId || "";
             setFieldId(existingFieldId);
@@ -598,6 +726,24 @@ function App() {
             currentFieldId = existingFieldId;
             currentPrompt = config.prompt || "";
             currentEnableTools = config.enableTools ?? null;
+
+            // Load post-function-specific config
+            if (config.conditionPrompt) {
+              setConditionPrompt(config.conditionPrompt);
+              currentConditionPrompt = config.conditionPrompt;
+            }
+            if (config.actionPrompt) {
+              setActionPrompt(config.actionPrompt);
+              currentActionPrompt = config.actionPrompt;
+            }
+            if (config.actionFieldId) {
+              setActionFieldId(config.actionFieldId);
+              currentActionFieldId = config.actionFieldId;
+            }
+            if (config.functions && Array.isArray(config.functions) && config.functions.length > 0) {
+              setFunctions(config.functions);
+              currentFunctions = config.functions;
+            }
           }
         } catch (e) {
           console.log("Could not load existing config:", e);
@@ -647,28 +793,37 @@ function App() {
       if (workflowRules) {
         try {
           await workflowRules.onConfigure(async () => {
-            // Validate before saving
-            if (!currentFieldId.trim() || !currentPrompt.trim()) {
-              // Return undefined to prevent form submission
-              return undefined;
-            }
+            const ext = currentContext?.extension || {};
+            const isPostFn = ext.type === "jira:workflowPostFunction";
 
+            // Build base config
             const config = {
               fieldId: currentFieldId.trim(),
               prompt: currentPrompt.trim(),
             };
-            // Only include enableTools if explicitly set (keep config clean for auto-detect default)
-            if (currentEnableTools !== null) {
-              config.enableTools = currentEnableTools;
+
+            // Validate based on module type
+            if (isPostFn && currentPostFunctionType === "semantic") {
+              if (!currentConditionPrompt.trim()) return undefined;
+              config.type = "postfunction-semantic";
+              config.conditionPrompt = currentConditionPrompt.trim();
+              config.actionPrompt = currentActionPrompt.trim();
+              config.actionFieldId = currentActionFieldId;
+            } else if (isPostFn && currentPostFunctionType === "static") {
+              config.type = "postfunction-static";
+              config.functions = currentFunctions;
+            } else {
+              // Standard validator/condition
+              if (!currentFieldId.trim() || !currentPrompt.trim()) return undefined;
+              if (currentEnableTools !== null) {
+                config.enableTools = currentEnableTools;
+              }
             }
+
             console.log("Saving configuration:", config);
 
-            // Register this config in the admin registry with workflow context
+            // Register in admin registry with workflow context
             try {
-              const ext = currentContext?.extension || {};
-              const moduleType = ext.type === "jira:workflowCondition" ? "condition" : "validator";
-
-              // Capture workflow context (available in new workflow editor)
               const workflowContext = {};
               if (ext.workflowId) workflowContext.workflowId = ext.workflowId;
               if (ext.workflowName) workflowContext.workflowName = ext.workflowName;
@@ -680,19 +835,36 @@ function App() {
               }
               if (currentContext?.siteUrl) workflowContext.siteUrl = currentContext.siteUrl;
 
-              // Build a stable ID from workflow context so create/edit use the same ID.
-              // ext.entryPoint changes between "create" and "edit" modes, causing duplicates.
               const ruleId = (workflowContext.workflowName && workflowContext.transitionId)
                 ? `${workflowContext.workflowName}::${workflowContext.transitionId}`
                 : ext.entryPoint || ext.key || Date.now().toString();
 
-              await invoke("registerConfig", {
-                id: ruleId,
-                type: moduleType,
-                fieldId: config.fieldId,
-                prompt: config.prompt,
-                workflow: workflowContext,
-              });
+              if (isPostFn) {
+                // Post-function: use registerPostFunction
+                const moduleType = currentPostFunctionType === "static"
+                  ? "postfunction-static" : "postfunction-semantic";
+                await invoke("registerPostFunction", {
+                  id: ruleId,
+                  type: moduleType,
+                  fieldId: config.fieldId,
+                  prompt: config.prompt,
+                  conditionPrompt: config.conditionPrompt || "",
+                  actionPrompt: config.actionPrompt || "",
+                  actionFieldId: config.actionFieldId || "",
+                  functions: currentFunctions,
+                  workflow: workflowContext,
+                });
+              } else {
+                // Validator/condition: use registerConfig
+                const moduleType = ext.type === "jira:workflowCondition" ? "condition" : "validator";
+                await invoke("registerConfig", {
+                  id: ruleId,
+                  type: moduleType,
+                  fieldId: config.fieldId,
+                  prompt: config.prompt,
+                  workflow: workflowContext,
+                });
+              }
             } catch (e) {
               console.log("Could not register config:", e);
             }
@@ -741,13 +913,62 @@ function App() {
           </svg>
         </div>
         <div>
-          <h3 className="title">AI Validator Configuration</h3>
+          <h3 className="title">
+            {isPostFunction ? "Post Function Configuration" : "AI Validator Configuration"}
+          </h3>
           <p className="subtitle">
-            Configure AI-powered field validation for this workflow transition
+            {isPostFunction
+              ? "Configure AI-powered post-function for this workflow transition"
+              : "Configure AI-powered field validation for this workflow transition"
+            }
           </p>
         </div>
       </div>
 
+      {/* Post-function type selector */}
+      {isPostFunction && (
+        <div className="card" style={{ marginBottom: "16px" }}>
+          <div className="form-group">
+            <label className="label">Post Function Type</label>
+            <select
+              value={postFunctionType || "semantic"}
+              onChange={(e) => setPostFunctionType(e.target.value)}
+              className="input"
+              style={{ cursor: "pointer" }}
+            >
+              <option value="semantic">Semantic Post Function — AI evaluates condition and modifies a field</option>
+              <option value="static">Static Post Function (Builder) — Chain multiple operations with code</option>
+            </select>
+          </div>
+        </div>
+      )}
+
+      {/* Static post-function: FunctionBuilder (replaces the standard form) */}
+      {isPostFunction && postFunctionType === "static" && (
+        <div className="card">
+          <FunctionBuilder functions={functions} setFunctions={setFunctions} />
+        </div>
+      )}
+
+      {/* Semantic post-function: condition/action prompts + field selector */}
+      {isPostFunction && postFunctionType === "semantic" && (
+        <div className="card">
+          <SemanticConfig
+            conditionPrompt={conditionPrompt}
+            setConditionPrompt={setConditionPrompt}
+            actionPrompt={actionPrompt}
+            setActionPrompt={setActionPrompt}
+            actionFieldId={actionFieldId}
+            setActionFieldId={setActionFieldId}
+            fields={fields}
+            loadingFields={fieldsLoading}
+            errorFields={fieldsError}
+          />
+        </div>
+      )}
+
+      {/* Standard validator/condition form */}
+      {!isPostFunction && (
       <div className="card">
         <div className="form-group">
           <label className="label">
@@ -914,6 +1135,7 @@ function App() {
           </p>
         </div>
       </div>
+      )}
 
       {error && (
         <div className="alert alert-error">
@@ -933,7 +1155,7 @@ function App() {
         </div>
       )}
 
-      {(!fieldId.trim() || !prompt.trim()) && (
+      {!isPostFunction && (!fieldId.trim() || !prompt.trim()) && (
         <div className="alert alert-error">
           <svg
             width="16"
