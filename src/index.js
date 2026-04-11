@@ -1117,81 +1117,210 @@ resolver.define("generatePostFunctionCode", async ({ payload }) => {
     const configuredModel = await getOpenAIModel();
     const model = CODE_GEN_MODEL || configuredModel;
 
-    const systemPrompt = `You are a code generator for Jira workflow post-functions. You write JavaScript code that runs inside a sandboxed environment after a Jira workflow transition.
+    const systemPrompt = `You are an expert Jira automation engineer generating JavaScript for Forge workflow post-functions. Your code runs in a sandboxed Node.js 22 environment after a Jira workflow transition completes. Write production-quality code that handles edge cases.
 
-## Available API
+## SANDBOX API REFERENCE
 
-The code receives an \`api\` object with these methods:
+The code receives an \`api\` object. All methods are async.
 
-### api.getIssue(issueKey)
-Fetches a Jira issue by key. Returns the full issue object:
-\`\`\`json
-{
-  "key": "PROJ-123",
-  "fields": {
-    "summary": "Issue title",
-    "description": { /* ADF document */ },
-    "status": { "name": "To Do", "id": "10000" },
-    "issuetype": { "name": "Bug" },
-    "priority": { "name": "High" },
-    "assignee": { "displayName": "John", "accountId": "..." },
-    "reporter": { "displayName": "Jane", "accountId": "..." },
-    "labels": ["backend", "urgent"],
-    "components": [{ "name": "API" }],
-    "created": "2025-01-15T10:30:00.000+0000",
-    "updated": "2025-01-16T14:20:00.000+0000",
-    "customfield_XXXXX": "custom value"
-  }
+### api.getIssue(issueKey) → Object
+Fetches a Jira issue via REST API v3. Returns the full issue object:
+\`\`\`javascript
+const issue = await api.getIssue("PROJ-123");
+// issue.key = "PROJ-123"
+// issue.fields.summary = "Issue title"
+// issue.fields.description = { type: "doc", version: 1, content: [...] } // ADF format
+// issue.fields.status = { name: "To Do", id: "10000" }
+// issue.fields.issuetype = { name: "Bug", id: "10001" }
+// issue.fields.priority = { name: "High", id: "1" }
+// issue.fields.assignee = { displayName: "John", accountId: "5f..." } or null
+// issue.fields.reporter = { displayName: "Jane", accountId: "5f..." }
+// issue.fields.labels = ["backend", "urgent"]
+// issue.fields.components = [{ name: "API", id: "10000" }]
+// issue.fields.fixVersions = [{ name: "1.0", id: "10000" }]
+// issue.fields.duedate = "2025-03-15" or null
+// issue.fields.created = "2025-01-15T10:30:00.000+0000"
+// issue.fields.updated = "2025-01-16T14:20:00.000+0000"
+// issue.fields.resolution = { name: "Done" } or null
+// issue.fields.customfield_XXXXX = varies by type
+// issue.fields.issuelinks = [{ type: { name: "Blocks" }, outwardIssue: { key: "PROJ-456" } }]
+// issue.fields.subtasks = [{ key: "PROJ-124", fields: { summary: "...", status: {...} } }]
+// issue.fields.parent = { key: "PROJ-100" } or undefined
+// issue.fields.comment = { comments: [{ body: {ADF}, author: {...}, created: "..." }] }
+\`\`\`
+
+### api.updateIssue(issueKey, fieldsObject) → { success: true }
+Updates fields via PUT /rest/api/3/issue/{key}. Field value formats:
+
+**Text fields:** \`{ summary: "New title" }\`
+**Date fields:** \`{ duedate: "2025-12-31" }\` (ISO format, date only)
+**Select/Priority:** \`{ priority: { name: "High" } }\` or \`{ priority: { id: "1" } }\`
+**User fields:** \`{ assignee: { accountId: "5f..." } }\` — use accountId, never username
+**Labels (overwrite):** \`{ labels: ["bug", "reviewed"] }\`
+**Components:** \`{ components: [{ id: "10001" }] }\`
+**Fix versions:** \`{ fixVersions: [{ id: "10000" }] }\`
+**Custom fields:** \`{ customfield_10050: "value" }\` — format depends on field type
+
+**ADF fields (description, environment):** Must use Atlassian Document Format:
+\`\`\`javascript
+// Simple paragraph
+{ description: { type: "doc", version: 1, content: [
+  { type: "paragraph", content: [{ type: "text", text: "Plain text" }] }
+] } }
+
+// Bold text
+{ description: { type: "doc", version: 1, content: [
+  { type: "paragraph", content: [
+    { type: "text", text: "Bold text", marks: [{ type: "strong" }] }
+  ] }
+] } }
+
+// Multiple paragraphs
+{ description: { type: "doc", version: 1, content: [
+  { type: "paragraph", content: [{ type: "text", text: "First paragraph" }] },
+  { type: "paragraph", content: [{ type: "text", text: "Second paragraph" }] }
+] } }
+
+// Bullet list
+{ description: { type: "doc", version: 1, content: [
+  { type: "bulletList", content: [
+    { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Item 1" }] }] },
+    { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Item 2" }] }] }
+  ] }
+] } }
+
+// Heading
+{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Section Title" }] }
+
+// Code block
+{ type: "codeBlock", attrs: { language: "javascript" }, content: [{ type: "text", text: "const x = 1;" }] }
+\`\`\`
+
+### api.searchJql(jqlQuery) → { issues: [...], total: number }
+Searches via POST /rest/api/3/search. Returns up to 20 results.
+
+**JQL operators:** \`=\`, \`!=\`, \`~\` (contains), \`!~\`, \`IN\`, \`NOT IN\`, \`>\`, \`<\`, \`>=\`, \`<=\`, \`IS EMPTY\`, \`IS NOT EMPTY\`
+**JQL functions:** \`currentUser()\`, \`startOfDay()\`, \`endOfDay()\`, \`startOfWeek()\`
+
+\`\`\`javascript
+// Find issues by text
+const results = await api.searchJql('project = PROJ AND summary ~ "login error"');
+
+// Find issues by status
+const results = await api.searchJql('project = PROJ AND status = "In Progress"');
+
+// Find assigned to current issue's assignee
+const issue = await api.getIssue(api.context.issueKey);
+if (issue.fields.assignee) {
+  const results = await api.searchJql(\`assignee = "\${issue.fields.assignee.accountId}"\`);
+}
+
+// Find recent issues
+const results = await api.searchJql('project = PROJ AND created >= -7d ORDER BY created DESC');
+
+// Find by label
+const results = await api.searchJql('project = PROJ AND labels = "critical"');
+
+// Result shape:
+// results.issues[0].key = "PROJ-1"
+// results.issues[0].fields.summary = "Issue title"
+// results.issues[0].fields.status.name = "To Do"
+// results.total = 42 (total matches, not just returned)
+\`\`\`
+
+### api.transitionIssue(issueKey, transitionId) → { success: true }
+Executes a workflow transition. The transitionId is a number (as string).
+**Note:** You cannot look up transitions in the sandbox. If the user provides a transition name, include a comment explaining they need the numeric ID.
+
+### api.log(...args) → void
+Logs debug messages. Accepts multiple arguments, objects are JSON-serialized.
+\`\`\`javascript
+api.log("Processing issue:", api.context.issueKey);
+api.log("Issue data:", { key: issue.key, status: issue.fields.status.name });
+\`\`\`
+
+### api.context → { issueKey: string }
+The current issue being transitioned. Always available.
+
+## FIELD TYPE REFERENCE
+
+| Jira Field Type | Read (from getIssue) | Write (to updateIssue) |
+|---|---|---|
+| Summary | \`issue.fields.summary\` (string) | \`{ summary: "text" }\` |
+| Description | \`issue.fields.description\` (ADF object) | \`{ description: {ADF} }\` |
+| Status | \`issue.fields.status.name\` (read-only) | Use \`transitionIssue()\` instead |
+| Priority | \`issue.fields.priority.name\` | \`{ priority: { name: "High" } }\` |
+| Assignee | \`issue.fields.assignee?.accountId\` | \`{ assignee: { accountId: "..." } }\` |
+| Labels | \`issue.fields.labels\` (string[]) | \`{ labels: ["a","b"] }\` (overwrites all) |
+| Components | \`issue.fields.components\` ({name,id}[]) | \`{ components: [{ id: "..." }] }\` |
+| Due date | \`issue.fields.duedate\` ("YYYY-MM-DD") | \`{ duedate: "2025-12-31" }\` |
+| Custom text | \`issue.fields.customfield_XXXXX\` | \`{ customfield_XXXXX: "value" }\` |
+| Custom select | \`issue.fields.customfield_XXXXX.value\` | \`{ customfield_XXXXX: { value: "Option" } }\` |
+| Custom multi-select | \`.customfield_XXXXX[].value\` | \`{ customfield_XXXXX: [{ value: "A" }, { value: "B" }] }\` |
+| Custom user | \`.customfield_XXXXX.accountId\` | \`{ customfield_XXXXX: { accountId: "..." } }\` |
+
+## EXTRACTING TEXT FROM ADF DESCRIPTION
+ADF is a nested tree. To get plain text from a description:
+\`\`\`javascript
+function adfToText(node) {
+  if (!node) return "";
+  if (node.type === "text") return node.text || "";
+  if (node.content) return node.content.map(adfToText).join(node.type === "paragraph" ? "\\n" : "");
+  return "";
+}
+const plainText = adfToText(issue.fields.description);
+\`\`\`
+
+## COMMON PATTERNS
+
+**Append to description (preserve existing content):**
+\`\`\`javascript
+const issue = await api.getIssue(api.context.issueKey);
+const existing = issue.fields.description || { type: "doc", version: 1, content: [] };
+existing.content.push(
+  { type: "paragraph", content: [{ type: "text", text: "Appended text" }] }
+);
+await api.updateIssue(api.context.issueKey, { description: existing });
+\`\`\`
+
+**Copy field from parent to subtask:**
+\`\`\`javascript
+const issue = await api.getIssue(api.context.issueKey);
+if (issue.fields.parent) {
+  const parent = await api.getIssue(issue.fields.parent.key);
+  await api.updateIssue(api.context.issueKey, { priority: parent.fields.priority });
 }
 \`\`\`
 
-### api.updateIssue(issueKey, fieldsObject)
-Updates fields on a Jira issue. The fieldsObject keys are field IDs:
+**Find and link duplicates:**
 \`\`\`javascript
-await api.updateIssue("PROJ-123", {
-  summary: "New summary",
-  description: {
-    type: "doc", version: 1,
-    content: [{ type: "paragraph", content: [{ type: "text", text: "New description" }] }]
-  },
-  labels: ["bug", "reviewed"],
-  priority: { name: "High" },
-  assignee: { accountId: "user-account-id" }
-});
+const issue = await api.getIssue(api.context.issueKey);
+const projectKey = api.context.issueKey.split("-")[0];
+const results = await api.searchJql(
+  \`project = \${projectKey} AND summary ~ "\${issue.fields.summary.replace(/"/g, '\\\\"')}" AND key != \${api.context.issueKey}\`
+);
+api.log(\`Found \${results.total} potential duplicates\`);
+return results.issues.map(i => ({ key: i.key, summary: i.fields.summary }));
 \`\`\`
 
-### api.searchJql(jqlQuery)
-Searches Jira issues using JQL. Returns up to 20 results:
-\`\`\`javascript
-const results = await api.searchJql('project = PROJ AND status = "To Do" AND summary ~ "login"');
-// results.issues = [{ key, fields: { summary, status, ... } }, ...]
-// results.total = total number of matches
-\`\`\`
-
-### api.transitionIssue(issueKey, transitionId)
-Moves an issue to a different status. You need the transition ID (not the status name).
-
-### api.log(message)
-Logs a debug message. Visible in execution logs and test results.
-
-### api.context
-Object with: \`{ issueKey: "PROJ-123" }\` — the current issue being transitioned.
-
-## Rules
-- Write ONLY the function body (no function wrapper, no exports).
+## RULES
+- Write ONLY the function body. No \`function\` wrapper, no \`export\`, no \`import\`.
 - Use \`async/await\` for all API calls.
-- Always handle errors with try/catch.
-- Use \`api.log()\` for debugging and status messages.
+- Wrap risky operations in try/catch. Log errors with \`api.log()\`.
+- Log meaningful status messages so the user can verify behavior.
 - Use \`return\` to pass results to the next step in the chain.
-- The code runs in a Forge runtime (Node.js 22). No browser APIs.
-- Keep code concise and production-ready.
-- For ADF (Atlassian Document Format) description fields, create proper ADF structures.
-${includeBackoff ? `- Include an exponential backoff retry wrapper with jitter for API calls (3 retries, delays 1s/2s/4s + random jitter up to 30% of delay).` : ""}
-${operationType === "rest_api_internal" ? `- The user wants to use the Jira REST API. Method: ${method || "GET"}. Endpoint hint: ${endpoint || "not specified"}.` : ""}
+- Runtime: Node.js 22 (Forge). No browser APIs, no \`require\`, no file I/O.
+- Post-functions run AFTER transition succeeds. Errors don't block the workflow.
+- Never hardcode issue keys — use \`api.context.issueKey\` for the current issue.
+- For description/comment fields, always use ADF format (never plain strings).
+- When searching by text, escape quotes in the search string.
+- Use \`accountId\` for user references, never \`username\` or \`emailAddress\`.
+${includeBackoff ? `- Include an exponential backoff retry wrapper with jitter (3 retries, base delay 1s, max 8s, jitter ±30%). Wrap all API calls in it.` : ""}
+${operationType === "rest_api_internal" ? `- The user wants a Jira REST API operation. Method: ${method || "GET"}. Endpoint hint: ${endpoint || "not specified"}.` : ""}
 ${operationType === "rest_api_external" ? `- The user wants to call an external API. URL hint: ${endpoint || "not specified"}. Note: external domains must be whitelisted in manifest.yml.` : ""}
 ${operationType === "confluence_api" ? `- The user wants to interact with Confluence. Operation: ${method || "GET_PAGE"}.` : ""}
-${operationType === "work_item_query" ? `- The user wants to search Jira issues using JQL.` : ""}
-${operationType === "log_function" ? `- The user wants to log debug information.` : ""}`;
+${operationType === "work_item_query" ? `- The user wants to search Jira issues using JQL. Use api.searchJql().` : ""}
+${operationType === "log_function" ? `- The user wants to log debug information. Focus on api.log() with useful issue data.` : ""}`;
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -1201,8 +1330,8 @@ ${operationType === "log_function" ? `- The user wants to log debug information.
       },
       body: JSON.stringify({
         model,
-        temperature: 0.2,
-        max_completion_tokens: 2000,
+        temperature: 0.15,
+        max_completion_tokens: 4000,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: `Generate JavaScript code for this post-function step:\n\n${prompt}${contextDocs ? `\n\n## Additional Context / Reference Documentation\n\n${contextDocs.substring(0, 10000)}` : ""}` },

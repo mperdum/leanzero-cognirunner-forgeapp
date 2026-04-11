@@ -840,6 +840,46 @@ const injectStyles = () => {
     .cm-editor.cm-focused { border-color: var(--primary-color); outline: none; }
     .cm-editor .cm-scroller { overflow: auto; }
 
+    /* Autocomplete dropdown styling */
+    .cm-tooltip-autocomplete {
+      border: 1px solid var(--border-color) !important;
+      border-radius: 6px !important;
+      background: var(--card-bg) !important;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.15) !important;
+      font-size: 12px !important;
+    }
+
+    html[data-color-mode="dark"] .cm-tooltip-autocomplete {
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4) !important;
+    }
+
+    .cm-tooltip-autocomplete > ul > li {
+      padding: 4px 8px !important;
+    }
+
+    .cm-tooltip-autocomplete > ul > li[aria-selected] {
+      background: var(--primary-color) !important;
+      color: white !important;
+    }
+
+    .cm-completionLabel { font-family: SFMono-Regular, Consolas, monospace; }
+    .cm-completionDetail { font-size: 10px; opacity: 0.7; margin-left: 8px; }
+
+    /* Tooltip info panel */
+    .cm-completionInfo {
+      padding: 8px 12px !important;
+      background: var(--card-bg) !important;
+      border: 1px solid var(--border-color) !important;
+      border-radius: 6px !important;
+      font-size: 12px !important;
+      color: var(--text-secondary) !important;
+      max-width: 300px !important;
+    }
+
+    /* Search panel styling */
+    .cm-search { background: var(--code-bg) !important; }
+    .cm-search input { border-radius: 3px !important; }
+
     /* Code header with actions */
     .code-header {
       display: flex;

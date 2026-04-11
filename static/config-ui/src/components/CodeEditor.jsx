@@ -10,8 +10,100 @@ import CodeMirror from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
 import { createTheme } from "@uiw/codemirror-themes";
 import { tags as t } from "@lezer/highlight";
+import { autocompletion } from "@codemirror/autocomplete";
 
-// LeanZero dark theme for CodeMirror
+// === API Autocompletion ===
+// Custom completions for the sandbox api.* methods
+
+const API_COMPLETIONS = [
+  { label: "api.getIssue", type: "function", detail: "(issueKey) → issue object",
+    info: "Fetches a Jira issue by key. Returns full issue with fields (summary, status, priority, etc.)" },
+  { label: "api.updateIssue", type: "function", detail: "(issueKey, fields) → { success }",
+    info: "Updates fields on an issue. Use field IDs as keys. ADF required for description." },
+  { label: "api.searchJql", type: "function", detail: "(jql) → { issues, total }",
+    info: "Searches Jira issues using JQL. Returns up to 20 results with key and fields." },
+  { label: "api.transitionIssue", type: "function", detail: "(issueKey, transitionId) → { success }",
+    info: "Moves an issue to a different status using the transition ID." },
+  { label: "api.log", type: "function", detail: "(...args) → void",
+    info: "Logs a debug message. Objects are JSON-serialized. Visible in test results." },
+  { label: "api.context", type: "variable", detail: "{ issueKey }",
+    info: "The current issue being transitioned. api.context.issueKey = 'PROJ-123'" },
+  { label: "api.context.issueKey", type: "property", detail: "string",
+    info: "The key of the issue being transitioned (e.g., 'PROJ-123')." },
+];
+
+const FIELD_COMPLETIONS = [
+  { label: "issue.fields.summary", type: "property", detail: "string" },
+  { label: "issue.fields.description", type: "property", detail: "ADF object" },
+  { label: "issue.fields.status", type: "property", detail: "{ name, id }" },
+  { label: "issue.fields.status.name", type: "property", detail: "string" },
+  { label: "issue.fields.priority", type: "property", detail: "{ name, id }" },
+  { label: "issue.fields.priority.name", type: "property", detail: "string" },
+  { label: "issue.fields.assignee", type: "property", detail: "{ displayName, accountId } | null" },
+  { label: "issue.fields.reporter", type: "property", detail: "{ displayName, accountId }" },
+  { label: "issue.fields.labels", type: "property", detail: "string[]" },
+  { label: "issue.fields.components", type: "property", detail: "{ name, id }[]" },
+  { label: "issue.fields.issuetype", type: "property", detail: "{ name, id }" },
+  { label: "issue.fields.issuetype.name", type: "property", detail: "string" },
+  { label: "issue.fields.duedate", type: "property", detail: "string | null (YYYY-MM-DD)" },
+  { label: "issue.fields.created", type: "property", detail: "string (ISO 8601)" },
+  { label: "issue.fields.updated", type: "property", detail: "string (ISO 8601)" },
+  { label: "issue.fields.resolution", type: "property", detail: "{ name } | null" },
+  { label: "issue.fields.parent", type: "property", detail: "{ key } | undefined" },
+  { label: "issue.fields.subtasks", type: "property", detail: "{ key, fields }[]" },
+  { label: "issue.fields.issuelinks", type: "property", detail: "{ type, outwardIssue, inwardIssue }[]" },
+  { label: "issue.fields.fixVersions", type: "property", detail: "{ name, id }[]" },
+  { label: "issue.fields.comment", type: "property", detail: "{ comments: [...] }" },
+];
+
+const ADF_COMPLETIONS = [
+  { label: '{ type: "doc", version: 1, content: [] }', type: "text", detail: "ADF document",
+    info: "Root ADF document structure" },
+  { label: '{ type: "paragraph", content: [{ type: "text", text: "" }] }', type: "text", detail: "ADF paragraph",
+    info: "ADF paragraph with text content" },
+  { label: '{ type: "bulletList", content: [] }', type: "text", detail: "ADF bullet list" },
+  { label: '{ type: "heading", attrs: { level: 2 }, content: [] }', type: "text", detail: "ADF heading" },
+];
+
+function apiCompletions(context) {
+  const word = context.matchBefore(/[\w.]*$/);
+  if (!word || (word.from === word.to && !context.explicit)) return null;
+
+  const text = word.text.toLowerCase();
+  const completions = [];
+
+  // API methods
+  for (const c of API_COMPLETIONS) {
+    if (c.label.toLowerCase().startsWith(text) || text.startsWith("api")) {
+      completions.push(c);
+    }
+  }
+
+  // Issue fields (when typing issue.fields or similar)
+  if (text.includes("issue") || text.includes("fields") || text.includes(".fields")) {
+    for (const c of FIELD_COMPLETIONS) {
+      if (c.label.toLowerCase().includes(text) || text.length < 3) {
+        completions.push(c);
+      }
+    }
+  }
+
+  // ADF structures (when typing doc, paragraph, type, etc.)
+  if (text.includes("doc") || text.includes("adf") || text.includes("paragraph") || text.includes("type")) {
+    completions.push(...ADF_COMPLETIONS);
+  }
+
+  if (completions.length === 0) return null;
+
+  return {
+    from: word.from,
+    options: completions,
+    validFor: /^[\w.]*$/,
+  };
+}
+
+// === Themes ===
+
 const leanzeroDark = createTheme({
   theme: "dark",
   settings: {
@@ -45,7 +137,6 @@ const leanzeroDark = createTheme({
   ],
 });
 
-// LeanZero light theme for CodeMirror
 const leanzeroLight = createTheme({
   theme: "light",
   settings: {
@@ -79,8 +170,17 @@ const leanzeroLight = createTheme({
   ],
 });
 
+// === Component ===
+
 export default function CodeEditor({ value, onChange }) {
-  const extensions = useMemo(() => [javascript()], []);
+  const extensions = useMemo(() => [
+    javascript(),
+    autocompletion({
+      override: [apiCompletions],
+      defaultKeymap: true,
+      activateOnTyping: true,
+    }),
+  ], []);
 
   // Detect Jira theme mode
   const [isDark, setIsDark] = useState(false);
@@ -101,8 +201,8 @@ export default function CodeEditor({ value, onChange }) {
       theme={isDark ? leanzeroDark : leanzeroLight}
       extensions={extensions}
       height="auto"
-      minHeight="180px"
-      maxHeight="500px"
+      minHeight="200px"
+      maxHeight="600px"
       basicSetup={{
         lineNumbers: true,
         highlightActiveLineGutter: true,
@@ -112,9 +212,19 @@ export default function CodeEditor({ value, onChange }) {
         closeBrackets: true,
         indentOnInput: true,
         tabSize: 2,
-        autocompletion: false,
-        searchKeymap: false,
+        autocompletion: false, // We provide our own
+        searchKeymap: true,
         highlightSelectionMatches: true,
+        highlightSpecialChars: true,
+        history: true,
+        drawSelection: true,
+        dropCursor: true,
+        allowMultipleSelections: true,
+        rectangularSelection: true,
+        completionKeymap: true,
+        foldKeymap: true,
+        historyKeymap: true,
+        defaultKeymap: true,
       }}
     />
   );
