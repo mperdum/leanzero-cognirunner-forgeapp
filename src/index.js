@@ -1191,7 +1191,7 @@ resolver.define("deleteContextDoc", async ({ payload }) => {
  * from a natural language description.
  */
 resolver.define("generatePostFunctionCode", async ({ payload }) => {
-  const { prompt, operationType, endpoint, method, includeBackoff, contextDocs } = payload;
+  const { prompt, operationType, endpoint, method, includeBackoff, contextDocs, priorSteps } = payload;
   if (!prompt || typeof prompt !== "string") {
     return { success: false, error: "Please describe what this step should do" };
   }
@@ -1411,7 +1411,14 @@ ${operationType === "rest_api_internal" ? `- The user wants a Jira REST API oper
 ${operationType === "rest_api_external" ? `- The user wants to call an external API. URL hint: ${endpoint || "not specified"}. Note: external domains must be whitelisted in manifest.yml.` : ""}
 ${operationType === "confluence_api" ? `- The user wants to interact with Confluence. Operation: ${method || "GET_PAGE"}.` : ""}
 ${operationType === "work_item_query" ? `- The user wants to search Jira issues using JQL. Use api.searchJql().` : ""}
-${operationType === "log_function" ? `- The user wants to log debug information. Focus on api.log() with useful issue data.` : ""}`;
+${operationType === "log_function" ? `- The user wants to log debug information. Focus on api.log() with useful issue data.` : ""}
+${priorSteps && priorSteps.length > 0 ? `
+## VARIABLES FROM PRIOR STEPS
+This is step ${(priorSteps.length || 0) + 1} in a chain. The following variables are available from earlier steps. Reference them directly by name — they are injected into scope before your code runs.
+
+${priorSteps.map((s) => `- \`${s.variable}\` (from step ${s.step}: "${s.name}") — ${s.description.substring(0, 120)}`).join("\n")}
+
+IMPORTANT: Use these variables in your code. For example, if a prior step stored search results in \`searchResults\`, you can write \`searchResults.issues.forEach(...)\` directly. Do NOT re-fetch data that a prior step already fetched.` : ""}`;
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",

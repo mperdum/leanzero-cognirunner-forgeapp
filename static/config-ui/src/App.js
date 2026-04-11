@@ -962,6 +962,35 @@ const injectStyles = () => {
       border-top: 1px solid var(--border-color);
     }
 
+    /* Prior step variables indicator */
+    .prior-vars-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      margin-bottom: 12px;
+      border-radius: 6px;
+      background: rgba(37, 99, 235, 0.06);
+      border: 1px solid rgba(37, 99, 235, 0.15);
+      flex-wrap: wrap;
+    }
+
+    .prior-vars-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .prior-var-tag {
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--primary-color);
+      color: white;
+      font-size: 11px;
+      font-family: SFMono-Regular, Consolas, monospace;
+      cursor: help;
+    }
+
     /* Operation-specific fields */
     .op-fields {
       display: grid;

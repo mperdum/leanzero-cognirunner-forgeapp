@@ -131,7 +131,7 @@ return { success: true };`)}`;
   }
 }
 
-export default function FunctionBlock({ index, functionData, onUpdate, onRemove, isOnly }) {
+export default function FunctionBlock({ index, functionData, priorSteps, onUpdate, onRemove, isOnly }) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [showApiRef, setShowApiRef] = useState(false);
   const [selectedDocs, setSelectedDocs] = useState([]);
@@ -158,6 +158,16 @@ export default function FunctionBlock({ index, functionData, onUpdate, onRemove,
         contextDocs = contextDocs ? `${contextDocs}\n\n${docsText}` : docsText;
       }
 
+      // Build prior steps context so the AI knows what variables are available
+      const priorVars = (priorSteps || [])
+        .filter((s) => s.variableName)
+        .map((s, i) => ({
+          step: i + 1,
+          name: s.name || `Step ${i + 1}`,
+          variable: s.variableName,
+          description: s.operationPrompt || "",
+        }));
+
       const result = await invoke("generatePostFunctionCode", {
         prompt: functionData.operationPrompt,
         operationType: functionData.operationType || "work_item_query",
@@ -165,6 +175,7 @@ export default function FunctionBlock({ index, functionData, onUpdate, onRemove,
         method: functionData.method || "GET",
         includeBackoff: functionData.includeBackoff || false,
         contextDocs,
+        priorSteps: priorVars,
       });
       if (result.success && result.code) {
         onUpdate({ code: result.code });
@@ -221,6 +232,18 @@ export default function FunctionBlock({ index, functionData, onUpdate, onRemove,
           </button>
         )}
       </div>
+
+      {/* Available variables from prior steps */}
+      {priorSteps && priorSteps.filter((s) => s.variableName).length > 0 && (
+        <div className="prior-vars-bar">
+          <span className="prior-vars-label">Available from prior steps:</span>
+          {priorSteps.filter((s) => s.variableName).map((s, i) => (
+            <code key={i} className="prior-var-tag" title={s.operationPrompt || s.name || `Step ${i + 1}`}>
+              {s.variableName}
+            </code>
+          ))}
+        </div>
+      )}
 
       {/* Description — what this step does */}
       <div className="form-group">

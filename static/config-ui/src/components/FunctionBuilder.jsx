@@ -65,6 +65,7 @@ export default function FunctionBuilder({ functions, setFunctions }) {
           key={fn.id}
           index={i}
           functionData={fn}
+          priorSteps={functions.slice(0, i)}
           onUpdate={(updates) => updateFunction(fn.id, updates)}
           onRemove={removeFunction}
           isOnly={functions.length === 1}
