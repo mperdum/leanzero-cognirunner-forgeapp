@@ -1094,6 +1094,97 @@ resolver.define("getPostFunctionStatus", async ({ payload }) => {
   }
 });
 
+// === Shared Documentation Repository ===
+// App-scoped KVS storage for reference documents shared across all users.
+// Keys: doc_repo:{id} for documents, doc_repo_index for the index.
+
+const DOC_REPO_INDEX_KEY = "doc_repo_index";
+const DOC_REPO_PREFIX = "doc_repo:";
+const MAX_DOCS = 50;
+
+/**
+ * Save a reference document to the shared repository.
+ */
+resolver.define("saveContextDoc", async ({ payload }) => {
+  try {
+    const { title, content, category } = payload;
+    if (!title || !content) {
+      return { success: false, error: "Title and content are required" };
+    }
+    if (content.length > 200000) {
+      return { success: false, error: "Document too large (max ~200KB)" };
+    }
+
+    const id = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    const doc = {
+      id,
+      title: title.substring(0, 100),
+      category: category || "General",
+      contentLength: content.length,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Save content
+    await storage.set(`${DOC_REPO_PREFIX}${id}`, { ...doc, content });
+
+    // Update index
+    let index = (await storage.get(DOC_REPO_INDEX_KEY)) || [];
+    index.unshift(doc);
+    if (index.length > MAX_DOCS) index = index.slice(0, MAX_DOCS);
+    await storage.set(DOC_REPO_INDEX_KEY, index);
+
+    return { success: true, id };
+  } catch (error) {
+    console.error("Failed to save context doc:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * List all documents in the shared repository (index only, no content).
+ */
+resolver.define("getContextDocs", async () => {
+  try {
+    const index = (await storage.get(DOC_REPO_INDEX_KEY)) || [];
+    return { success: true, docs: index };
+  } catch (error) {
+    console.error("Failed to get context docs:", error);
+    return { success: false, docs: [] };
+  }
+});
+
+/**
+ * Get a single document's full content by ID.
+ */
+resolver.define("getContextDocContent", async ({ payload }) => {
+  try {
+    const { id } = payload;
+    const doc = await storage.get(`${DOC_REPO_PREFIX}${id}`);
+    if (!doc) return { success: false, error: "Document not found" };
+    return { success: true, doc };
+  } catch (error) {
+    console.error("Failed to get context doc:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Delete a document from the shared repository.
+ */
+resolver.define("deleteContextDoc", async ({ payload }) => {
+  try {
+    const { id } = payload;
+    await storage.delete(`${DOC_REPO_PREFIX}${id}`);
+    let index = (await storage.get(DOC_REPO_INDEX_KEY)) || [];
+    index = index.filter((d) => d.id !== id);
+    await storage.set(DOC_REPO_INDEX_KEY, index);
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to delete context doc:", error);
+    return { success: false, error: error.message };
+  }
+});
+
 /**
  * Generate JavaScript code for a static post-function using OpenAI.
  * The AI knows the full sandbox API surface and generates working code

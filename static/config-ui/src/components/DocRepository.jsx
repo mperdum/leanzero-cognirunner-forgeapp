@@ -1,0 +1,246 @@
+/*
+ * CogniRunner - AI-powered workflow validation for Jira
+ * Copyright (C) 2025 LeanZero
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+import React, { useState, useEffect, useCallback } from "react";
+import { invoke } from "@forge/bridge";
+import Tooltip from "./Tooltip";
+
+const CATEGORIES = [
+  "API Documentation",
+  "Field Mappings",
+  "JSON Schemas",
+  "Business Rules",
+  "Code Snippets",
+  "General",
+];
+
+export default function DocRepository({ selectedDocs, onSelectionChange }) {
+  const [docs, setDocs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newContent, setNewContent] = useState("");
+  const [newCategory, setNewCategory] = useState("General");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [expandedDoc, setExpandedDoc] = useState(null);
+  const [expandedContent, setExpandedContent] = useState("");
+  const [loadingContent, setLoadingContent] = useState(false);
+
+  const loadDocs = useCallback(async () => {
+    try {
+      const result = await invoke("getContextDocs");
+      if (result.success) setDocs(result.docs || []);
+    } catch (e) {
+      console.error("Failed to load docs:", e);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadDocs(); }, [loadDocs]);
+
+  const handleSave = async () => {
+    if (!newTitle.trim() || !newContent.trim()) {
+      setError("Title and content are required");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await invoke("saveContextDoc", {
+        title: newTitle.trim(),
+        content: newContent.trim(),
+        category: newCategory,
+      });
+      if (result.success) {
+        setNewTitle("");
+        setNewContent("");
+        setNewCategory("General");
+        setShowAdd(false);
+        await loadDocs();
+      } else {
+        setError(result.error || "Failed to save");
+      }
+    } catch (e) {
+      setError("Failed to save: " + e.message);
+    }
+    setSaving(false);
+  };
+
+  const handleDelete = async (id) => {
+    try {
+      await invoke("deleteContextDoc", { id });
+      // Remove from selection if selected
+      if (selectedDocs.includes(id)) {
+        onSelectionChange(selectedDocs.filter((d) => d !== id));
+      }
+      await loadDocs();
+    } catch (e) {
+      console.error("Failed to delete:", e);
+    }
+  };
+
+  const handleExpand = async (id) => {
+    if (expandedDoc === id) {
+      setExpandedDoc(null);
+      return;
+    }
+    setExpandedDoc(id);
+    setLoadingContent(true);
+    try {
+      const result = await invoke("getContextDocContent", { id });
+      if (result.success) {
+        setExpandedContent(result.doc.content);
+      }
+    } catch (e) {
+      setExpandedContent("Failed to load content");
+    }
+    setLoadingContent(false);
+  };
+
+  const toggleDocSelection = (id) => {
+    if (selectedDocs.includes(id)) {
+      onSelectionChange(selectedDocs.filter((d) => d !== id));
+    } else {
+      onSelectionChange([...selectedDocs, id]);
+    }
+  };
+
+  const formatSize = (len) => {
+    if (len < 1024) return `${len} B`;
+    return `${(len / 1024).toFixed(1)} KB`;
+  };
+
+  return (
+    <div className="doc-repo">
+      <div className="doc-repo-header">
+        <div className="doc-repo-title-row">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
+          </svg>
+          <span className="doc-repo-title">Documentation Library</span>
+          <Tooltip text="Shared reference documents available to all users. Select documents to include as context when generating code — the AI uses them to produce more accurate results." />
+        </div>
+        <button className="btn-add-doc" onClick={() => setShowAdd(!showAdd)}>
+          {showAdd ? "Cancel" : "+ Add Document"}
+        </button>
+      </div>
+
+      {/* Add new document form */}
+      {showAdd && (
+        <div className="doc-add-form">
+          {error && (
+            <div className="doc-error">{error}</div>
+          )}
+          <input
+            type="text"
+            className="input"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            placeholder="Document title (e.g., 'Sprint Field API', 'Webhook Payload Schema')"
+          />
+          <div className="doc-add-row">
+            <select
+              className="input doc-category-select"
+              value={newCategory}
+              onChange={(e) => setNewCategory(e.target.value)}
+            >
+              {CATEGORIES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          <textarea
+            className="textarea doc-content-input"
+            rows={10}
+            value={newContent}
+            onChange={(e) => setNewContent(e.target.value)}
+            placeholder={"Paste documentation, JSON schemas, API specs, field mappings, or any reference material.\n\nExamples:\n- REST API endpoint docs with request/response formats\n- Custom field IDs and their meanings\n- Business rules for automation logic\n- JSON payload structures"}
+          />
+          <div className="doc-add-actions">
+            <span className="doc-size-hint">
+              {newContent.length > 0 ? formatSize(newContent.length) : ""}{newContent.length > 200000 ? " (too large)" : ""}
+            </span>
+            <button
+              className="btn-save-doc"
+              onClick={handleSave}
+              disabled={saving || !newTitle.trim() || !newContent.trim() || newContent.length > 200000}
+            >
+              {saving ? "Saving..." : "Save to Library"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Document list */}
+      {loading ? (
+        <div className="doc-empty">Loading documents...</div>
+      ) : docs.length === 0 ? (
+        <div className="doc-empty">
+          No documents yet. Add API docs, schemas, or field mappings to help AI generate better code.
+        </div>
+      ) : (
+        <div className="doc-list">
+          {docs.map((doc) => {
+            const isSelected = selectedDocs.includes(doc.id);
+            const isExpanded = expandedDoc === doc.id;
+            return (
+              <div key={doc.id} className={`doc-item ${isSelected ? "doc-selected" : ""}`}>
+                <div className="doc-item-row">
+                  <label className="doc-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleDocSelection(doc.id)}
+                    />
+                  </label>
+                  <div className="doc-item-info" onClick={() => toggleDocSelection(doc.id)}>
+                    <span className="doc-item-title">{doc.title}</span>
+                    <span className="doc-item-meta">
+                      <span className="doc-category-badge">{doc.category}</span>
+                      <span>{formatSize(doc.contentLength)}</span>
+                    </span>
+                  </div>
+                  <div className="doc-item-actions">
+                    <button
+                      className="doc-btn-preview"
+                      onClick={() => handleExpand(doc.id)}
+                      title="Preview"
+                    >
+                      {isExpanded ? "▲" : "▼"}
+                    </button>
+                    <button
+                      className="doc-btn-delete"
+                      onClick={() => handleDelete(doc.id)}
+                      title="Delete"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                </div>
+                {isExpanded && (
+                  <div className="doc-preview">
+                    {loadingContent ? "Loading..." : (
+                      <pre className="doc-preview-content">{expandedContent}</pre>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {selectedDocs.length > 0 && (
+        <div className="doc-selection-info">
+          {selectedDocs.length} document{selectedDocs.length > 1 ? "s" : ""} selected — will be included as context for code generation
+        </div>
+      )}
+    </div>
+  );
+}

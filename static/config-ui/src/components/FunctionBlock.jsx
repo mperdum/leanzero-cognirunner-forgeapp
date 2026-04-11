@@ -10,6 +10,7 @@ import { invoke } from "@forge/bridge";
 import Tooltip from "./Tooltip";
 import CustomSelect from "./CustomSelect";
 import CodeEditor from "./CodeEditor";
+import DocRepository from "./DocRepository";
 
 const OPERATION_TYPES = [
   {
@@ -133,10 +134,10 @@ return { success: true };`)}`;
 export default function FunctionBlock({ index, functionData, onUpdate, onRemove, isOnly }) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [showApiRef, setShowApiRef] = useState(false);
-  const [showContext, setShowContext] = useState(!!(functionData.contextDocs));
+  const [selectedDocs, setSelectedDocs] = useState([]);
   const [testRunning, setTestRunning] = useState(false);
   const [testResult, setTestResult] = useState(null);
-  const [testTarget, setTestTarget] = useState(""); // issue key or JQL
+  const [testTarget, setTestTarget] = useState("");
   const [showTestPanel, setShowTestPanel] = useState(false);
 
   const update = (field, value) => onUpdate({ [field]: value });
@@ -144,13 +145,26 @@ export default function FunctionBlock({ index, functionData, onUpdate, onRemove,
   const handleGenerate = async () => {
     setIsGenerating(true);
     try {
+      // Fetch selected doc contents
+      let contextDocs = functionData.contextDocs || "";
+      if (selectedDocs.length > 0) {
+        const docContents = await Promise.all(
+          selectedDocs.map((id) => invoke("getContextDocContent", { id })),
+        );
+        const docsText = docContents
+          .filter((r) => r.success && r.doc)
+          .map((r) => `### ${r.doc.title}\n${r.doc.content}`)
+          .join("\n\n---\n\n");
+        contextDocs = contextDocs ? `${contextDocs}\n\n${docsText}` : docsText;
+      }
+
       const result = await invoke("generatePostFunctionCode", {
         prompt: functionData.operationPrompt,
         operationType: functionData.operationType || "work_item_query",
         endpoint: functionData.endpoint || "",
         method: functionData.method || "GET",
         includeBackoff: functionData.includeBackoff || false,
-        contextDocs: functionData.contextDocs || "",
+        contextDocs,
       });
       if (result.success && result.code) {
         onUpdate({ code: result.code });
@@ -311,40 +325,25 @@ export default function FunctionBlock({ index, functionData, onUpdate, onRemove,
         </div>
       )}
 
-      {/* Context documents — additional knowledge for AI code generation */}
-      <div className="context-section">
-        <button
-          className="btn-context-toggle"
-          onClick={() => setShowContext(!showContext)}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <line x1="16" y1="13" x2="8" y2="13" />
-            <line x1="16" y1="17" x2="8" y2="17" />
-          </svg>
-          <span>{showContext ? "Hide" : "Add"} Context Documents</span>
-          <Tooltip text="Paste API documentation, JSON schemas, field mappings, or any reference material. The AI uses this context to generate more accurate code tailored to your specific setup." />
-          <span className={`toggle-chevron ${showContext ? "open" : ""}`}>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
-          </span>
-        </button>
+      {/* Documentation library — shared reference docs for AI code generation */}
+      <DocRepository
+        selectedDocs={selectedDocs}
+        onSelectionChange={setSelectedDocs}
+      />
 
-        {showContext && (
-          <div className="context-body">
-            <textarea
-              className="textarea context-textarea"
-              rows={8}
-              value={functionData.contextDocs || ""}
-              onChange={(e) => update("contextDocs", e.target.value)}
-              placeholder={"Paste any reference material here:\n\n- API documentation (endpoints, request/response formats)\n- JSON schemas for custom fields\n- Field ID mappings (e.g., customfield_10050 = Sprint)\n- Business rules or requirements\n- Example payloads or data structures"}
-            />
-            <p className="hint">
-              This context is sent to the AI alongside your description when generating code.
-              Supports plain text, JSON, or any documentation format. Max ~10,000 characters.
-            </p>
-          </div>
-        )}
+      {/* Inline context — for one-off notes not worth saving to the library */}
+      <div className="form-group">
+        <label className="label" style={{ fontSize: "11px" }}>
+          Additional Context (optional)
+          <Tooltip text="One-off notes for this specific step. For reusable documentation, add it to the library above instead." />
+        </label>
+        <textarea
+          className="textarea context-textarea"
+          rows={3}
+          value={functionData.contextDocs || ""}
+          onChange={(e) => update("contextDocs", e.target.value)}
+          placeholder="Any extra context for this step (field IDs, specific requirements...)"
+        />
       </div>
 
       {/* Reliability options — always visible */}
