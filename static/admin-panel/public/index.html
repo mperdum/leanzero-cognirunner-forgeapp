@@ -5,7 +5,7 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>CogniRunner Admin</title>
         <style>
-            /* LeanZero Design System */
+            /* LeanZero Design System - Pre-JS rendering styles */
             :root {
                 --bg-color: transparent;
                 --text-color: #0f172a;
@@ -18,8 +18,8 @@
                 --border-color: #cbd5e1;
                 --card-bg: #ffffff;
                 --code-bg: #f1f5f9;
-                --icon-bg: #dbeafe;
                 --hover-bg: #f1f5f9;
+                --border-radius-sm: 0.5rem;
             }
 
             html[data-color-mode="dark"] {
@@ -34,32 +34,22 @@
                 --border-color: #374151;
                 --card-bg: #13131A;
                 --code-bg: #1e293b;
-                --icon-bg: #1e3a5f;
                 --hover-bg: #1e1e24;
             }
 
-            *,
-            *::before,
-            *::after {
-                box-sizing: border-box;
-            }
+            *, *::before, *::after { box-sizing: border-box; }
 
-            html,
-            body {
+            html, body {
                 margin: 0;
                 padding: 0;
-                font-family:
-                    "Inter", system-ui, -apple-system, BlinkMacSystemFont,
-                    "Segoe UI", Roboto, sans-serif;
+                font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                 background: var(--bg-color);
                 color: var(--text-color);
                 font-size: 14px;
                 line-height: 1.5;
             }
 
-            #root {
-                min-height: 100%;
-            }
+            #root { min-height: 100%; }
 
             .loading-spinner {
                 display: flex;
@@ -84,157 +74,29 @@
                 color: var(--text-secondary);
             }
 
-            @keyframes spin {
-                to {
-                    transform: rotate(360deg);
-                }
-            }
+            @keyframes spin { to { transform: rotate(360deg); } }
 
             .license-banner {
                 display: flex;
                 align-items: center;
                 gap: 6px;
                 padding: 10px 14px;
-                border-radius: 4px;
+                border-radius: var(--border-radius-sm);
                 font-size: 13px;
                 margin-bottom: 20px;
                 border: 1px solid;
             }
 
             .license-active {
-                background: rgba(0, 102, 68, 0.1);
-                border-color: #006644;
-                color: #006644;
-            }
-
-            html[data-color-mode="dark"] .license-active {
-                border-color: #4bce97;
-                color: #4bce97;
+                background: rgba(22, 163, 74, 0.1);
+                border-color: var(--success-color);
+                color: var(--success-color);
             }
 
             .license-inactive {
-                background: rgba(222, 53, 11, 0.1);
-                border-color: #de350b;
-                color: #de350b;
-            }
-
-            html[data-color-mode="dark"] .license-inactive {
-                border-color: #f87168;
-                color: #f87168;
-            }
-
-            .workflow-info {
-                font-size: 12px;
-                line-height: 1.4;
-            }
-
-            .workflow-name {
-                font-weight: 600;
-                color: var(--text-color);
-            }
-
-            .transition-info {
-                color: var(--text-muted);
-                font-size: 11px;
-                margin-top: 2px;
-            }
-
-            .no-workflow-info {
-                color: var(--text-muted);
-                font-size: 11px;
-                font-style: italic;
-            }
-
-            .btn-edit {
-                color: var(--primary-color);
-                border-color: var(--primary-color);
-            }
-
-            .btn-edit:hover {
-                background: rgba(0, 82, 204, 0.1);
-            }
-
-            .row-actions {
-                display: flex;
-                gap: 6px;
-            }
-
-            .row-disabled td {
-                opacity: 0.55;
-            }
-
-            .row-disabled td:last-child {
-                opacity: 1;
-            }
-
-            .status-badge {
-                display: inline-block;
-                padding: 2px 6px;
-                border-radius: 3px;
-                font-size: 9px;
-                font-weight: 600;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-                margin-left: 6px;
-                vertical-align: middle;
-            }
-
-            .status-disabled {
-                background: rgba(222, 53, 11, 0.1);
-                color: var(--error-color);
-            }
-
-            .btn-enable {
-                color: var(--success-color);
-                border-color: var(--success-color);
-            }
-
-            .btn-enable:hover {
-                background: rgba(0, 102, 68, 0.1);
-            }
-
-            .alert {
-                display: flex;
-                align-items: flex-start;
-                gap: 8px;
-                padding: 10px 14px;
-                border-radius: 4px;
-                font-size: 13px;
-                margin-bottom: 16px;
-                border: 1px solid;
-            }
-
-            .alert-error {
-                background: rgba(222, 53, 11, 0.08);
+                background: rgba(220, 38, 38, 0.1);
                 border-color: var(--error-color);
                 color: var(--error-color);
-            }
-
-            .alert-warning {
-                background: rgba(255, 153, 31, 0.08);
-                border-color: #ff991f;
-                color: #ff991f;
-            }
-
-            html[data-color-mode="dark"] .alert-warning {
-                color: #f5cd47;
-                border-color: #f5cd47;
-            }
-
-            .alert-dismiss {
-                margin-left: auto;
-                background: none;
-                border: none;
-                color: inherit;
-                cursor: pointer;
-                font-size: 16px;
-                line-height: 1;
-                padding: 0 2px;
-                opacity: 0.7;
-            }
-
-            .alert-dismiss:hover {
-                opacity: 1;
             }
         </style>
     </head>
