@@ -25,36 +25,122 @@ const injectStyles = () => {
   const style = document.createElement("style");
   style.id = "app-styles";
   style.textContent = `
+    /* LeanZero Design System - Admin Panel */
     :root {
-      --bg-color: transparent;
-      --text-color: #172B4D;
-      --text-secondary: #5E6C84;
-      --text-muted: #7A869A;
-      --primary-color: #0052CC;
-      --error-color: #DE350B;
-      --success-color: #006644;
-      --border-color: #DFE1E6;
-      --card-bg: #FFFFFF;
-      --input-bg: #FAFBFC;
-      --code-bg: #F4F5F7;
-      --icon-bg: #DEEBFF;
-      --hover-bg: #F4F5F7;
+      /* Primary Brand Colors (Blue Theme) */
+      --primary-600: #2563eb;
+      --primary-700: #1d4ed8;
+      --primary-500: #3b82f6;
+      
+      /* Secondary Colors (Cyan) */
+      --cyan-600: #0e7490;
+      --cyan-500: #06b6d4;
+      
+      /* Accent Colors */
+      --purple-500: #a855f7;
+      --success-600: #16a34a;
+      --warning-600: #d97706;
+      --error-600: #dc2626;
+      
+      /* Semantic Colors - Light Mode */
+      --success-color: var(--success-600);
+      --warning-color: var(--warning-600);
+      --error-color: var(--error-600);
+      
+      /* Backgrounds - Light Mode */
+      --bg-primary: #eaeff9;
+      --bg-secondary: rgba(255, 255, 255, 0.8);
+      --card-bg: #ffffff;
+      --input-bg: #f8fafc;
+      
+      /* Text Colors - Light Mode */
+      --text-primary: #0f172a;
+      --text-secondary: #64748b;
+      --text-muted: #94a3b8;
+      
+      /* Borders & Dividers */
+      --border-color: #cbd5e1;
+      --border-radius-sm: 0.5rem;
+      --border-radius-md: 0.75rem;
+      --border-radius-lg: 1rem;
+      
+      /* Shadows - Light Mode */
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+      --shadow-glow: 0 0 20px rgba(37, 99, 235, 0.3);
+      --shadow-glow-lg: 0 0 30px rgba(37, 99, 235, 0.4);
+      
+      /* Code Background */
+      --code-bg: #f1f5f9;
+      
+      /* Icon Background */
+      --icon-bg: #dbeafe;
+      
+      /* Alert Colors - Light Mode */
+      --alert-error-bg: #fef2f2;
+      --alert-error-border: #fecaca;
+      --alert-success-bg: #f0fdf4;
+      --alert-success-border: #bbf7d0;
+      --alert-warning-bg: #fffbeb;
+      --alert-warning-border: #fde68a;
+      
+      /* Hover Background */
+      --hover-bg: #f1f5f9;
     }
 
     html[data-color-mode="dark"] {
-      --bg-color: transparent;
-      --text-color: #B6C2CF;
-      --text-secondary: #9FADBC;
-      --text-muted: #8C9BAB;
-      --primary-color: #579DFF;
-      --error-color: #F87168;
-      --success-color: #4BCE97;
-      --border-color: #454F59;
-      --card-bg: #22272B;
-      --input-bg: #1D2125;
-      --code-bg: #1D2125;
-      --icon-bg: #1C2B41;
-      --hover-bg: #2C333A;
+      /* Primary Brand Colors - Dark Mode */
+      --primary-600: #3b82f6;
+      --primary-700: #60a5fa;
+      --primary-500: #60a5fa;
+      
+      /* Secondary Colors - Dark Mode */
+      --cyan-600: #06b6d4;
+      --cyan-500: #22d3ee;
+      
+      /* Semantic Colors - Dark Mode */
+      --success-color: #22c55e;
+      --warning-color: #f59e0b;
+      --error-color: #ef4444;
+      
+      /* Backgrounds - Dark Mode */
+      --bg-primary: #0A0A0F;
+      --bg-secondary: rgba(19, 19, 26, 0.8);
+      --card-bg: #13131A;
+      --input-bg: #1e1e24;
+      
+      /* Text Colors - Dark Mode */
+      --text-primary: #F5F5F7;
+      --text-secondary: #A0A0B0;
+      --text-muted: #6b7280;
+      
+      /* Borders & Dividers - Dark Mode */
+      --border-color: #374151;
+      
+      /* Shadows - Dark Mode */
+      --shadow-sm: none;
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+      --shadow-glow: 0 0 20px rgba(59, 130, 246, 0.4);
+      --shadow-glow-lg: 0 0 30px rgba(59, 130, 246, 0.5);
+      
+      /* Code Background - Dark Mode */
+      --code-bg: #1e1e24;
+      
+      /* Icon Background - Dark Mode */
+      --icon-bg: #1c2b41;
+      
+      /* Alert Colors - Dark Mode */
+      --alert-error-bg: #450a0a;
+      --alert-error-border: #7f1d1d;
+      --alert-success-bg: #064e3b;
+      --alert-success-border: #059669;
+      --alert-warning-bg: #422006;
+      --alert-warning-border: #a16207;
+      
+      /* Hover Background - Dark Mode */
+      --hover-bg: #1e1e24;
     }
 
     *, *::before, *::after { box-sizing: border-box; }
@@ -62,11 +148,12 @@ const injectStyles = () => {
     html, body {
       margin: 0;
       padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-      background: var(--bg-color);
-      color: var(--text-color);
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
       font-size: 14px;
       line-height: 1.5;
+      transition: background-color 0.3s ease, color 0.3s ease;
     }
 
     .container { padding: 24px; max-width: 960px; margin: 0 auto; }
@@ -74,56 +161,62 @@ const injectStyles = () => {
     .header {
       display: flex;
       align-items: flex-start;
-      gap: 12px;
-      margin-bottom: 24px;
+      gap: 16px;
+      margin-bottom: 32px;
     }
 
     .icon-wrapper {
-      padding: 10px;
-      border-radius: 8px;
+      padding: 12px;
+      border-radius: var(--border-radius-md);
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
-      background-color: var(--icon-bg);
-      color: var(--primary-color);
+      background: linear-gradient(135deg, var(--primary-600), #4f46e5);
+      color: white;
+      box-shadow: var(--shadow-glow);
     }
 
     .title {
       margin: 0 0 4px 0;
-      font-size: 20px;
-      font-weight: 600;
+      font-size: 24px;
+      font-weight: 700;
       line-height: 1.25;
-      color: var(--text-color);
+      color: var(--text-primary);
+      letter-spacing: -0.02em;
     }
 
     .subtitle {
       margin: 0;
-      font-size: 13px;
-      line-height: 1.4;
+      font-size: 14px;
+      line-height: 1.5;
       color: var(--text-secondary);
     }
 
     .license-banner {
       display: flex;
       align-items: center;
-      gap: 6px;
-      padding: 10px 14px;
-      border-radius: 4px;
+      gap: 8px;
+      padding: 12px 16px;
+      border-radius: var(--border-radius-sm);
       font-size: 13px;
       margin-bottom: 20px;
       border: 1px solid;
     }
 
     .license-active {
-      background: rgba(0, 102, 68, 0.1);
-      border-color: var(--success-color);
+      background: var(--alert-success-bg);
+      border-color: var(--alert-success-border);
+      color: #15803d;
+    }
+
+    html[data-color-mode="dark"] .license-active {
       color: var(--success-color);
     }
 
     .license-inactive {
-      background: rgba(222, 53, 11, 0.1);
-      border-color: var(--error-color);
+      background: var(--alert-error-bg);
+      border-color: var(--alert-error-border);
       color: var(--error-color);
     }
 
@@ -142,7 +235,7 @@ const injectStyles = () => {
       font-weight: 600;
       font-size: 14px;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.02em;
       color: var(--text-secondary);
     }
 
@@ -152,32 +245,46 @@ const injectStyles = () => {
     }
 
     .btn-small {
-      padding: 6px 12px;
+      padding: 8px 14px;
       font-size: 12px;
-      border: 1px solid var(--border-color);
-      border-radius: 4px;
+      border: 2px solid var(--border-color);
+      border-radius: var(--border-radius-sm);
       background: var(--card-bg);
-      color: var(--text-color);
+      color: var(--text-primary);
       cursor: pointer;
+      transition: all 0.3s ease;
+      font-weight: 500;
     }
 
-    .btn-small:hover:not(:disabled) { background: var(--hover-bg); }
-    .btn-small:disabled { opacity: 0.6; cursor: default; }
+    .btn-small:hover:not(:disabled) { 
+      border-color: var(--primary-600);
+      color: var(--primary-600);
+      box-shadow: var(--shadow-md);
+    }
+    
+    .btn-small:disabled { opacity: 0.6; cursor: not-allowed; }
 
     .btn-danger {
       color: var(--error-color);
       border-color: var(--error-color);
     }
 
-    .btn-danger:hover {
-      background: rgba(222, 53, 11, 0.1);
+    .btn-danger:hover:not(:disabled) {
+      background: var(--alert-error-bg);
     }
 
     .card {
       border: 1px solid var(--border-color);
-      border-radius: 8px;
+      border-radius: var(--border-radius-lg);
       background-color: var(--card-bg);
       overflow: hidden;
+      box-shadow: var(--shadow-sm);
+      transition: all 0.3s ease;
+    }
+
+    .card:hover {
+      border-color: var(--primary-500);
+      box-shadow: var(--shadow-glow-lg);
     }
 
     .table {
@@ -187,21 +294,22 @@ const injectStyles = () => {
 
     .table th {
       text-align: left;
-      padding: 10px 14px;
+      padding: 12px 14px;
       font-size: 11px;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.05em;
       color: var(--text-muted);
       background: var(--code-bg);
       border-bottom: 1px solid var(--border-color);
     }
 
     .table td {
-      padding: 10px 14px;
+      padding: 12px 14px;
       font-size: 13px;
       border-bottom: 1px solid var(--border-color);
       vertical-align: top;
+      transition: background-color 0.2s ease;
     }
 
     .table tr:last-child td { border-bottom: none; }
@@ -214,7 +322,7 @@ const injectStyles = () => {
 
     .workflow-name {
       font-weight: 600;
-      color: var(--text-color);
+      color: var(--text-primary);
     }
 
     .transition-info {
@@ -230,12 +338,12 @@ const injectStyles = () => {
     }
 
     .btn-edit {
-      color: var(--primary-color);
-      border-color: var(--primary-color);
+      color: var(--primary-600);
+      border-color: var(--primary-600);
     }
 
-    .btn-edit:hover {
-      background: rgba(0, 82, 204, 0.1);
+    .btn-edit:hover:not(:disabled) {
+      background: rgba(37, 99, 235, 0.08);
     }
 
     .row-actions {

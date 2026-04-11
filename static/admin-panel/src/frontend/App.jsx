@@ -20,7 +20,7 @@ import React, { useState, useEffect } from "react";
 import { Spinner } from "../../../shared/components/common/Spinner";
 import { Button } from "../../../shared/components/common/Button";
 import { Card } from "../../../shared/components/common/Card";
-import LicenseBanner from "../components/LicenseBanner";
+import LicenseBanner from "../../../shared/components/common/LicenseBanner";
 import RuleTable from "../components/RuleTable";
 import LogsSection from "../components/LogsSection";
 

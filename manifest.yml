@@ -83,6 +83,14 @@ modules:
       resolver:
         function: resolver
 
+  # Global Page - accessible from the main navigation
+  jira:globalPage:
+    - key: cognirunner-global-page
+      resource: admin-panel-resource
+      resolver:
+        function: resolver
+      title: CogniRunner Admin
+
   # Lambda function for validation and post function logic
   function:
     - key: validate
