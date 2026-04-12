@@ -394,7 +394,12 @@ function App() {
     try {
       const result = await invoke("getLogs");
       if (result.success) {
-        setLogs(result.logs || []);
+        let allLogs = result.logs || [];
+        // Filter to only show logs for this specific rule's field
+        if (config?.fieldId) {
+          allLogs = allLogs.filter((l) => l.fieldId === config.fieldId);
+        }
+        setLogs(allLogs);
       }
     } catch (e) {
       console.error("Failed to fetch logs:", e);
