@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import React, { useState } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import { invoke } from "@forge/bridge";
 import Tooltip from "./Tooltip";
 import CustomSelect from "./CustomSelect";
@@ -139,8 +139,45 @@ export default function FunctionBlock({ index, functionData, priorSteps, onUpdat
   const [testResult, setTestResult] = useState(null);
   const [testTarget, setTestTarget] = useState("");
   const [showTestPanel, setShowTestPanel] = useState(false);
+  const [opSuggested, setOpSuggested] = useState(false);
+  const suggestTimer = useRef(null);
 
   const update = (field, value) => onUpdate({ [field]: value });
+
+  // Auto-suggest operation type from prompt text (client-side heuristic, instant)
+  const suggestOperationType = useCallback((text) => {
+    if (!text || text.length < 10) return;
+    const t = text.toLowerCase();
+
+    let suggested = null;
+    if (/\b(search|find|query|jql|duplicate|look\s*up|fetch\s+issues|list\s+issues)\b/.test(t)) {
+      suggested = "work_item_query";
+    } else if (/\b(log|debug|print|trace|monitor)\b/.test(t)) {
+      suggested = "log_function";
+    } else if (/\b(confluence|wiki|page|space\s+key)\b/.test(t)) {
+      suggested = "confluence_api";
+    } else if (/\b(external|webhook|http|third.party|slack|teams|api\.example|outside\s+jira)\b/.test(t)) {
+      suggested = "rest_api_external";
+    } else if (/\b(update|modify|set|change|assign|transition|move|create|delete|comment|link|field|summary|description|priority|label|component|version)\b/.test(t)) {
+      suggested = "rest_api_internal";
+    }
+
+    if (suggested && suggested !== functionData.operationType) {
+      onUpdate({ operationType: suggested });
+      setOpSuggested(true);
+      // Clear the "suggested" badge after 4 seconds
+      setTimeout(() => setOpSuggested(false), 4000);
+    }
+  }, [functionData.operationType, onUpdate]);
+
+  const handlePromptChange = (e) => {
+    const val = e.target.value;
+    update("operationPrompt", val);
+
+    // Debounce suggestion — wait 800ms after user stops typing
+    if (suggestTimer.current) clearTimeout(suggestTimer.current);
+    suggestTimer.current = setTimeout(() => suggestOperationType(val), 800);
+  };
 
   const handleGenerate = async () => {
     setIsGenerating(true);
@@ -255,7 +292,7 @@ export default function FunctionBlock({ index, functionData, priorSteps, onUpdat
           className="textarea"
           rows={3}
           value={functionData.operationPrompt || ""}
-          onChange={(e) => update("operationPrompt", e.target.value)}
+          onChange={handlePromptChange}
           placeholder={'Example: "Find all issues in this project with the same summary and add a comment linking to them"'}
         />
       </div>
@@ -264,7 +301,8 @@ export default function FunctionBlock({ index, functionData, priorSteps, onUpdat
       <div className="form-group">
         <label className="label">
           Operation Type
-          <Tooltip text="Choose what kind of operation this step performs. This tells the AI code generator what APIs and patterns to use in the generated code." />
+          {opSuggested && <span className="op-suggested-badge">auto-detected</span>}
+          <Tooltip text="Auto-detected from your description. You can override it. This tells the AI code generator what APIs and patterns to use." />
         </label>
         <CustomSelect
           value={opType}

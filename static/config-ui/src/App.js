@@ -1014,6 +1014,27 @@ const injectStyles = () => {
       cursor: help;
     }
 
+    /* Auto-detected operation badge */
+    .op-suggested-badge {
+      display: inline-block;
+      margin-left: 6px;
+      padding: 1px 6px;
+      border-radius: 3px;
+      background: rgba(37, 99, 235, 0.1);
+      color: var(--primary-color);
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      vertical-align: middle;
+      animation: fadeInBadge 0.3s ease;
+    }
+
+    @keyframes fadeInBadge {
+      from { opacity: 0; transform: scale(0.8); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
     /* Operation-specific fields */
     .op-fields {
       display: grid;
