@@ -988,31 +988,65 @@ const injectStyles = () => {
 
     /* Prior step variables indicator */
     .prior-vars-bar {
+      padding: 10px 12px;
+      margin-bottom: 14px;
+      border-radius: 8px;
+      background: rgba(37, 99, 235, 0.06);
+      border: 1px solid rgba(37, 99, 235, 0.2);
+    }
+
+    .prior-vars-header {
       display: flex;
       align-items: center;
       gap: 6px;
-      padding: 6px 10px;
-      margin-bottom: 12px;
-      border-radius: 6px;
-      background: rgba(37, 99, 235, 0.06);
-      border: 1px solid rgba(37, 99, 235, 0.15);
-      flex-wrap: wrap;
+      margin-bottom: 8px;
+      color: var(--primary-color);
     }
 
     .prior-vars-label {
       font-size: 11px;
-      color: var(--text-muted);
-      white-space: nowrap;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      color: var(--primary-color);
+    }
+
+    .prior-vars-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .prior-var-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
     .prior-var-tag {
-      padding: 2px 8px;
+      padding: 3px 10px;
       border-radius: 4px;
       background: var(--primary-color);
       color: white;
-      font-size: 11px;
+      font-size: 12px;
       font-family: SFMono-Regular, Consolas, monospace;
-      cursor: help;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .prior-var-desc {
+      font-size: 11px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .prior-vars-hint {
+      margin: 6px 0 0 0;
+      font-size: 10px;
+      color: var(--text-muted);
+      font-style: italic;
     }
 
     /* Auto-detected operation badge */
@@ -1665,7 +1699,7 @@ function App() {
     operationPrompt: "",
     endpoint: "",
     method: "GET",
-    variableName: "",
+    variableName: "result1",
     code: "",
     includeBackoff: false,
   }]);

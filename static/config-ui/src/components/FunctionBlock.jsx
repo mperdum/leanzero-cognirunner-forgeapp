@@ -274,12 +274,26 @@ export default function FunctionBlock({ index, functionData, priorSteps, onUpdat
       {/* Available variables from prior steps */}
       {priorSteps && priorSteps.filter((s) => s.variableName).length > 0 && (
         <div className="prior-vars-bar">
-          <span className="prior-vars-label">Available from prior steps:</span>
-          {priorSteps.filter((s) => s.variableName).map((s, i) => (
-            <code key={i} className="prior-var-tag" title={s.operationPrompt || s.name || `Step ${i + 1}`}>
-              {s.variableName}
-            </code>
-          ))}
+          <div className="prior-vars-header">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="16 18 22 12 16 6" />
+              <polyline points="8 6 2 12 8 18" />
+            </svg>
+            <span className="prior-vars-label">Variables from previous steps</span>
+          </div>
+          <div className="prior-vars-list">
+            {priorSteps.filter((s) => s.variableName).map((s, i) => (
+              <div key={i} className="prior-var-item">
+                <code className="prior-var-tag">{s.variableName}</code>
+                <span className="prior-var-desc">
+                  Step {i + 1}{s.name ? `: ${s.name}` : ""}{s.operationPrompt ? ` — ${s.operationPrompt.substring(0, 60)}` : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="prior-vars-hint">
+            Use these in your description or code. The AI knows about them and will reference them automatically.
+          </p>
         </div>
       )}
 

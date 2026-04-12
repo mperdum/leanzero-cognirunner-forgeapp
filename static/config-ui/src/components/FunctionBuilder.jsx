@@ -11,7 +11,10 @@ import Tooltip from "./Tooltip";
 
 const MAX_FUNCTIONS = 50;
 
+let funcCounter = 1;
+
 function createEmptyFunction() {
+  const num = funcCounter++;
   return {
     id: `func_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
     name: "",
@@ -20,7 +23,7 @@ function createEmptyFunction() {
     operationPrompt: "",
     endpoint: "",
     method: "GET",
-    variableName: "",
+    variableName: `result${num}`,
     code: "",
     includeBackoff: false,
   };
