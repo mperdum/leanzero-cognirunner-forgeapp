@@ -222,6 +222,18 @@ const injectStyles = () => {
       color: var(--text-muted);
     }
 
+    .log-type-badge {
+      display: inline-block;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 600;
+      background: rgba(37, 99, 235, 0.1);
+      color: var(--primary-color);
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
     .log-tools-badge {
       display: inline-block;
       padding: 1px 5px;
@@ -395,9 +407,18 @@ function App() {
       const result = await invoke("getLogs");
       if (result.success) {
         let allLogs = result.logs || [];
-        // Filter to only show logs for this specific rule's field
-        if (config?.fieldId) {
-          allLogs = allLogs.filter((l) => l.fieldId === config.fieldId);
+        // Filter to only show logs for this specific rule
+        if (config?.type?.includes("postfunction")) {
+          // Post-function: match by type and action field
+          const pfType = config.type;
+          const actionField = config.actionFieldId || config.fieldId || "";
+          allLogs = allLogs.filter((l) =>
+            (l.type && l.type.includes("postfunction")) &&
+            (l.fieldId === actionField || l.fieldId === "static-code" || pfType.includes("static"))
+          );
+        } else if (config?.fieldId) {
+          // Validator/condition: match by field ID
+          allLogs = allLogs.filter((l) => l.fieldId === config.fieldId && (!l.type || l.type === "validation"));
         }
         setLogs(allLogs);
       }
@@ -685,7 +706,7 @@ function App() {
         {/* Still show logs section even without config */}
         <div className="logs-section">
           <div className="logs-header">
-            <span className="logs-title">Validation Logs</span>
+            <span className="logs-title">{config?.type?.includes("postfunction") ? "Execution Logs" : "Validation Logs"}</span>
             <div className="logs-actions">
               <button
                 className="btn-small"
@@ -847,7 +868,7 @@ function App() {
       {/* Logs section */}
       <div className="logs-section">
         <div className="logs-header">
-          <span className="logs-title">Validation Logs</span>
+          <span className="logs-title">{config?.type?.includes("postfunction") ? "Execution Logs" : "Validation Logs"}</span>
           <div className="logs-actions">
             <button
               className="btn-small"
@@ -881,19 +902,39 @@ function App() {
               logs.map((log) => (
                 <div key={log.id} className="log-entry">
                   <div className="log-header">
-                    <span
-                      className={`log-status ${log.isValid ? "valid" : "invalid"}`}
-                    >
-                      {log.isValid ? "PASS" : "FAIL"}
+                    <span className={`log-status ${log.isValid ? "valid" : "invalid"}`}>
+                      {log.type === "postfunction-semantic" ? (log.isValid ? "OK" : "ERR")
+                        : log.type === "postfunction-static" ? (log.isValid ? "OK" : "ERR")
+                        : (log.isValid ? "PASS" : "FAIL")}
                     </span>
+                    {log.type && log.type !== "validation" && (
+                      <span className="log-type-badge">{log.type.replace("postfunction-", "PF: ")}</span>
+                    )}
                     <span className="log-issue">{log.issueKey}</span>
-                    <span className="log-time">
-                      {formatTime(log.timestamp)}
-                    </span>
+                    <span className="log-time">{formatTime(log.timestamp)}</span>
+                    {log.executionTimeMs && (
+                      <span className="log-time">{log.executionTimeMs}ms</span>
+                    )}
                   </div>
-                  <div className="log-details">
-                    Field: <code>{log.fieldId}</code>
-                  </div>
+                  {log.fieldId && log.fieldId !== "static-code" && (
+                    <div className="log-details">
+                      Field: <code>{log.fieldId}</code>
+                      {log.mode && <span style={{ marginLeft: "8px", fontSize: "10px", color: "var(--text-muted)" }}>({log.mode})</span>}
+                      {log.docsUsed && <span style={{ marginLeft: "4px", fontSize: "10px", color: "var(--primary-color)" }}>+ docs</span>}
+                    </div>
+                  )}
+                  {log.decision && (
+                    <div className="log-details">
+                      Decision: <strong>{log.decision}</strong>
+                      {log.changes !== undefined && <span> | {log.changes} change{log.changes !== 1 ? "s" : ""}</span>}
+                      {log.steps && <span> | {log.steps} step{log.steps !== 1 ? "s" : ""}</span>}
+                    </div>
+                  )}
+                  {log.workflowName && (
+                    <div className="log-details" style={{ fontSize: "10px", color: "var(--text-muted)" }}>
+                      Transition: {log.workflowName}{log.transitionName ? ` (${log.transitionName})` : ""}
+                    </div>
+                  )}
                   <div className="log-reason">{log.reason}</div>
                   {log.toolMeta?.toolsUsed && (
                     <div className="log-tools">

@@ -2963,6 +2963,7 @@ const getFieldValue = async (issueKey, fieldId, modifiedFields) => {
  * and passed in args.configuration
  */
 export const validate = async (args) => {
+  const validateStartTime = Date.now();
   console.log("AI Validator called with args:", JSON.stringify(args, null, 2));
 
   const { issue, configuration, modifiedFields } = args;
@@ -3132,14 +3133,23 @@ export const validate = async (args) => {
 
   console.log("Validation result:", validationResult);
 
-  // Store the validation log (include tool metadata when agentic mode was used)
+  // Store the validation log with full context
+  const executionTimeMs = Date.now() - validateStartTime;
   const logEntry = {
+    type: "validation",
     issueKey: issue.key || "(new issue)",
     fieldId,
-    fieldValue: String(logFieldValue || "").substring(0, 200),
-    prompt: validationPrompt.substring(0, 100),
+    fieldValue: String(logFieldValue || "").substring(0, 300),
+    prompt: validationPrompt.substring(0, 200),
     isValid: validationResult.isValid,
     reason: validationResult.reason,
+    executionTimeMs,
+    mode: useTools ? "agentic" : "standard",
+    // Workflow context (available from Forge transition args)
+    workflowName: args?.transition?.from_status
+      ? `${args.transition.from_status} → ${args.transition.to_status}`
+      : undefined,
+    transitionName: args?.transition?.transitionName || undefined,
   };
   if (validationResult.toolMeta) {
     logEntry.toolMeta = {
@@ -3148,6 +3158,9 @@ export const validate = async (args) => {
       queries: validationResult.toolMeta.queries.map((q) => q.substring(0, 150)),
       totalResults: validationResult.toolMeta.totalResults,
     };
+  }
+  if (contextDocsText) {
+    logEntry.docsUsed = true;
   }
   await storeLog(logEntry);
 
@@ -3416,20 +3429,52 @@ export const executePostFunction = async (args) => {
     console.log("Could not check disabled status:", e);
   }
 
+  const pfStartTime = Date.now();
   try {
     const type = config.type || "";
     if (type.includes("semantic")) {
       const result = await executeSemanticPostFunction(issue.key, config);
       console.log("Semantic PF result:", result);
+      await storeLog({
+        type: "postfunction-semantic",
+        issueKey: issue.key,
+        fieldId: config.actionFieldId || config.fieldId || "",
+        isValid: result.success,
+        reason: result.decision === "UPDATE"
+          ? `Updated field "${config.actionFieldId}": ${result.reason}`
+          : `Skipped: ${result.reason}`,
+        decision: result.decision,
+        executionTimeMs: Date.now() - pfStartTime,
+      });
     } else if (type.includes("static")) {
       const result = await executeStaticPostFunction(issue.key, config);
       console.log("Static PF result:", JSON.stringify(result));
+      await storeLog({
+        type: "postfunction-static",
+        issueKey: issue.key,
+        fieldId: "static-code",
+        isValid: result.success,
+        reason: result.success
+          ? `Executed ${config.functions?.length || 0} step(s): ${(result.logs || []).slice(-1)[0] || "completed"}`
+          : `Error: ${(result.logs || []).filter((l) => l.includes("ERROR")).join("; ") || "unknown"}`,
+        executionTimeMs: Date.now() - pfStartTime,
+        changes: result.changes?.length || 0,
+        steps: config.functions?.length || 0,
+      });
     } else {
       console.log("Unknown post-function type:", type);
     }
   } catch (error) {
     // Fail open — never block the transition
     console.error("Post-function execution error:", error);
+    await storeLog({
+      type: "postfunction-error",
+      issueKey: issue.key,
+      fieldId: config.type || "unknown",
+      isValid: false,
+      reason: `Post-function error: ${error.message}`,
+      executionTimeMs: Date.now() - pfStartTime,
+    });
   }
 
   return { result: true };
