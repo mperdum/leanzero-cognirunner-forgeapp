@@ -2006,8 +2006,20 @@ function App() {
           }
           if (extType === "jira:workflowPostFunction") {
             setIsPostFunction(true);
-            // Determine sub-type from existing config or default to semantic
-            const pfType = config?.type?.includes("static") ? "static" : "semantic";
+            // Determine sub-type from saved config OR from the module key
+            const extKey = context?.extension?.key || "";
+            let pfType;
+            if (config?.type?.includes("static")) {
+              pfType = "static";
+            } else if (config?.type?.includes("semantic")) {
+              pfType = "semantic";
+            } else if (extKey.includes("static")) {
+              pfType = "static";
+            } else if (extKey.includes("semantic")) {
+              pfType = "semantic";
+            } else {
+              pfType = "semantic"; // absolute fallback
+            }
             setPostFunctionType(pfType);
             currentPostFunctionType = pfType;
           }
