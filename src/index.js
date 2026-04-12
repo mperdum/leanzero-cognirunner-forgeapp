@@ -1100,8 +1100,8 @@ resolver.define("getOpenAIModels", async () => {
   try {
     const byokKey = await storage.get("COGNIRUNNER_OPENAI_API_KEY");
     if (!byokKey) {
-      // Factory key — no model selection available
-      const factoryModel = process.env.OPENAI_MODEL || "gpt-5-mini";
+      // Factory key — no model selection available, show auto-detected model
+      const factoryModel = await getOpenAIModel();
       return { success: true, models: [], isByok: false, currentModel: factoryModel };
     }
 
@@ -1159,7 +1159,7 @@ resolver.define("getOpenAIModelFromKVS", async () => {
   try {
     const byokKey = await storage.get("COGNIRUNNER_OPENAI_API_KEY");
     if (!byokKey) {
-      const factoryModel = process.env.OPENAI_MODEL || "gpt-5-mini";
+      const factoryModel = await getOpenAIModel();
       return { success: true, model: factoryModel, isByok: false };
     }
     const savedModel = await storage.get("COGNIRUNNER_OPENAI_MODEL");
@@ -1418,9 +1418,9 @@ resolver.define("generatePostFunctionCode", async ({ payload }) => {
     // Always use the best available model for code generation — code quality
     // matters more than token cost here. Fall back to configured model only
     // if the top model is unavailable.
-    const CODE_GEN_MODEL = "gpt-4.1";
+    // For code generation, use the best available full model (not mini)
     const configuredModel = await getOpenAIModel();
-    const model = CODE_GEN_MODEL || configuredModel;
+    const model = configuredModel;
 
     const systemPrompt = `You are an expert Jira automation engineer generating JavaScript for Forge workflow post-functions. Your code runs in a sandboxed Node.js 22 environment after a Jira workflow transition completes. Write production-quality code that handles edge cases.
 
@@ -2267,7 +2267,53 @@ const isByokActive = async () => {
 };
 
 /**
- * Get the OpenAI model — if BYOK, checks user-saved model; if factory, returns env var model.
+ * Auto-detect the best available mini model from OpenAI.
+ * Queries /v1/models, picks the latest *-mini model, caches in KVS for 24h.
+ */
+const detectBestMiniModel = async (apiKey) => {
+  const CACHE_KEY = "COGNIRUNNER_AUTO_MODEL";
+  const FALLBACK = "gpt-4o-mini"; // safe universal fallback
+
+  // Check cache first (avoid calling /v1/models on every request)
+  try {
+    const cached = await storage.get(CACHE_KEY);
+    if (cached && cached.model && cached.ts && (Date.now() - cached.ts < 24 * 60 * 60 * 1000)) {
+      return cached.model;
+    }
+  } catch (e) { /* cache miss */ }
+
+  // Query available models
+  try {
+    const response = await fetch("https://api.openai.com/v1/models", {
+      method: "GET",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!response.ok) return FALLBACK;
+    const data = await response.json();
+    const models = (data.data || []).map((m) => m.id).sort();
+
+    // Priority order: newest mini models first
+    const miniPreference = [
+      "gpt-5.4-mini", "gpt-5.2-mini", "gpt-5-mini",
+      "gpt-4.1-mini", "gpt-4o-mini",
+    ];
+    const bestMini = miniPreference.find((m) => models.includes(m)) || FALLBACK;
+
+    // Cache for 24 hours
+    try {
+      await storage.set(CACHE_KEY, { model: bestMini, ts: Date.now() });
+    } catch (e) { /* cache write failed, not critical */ }
+
+    console.log(`Auto-detected best mini model: ${bestMini}`);
+    return bestMini;
+  } catch (e) {
+    console.error("Model auto-detection failed:", e);
+    return FALLBACK;
+  }
+};
+
+/**
+ * Get the OpenAI model — if BYOK, checks user-saved model; if factory, auto-detects best mini.
  */
 const getOpenAIModel = async () => {
   try {
@@ -2279,7 +2325,15 @@ const getOpenAIModel = async () => {
   } catch (error) {
     console.error("Error reading OpenAI model from storage:", error);
   }
-  return process.env.OPENAI_MODEL || "gpt-5-mini";
+
+  // If env var is explicitly set, use it
+  if (process.env.OPENAI_MODEL) return process.env.OPENAI_MODEL;
+
+  // Auto-detect the best available mini model
+  const apiKey = await getOpenAIKey();
+  if (apiKey) return detectBestMiniModel(apiKey);
+
+  return "gpt-4o-mini"; // absolute fallback
 };
 
 /**
