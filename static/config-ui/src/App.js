@@ -1424,6 +1424,49 @@ const injectStyles = () => {
     }
     .issue-picker-clear:hover { color: var(--text-color); }
 
+    .issue-picker-valid { border-color: var(--success-color); }
+    .issue-picker-valid:focus-within { box-shadow: 0 0 0 3px rgba(22, 163, 106, 0.1); border-color: var(--success-color); }
+    .issue-picker-invalid { border-color: var(--error-color); }
+    .issue-picker-invalid:focus-within { box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1); border-color: var(--error-color); }
+
+    .issue-picker-validated {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      margin-top: 4px;
+      border-radius: 6px;
+      font-size: 11px;
+    }
+
+    .issue-picker-validated-ok {
+      background: rgba(22, 163, 106, 0.06);
+      color: var(--success-color);
+      border: 1px solid rgba(22, 163, 106, 0.15);
+    }
+
+    .issue-picker-validated-err {
+      background: rgba(220, 38, 38, 0.06);
+      color: var(--error-color);
+      border: 1px solid rgba(220, 38, 38, 0.15);
+    }
+
+    .issue-picker-validated strong { color: var(--text-color); }
+    .issue-picker-validated-summary {
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+    }
+    .issue-picker-validated-status {
+      padding: 1px 6px;
+      border-radius: 3px;
+      background: var(--code-bg);
+      font-size: 10px;
+      flex-shrink: 0;
+    }
+
     .issue-picker-dropdown {
       position: absolute;
       top: calc(100% + 4px);
