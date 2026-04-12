@@ -2132,14 +2132,15 @@ resolver.define("testPostFunction", async ({ payload }) => {
   const testApi = {
     getIssue: async (key) => {
       const lookupKey = key || resolvedKey;
-      if (mode === "live") {
+      // Always try real API if a real key is provided (not MOCK-1)
+      if (lookupKey && lookupKey !== "MOCK-1") {
         testLogs.push(`getIssue("${lookupKey}") — fetching real data`);
         try {
           const res = await api.asApp().requestJira(
             route`/rest/api/3/issue/${lookupKey}?expand=renderedFields`,
           );
           if (!res.ok) {
-            testLogs.push(`getIssue failed (${res.status}) — using error placeholder`);
+            testLogs.push(`getIssue failed (${res.status})`);
             return { key: lookupKey, fields: {}, error: `HTTP ${res.status}` };
           }
           const data = await res.json();
@@ -2150,15 +2151,15 @@ resolver.define("testPostFunction", async ({ payload }) => {
           return { key: lookupKey, fields: {}, error: e.message };
         }
       }
-      testLogs.push(`getIssue("${lookupKey}") — mock data`);
+      testLogs.push(`getIssue("${lookupKey}") — mock data (no real key)`);
       return {
-        key: lookupKey,
+        key: lookupKey || "MOCK-1",
         fields: {
           summary: "[Mock] Sample issue for testing",
           status: { name: "To Do", id: "10000" },
           issuetype: { name: "Task" },
           priority: { name: "Medium" },
-          description: "This is mock data. Specify an issue key or JQL for real data.",
+          description: "This is mock data. Select an issue for real data.",
           assignee: null,
           reporter: { displayName: "Test User" },
           labels: [],
@@ -2174,27 +2175,24 @@ resolver.define("testPostFunction", async ({ payload }) => {
     },
 
     searchJql: async (searchJql) => {
-      if (mode === "live") {
-        testLogs.push(`searchJql("${searchJql}") — running real search`);
-        try {
-          const res = await api.asApp().requestJira(
-            route`/rest/api/3/search`,
-            { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jql: searchJql, maxResults: 10 }) },
-          );
-          if (!res.ok) {
-            testLogs.push(`searchJql failed (${res.status})`);
-            return { issues: [], total: 0 };
-          }
-          const data = await res.json();
-          testLogs.push(`searchJql — found ${data.total} issues (returning first ${data.issues?.length || 0})`);
-          return data;
-        } catch (e) {
-          testLogs.push(`searchJql error: ${e.message}`);
+      // Always run real JQL — it's a read operation and the whole point of testing
+      testLogs.push(`searchJql("${searchJql}") — running real search`);
+      try {
+        const res = await api.asApp().requestJira(
+          route`/rest/api/3/search`,
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jql: searchJql, maxResults: 10 }) },
+        );
+        if (!res.ok) {
+          testLogs.push(`searchJql failed (${res.status})`);
           return { issues: [], total: 0 };
         }
+        const data = await res.json();
+        testLogs.push(`searchJql — found ${data.total} issues (returning first ${data.issues?.length || 0})`);
+        return data;
+      } catch (e) {
+        testLogs.push(`searchJql error: ${e.message}`);
+        return { issues: [], total: 0 };
       }
-      testLogs.push(`searchJql("${searchJql}") — mock, returning empty`);
-      return { issues: [], total: 0 };
     },
 
     transitionIssue: async (key, transitionId) => {

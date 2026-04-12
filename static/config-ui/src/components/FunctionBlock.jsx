@@ -551,8 +551,8 @@ export default function FunctionBlock({ index, functionData, priorSteps, onUpdat
 
               <div className="test-panel-target">
                 <label className="label" style={{ fontSize: "11px", marginBottom: "4px" }}>
-                  Test against issue
-                  <Tooltip text="Search for a Jira issue to test your code with real data. api.getIssue() and api.searchJql() will return real results. Writes (updateIssue, transitionIssue) are always safe — they log what would happen but never change anything." />
+                  Issue context (optional)
+                  <Tooltip text="Optionally select an issue to set api.context.issueKey. JQL searches always run against real Jira data regardless. Writes (updateIssue, transitionIssue) are always safe — logged but never executed." />
                 </label>
                 <div className="test-target-row">
                   <IssuePicker
@@ -584,9 +584,10 @@ export default function FunctionBlock({ index, functionData, priorSteps, onUpdat
                   </button>
                 </div>
                 <p className="hint" style={{ marginTop: "4px" }}>
+                  JQL searches always run against real Jira data. Writes are always safe (dry run).
                   {testTarget.trim()
-                    ? "Reads use real Jira data. Writes are always safe (dry run)."
-                    : "No issue selected — will use mock data. Search for an issue for real results."
+                    ? ` Using ${testTarget} as api.context.issueKey.`
+                    : " api.context.issueKey will be MOCK-1 — select an issue to set a real one."
                   }
                 </p>
               </div>
