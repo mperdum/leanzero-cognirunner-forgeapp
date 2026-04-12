@@ -610,31 +610,107 @@ export default function FunctionBlock({ index, functionData, priorSteps, onUpdat
           {/* API Reference panel */}
           {showApiRef && (
             <div className="api-ref-panel">
-              <div className="api-ref-title">Available API</div>
+              <div className="api-ref-title">Sandbox API</div>
               <div className="api-ref-grid">
                 <div className="api-ref-item">
                   <code>api.getIssue(key)</code>
-                  <span>Fetch issue data by key. Returns full issue object with fields.</span>
+                  <span>Returns: <code>{`{key, fields: {summary, status, priority, assignee, description, labels, ...}}`}</code></span>
                 </div>
                 <div className="api-ref-item">
                   <code>api.updateIssue(key, fields)</code>
-                  <span>Update issue fields. Pass an object like <code>{`{summary: "New title"}`}</code></span>
+                  <span>Fields object: <code>{`{summary: "text", priority: {name: "High"}, labels: ["a","b"]}`}</code>. ADF required for description.</span>
                 </div>
                 <div className="api-ref-item">
                   <code>api.searchJql(jql)</code>
-                  <span>Search issues by JQL query. Returns <code>{`{issues: [...]}`}</code> (max 20 results).</span>
+                  <span>Returns: <code>{`{issues: [{key, fields}], total}`}</code>. Max 20 results. JQL operators: =, !=, ~, IN, IS EMPTY</span>
                 </div>
                 <div className="api-ref-item">
                   <code>api.transitionIssue(key, id)</code>
-                  <span>Move an issue to a different status using the transition ID.</span>
+                  <span>Transition ID is a number (string). Get valid IDs from the workflow definition.</span>
                 </div>
                 <div className="api-ref-item">
-                  <code>api.log(message)</code>
-                  <span>Log a debug message. Visible in test results and execution logs.</span>
+                  <code>api.log(...args)</code>
+                  <span>Logs to execution trace. Objects auto-stringified. Visible in test results and validation logs.</span>
                 </div>
                 <div className="api-ref-item">
                   <code>api.context.issueKey</code>
-                  <span>The current issue key (e.g., "PROJ-123") being transitioned.</span>
+                  <span>The issue being transitioned (e.g., "PROJ-123"). Use to get the current issue key.</span>
+                </div>
+              </div>
+
+              <div className="api-ref-title" style={{ marginTop: "12px" }}>Field Update Formats</div>
+              <div className="api-ref-grid">
+                <div className="api-ref-item">
+                  <code>summary</code>
+                  <span><code>{`"text string"`}</code></span>
+                </div>
+                <div className="api-ref-item">
+                  <code>priority</code>
+                  <span><code>{`{name: "High"}`}</code> or <code>{`{id: "1"}`}</code></span>
+                </div>
+                <div className="api-ref-item">
+                  <code>assignee</code>
+                  <span><code>{`{accountId: "5f..."}`}</code> — never username</span>
+                </div>
+                <div className="api-ref-item">
+                  <code>labels</code>
+                  <span><code>{`["bug", "reviewed"]`}</code> — overwrites all labels</span>
+                </div>
+                <div className="api-ref-item">
+                  <code>components</code>
+                  <span><code>{`[{id: "10001"}]`}</code> or <code>{`[{name: "Backend"}]`}</code></span>
+                </div>
+                <div className="api-ref-item">
+                  <code>description</code>
+                  <span><code>{`{type:"doc", version:1, content:[{type:"paragraph", content:[{type:"text", text:"..."}]}]}`}</code></span>
+                </div>
+                <div className="api-ref-item">
+                  <code>duedate</code>
+                  <span><code>{`"2025-12-31"`}</code> — ISO date, no time</span>
+                </div>
+                <div className="api-ref-item">
+                  <code>custom select</code>
+                  <span><code>{`{value: "Option Name"}`}</code></span>
+                </div>
+                <div className="api-ref-item">
+                  <code>custom multi-select</code>
+                  <span><code>{`[{value: "A"}, {value: "B"}]`}</code></span>
+                </div>
+              </div>
+
+              <div className="api-ref-title" style={{ marginTop: "12px" }}>JQL Quick Reference</div>
+              <div className="api-ref-grid">
+                <div className="api-ref-item">
+                  <code>project = PROJ</code>
+                  <span>Filter by project key</span>
+                </div>
+                <div className="api-ref-item">
+                  <code>status = "To Do"</code>
+                  <span>Exact status match (quote multi-word)</span>
+                </div>
+                <div className="api-ref-item">
+                  <code>summary ~ "keyword"</code>
+                  <span>Contains text in summary</span>
+                </div>
+                <div className="api-ref-item">
+                  <code>text ~ "search"</code>
+                  <span>Full-text search across all fields</span>
+                </div>
+                <div className="api-ref-item">
+                  <code>created >= -7d</code>
+                  <span>Relative dates: -1d, -7d, -30d, startOfDay(), endOfWeek()</span>
+                </div>
+                <div className="api-ref-item">
+                  <code>assignee = currentUser()</code>
+                  <span>Issues assigned to current user</span>
+                </div>
+                <div className="api-ref-item">
+                  <code>labels IN ("bug","urgent")</code>
+                  <span>Multiple value match</span>
+                </div>
+                <div className="api-ref-item">
+                  <code>ORDER BY updated DESC</code>
+                  <span>Sort results (append to any JQL)</span>
                 </div>
               </div>
             </div>
