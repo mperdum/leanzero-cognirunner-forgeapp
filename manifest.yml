@@ -117,6 +117,7 @@ permissions:
     - read:issue-type-screen-scheme:jira
     - read:screen-scheme:jira
     - read:screen-tab:jira
+    - manage:jira-configuration
     - read:screenable-field:jira
   external:
     fetch:
