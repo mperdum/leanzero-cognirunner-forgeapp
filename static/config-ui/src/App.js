@@ -722,8 +722,13 @@ const injectStyles = () => {
       background: transparent;
       color: var(--primary-color);
       border: 1px solid var(--primary-color);
+      box-shadow: none;
     }
-    .btn-generate-secondary:hover:not(:disabled) { background: var(--icon-bg); opacity: 1; }
+    .btn-generate-secondary:hover:not(:disabled) {
+      background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), transparent);
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.15);
+      transform: translateY(-1px);
+    }
 
     .generate-hint {
       font-size: 12px;
@@ -741,16 +746,22 @@ const injectStyles = () => {
 
     .btn-advanced-toggle {
       background: none;
-      border: none;
+      border: 1px solid transparent;
+      border-radius: 6px;
       color: var(--text-muted);
       font-size: 11px;
       cursor: pointer;
-      padding: 4px 0;
+      padding: 4px 8px;
       display: flex;
       align-items: center;
       gap: 4px;
+      transition: all 0.2s ease;
     }
-    .btn-advanced-toggle:hover { color: var(--text-secondary); }
+    .btn-advanced-toggle:hover {
+      color: var(--text-secondary);
+      background: var(--code-bg);
+      border-color: var(--border-color);
+    }
 
     .toggle-chevron {
       display: inline-flex;
@@ -774,21 +785,22 @@ const injectStyles = () => {
     /* Add function button */
     .btn-add-function {
       width: 100%;
-      padding: 12px;
+      padding: 14px;
       border: 2px dashed var(--border-color);
-      border-radius: 10px;
+      border-radius: 12px;
       background: transparent;
       color: var(--text-secondary);
       font-size: 13px;
       font-weight: 500;
       cursor: pointer;
       margin-top: 8px;
-      transition: all 0.2s ease;
+      transition: all 0.3s ease;
     }
     .btn-add-function:hover:not(:disabled) {
       border-color: var(--primary-color);
       color: var(--primary-color);
-      background: var(--icon-bg);
+      background: linear-gradient(135deg, rgba(37, 99, 235, 0.04), transparent);
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08);
     }
     .btn-add-function:disabled { opacity: 0.5; cursor: default; }
 
@@ -804,9 +816,10 @@ const injectStyles = () => {
     .doc-repo {
       margin: 12px 0;
       border: 1px solid var(--border-color);
-      border-radius: 8px;
+      border-radius: 10px;
       overflow: hidden;
-      background: var(--input-bg);
+      background: linear-gradient(135deg, var(--card-bg), rgba(37, 99, 235, 0.01));
+      box-shadow: 0 1px 4px rgba(0,0,0,0.03);
     }
 
     .doc-repo-header {
@@ -834,13 +847,17 @@ const injectStyles = () => {
       font-size: 11px;
       font-weight: 500;
       border: 1px solid var(--primary-color);
-      border-radius: 4px;
+      border-radius: 6px;
       background: transparent;
       color: var(--primary-color);
       cursor: pointer;
-      transition: all 0.15s ease;
+      transition: all 0.25s ease;
     }
-    .btn-add-doc:hover { background: rgba(37, 99, 235, 0.1); }
+    .btn-add-doc:hover {
+      background: rgba(37, 99, 235, 0.1);
+      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.12);
+      transform: translateY(-1px);
+    }
 
     .doc-add-form {
       padding: 12px;
@@ -1021,11 +1038,12 @@ const injectStyles = () => {
 
     /* Prior step variables indicator */
     .prior-vars-bar {
-      padding: 10px 12px;
+      padding: 12px 14px;
       margin-bottom: 14px;
-      border-radius: 8px;
-      background: rgba(37, 99, 235, 0.06);
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(37, 99, 235, 0.06), rgba(37, 99, 235, 0.02));
       border: 1px solid rgba(37, 99, 235, 0.2);
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.06);
     }
 
     .prior-vars-header {
@@ -1114,9 +1132,10 @@ const injectStyles = () => {
     .reliability-section {
       margin: 12px 0;
       padding: 10px 14px;
-      border-radius: 8px;
-      background: var(--code-bg);
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--code-bg), rgba(37, 99, 235, 0.02));
       border: 1px solid var(--border-color);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.03);
     }
 
     .reliability-header {
@@ -1281,10 +1300,11 @@ const injectStyles = () => {
     /* Test panel */
     .test-panel {
       margin-top: 10px;
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
+      border: 1px solid rgba(22, 163, 106, 0.2);
+      border-radius: 10px;
       overflow: hidden;
-      background: var(--input-bg);
+      background: linear-gradient(135deg, var(--input-bg), rgba(22, 163, 106, 0.02));
+      box-shadow: 0 2px 8px rgba(22, 163, 106, 0.06);
     }
 
     .test-panel-header {
@@ -1332,14 +1352,15 @@ const injectStyles = () => {
       display: flex;
       align-items: center;
       border: 2px solid var(--border-color);
-      border-radius: 4px;
+      border-radius: 8px;
       background: var(--input-bg);
       padding: 0 8px;
-      transition: border-color 0.15s ease;
+      transition: all 0.2s ease;
     }
 
     .issue-picker-input-wrap:focus-within {
       border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
     }
 
     .issue-picker-icon { color: var(--text-muted); flex-shrink: 0; }
@@ -1384,7 +1405,7 @@ const injectStyles = () => {
       z-index: 100;
       background: var(--card-bg);
       border: 2px solid var(--primary-color);
-      border-radius: 6px;
+      border-radius: 10px;
       box-shadow: 0 8px 24px rgba(0,0,0,0.15);
       max-height: 300px;
       overflow-y: auto;
@@ -1398,7 +1419,7 @@ const injectStyles = () => {
       padding: 8px 12px;
       cursor: pointer;
       border-bottom: 1px solid var(--border-color);
-      transition: background 0.1s ease;
+      transition: all 0.15s ease;
     }
 
     .issue-picker-item:last-child { border-bottom: none; }
@@ -1447,14 +1468,15 @@ const injectStyles = () => {
       font-size: 12px;
       font-weight: 600;
       border: none;
-      border-radius: 4px;
-      background: var(--success-color);
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--success-color), #15803d);
       color: white;
       cursor: pointer;
-      transition: opacity 0.15s ease;
+      transition: all 0.25s ease;
       white-space: nowrap;
+      box-shadow: 0 2px 8px rgba(22, 163, 106, 0.25);
     }
-    .btn-run-test:hover:not(:disabled) { opacity: 0.85; }
+    .btn-run-test:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(22, 163, 106, 0.35); }
     .btn-run-test:disabled { opacity: 0.5; cursor: default; }
 
     /* Test result */
@@ -1531,9 +1553,10 @@ const injectStyles = () => {
       align-items: center;
       gap: 8px;
       padding: 10px 16px;
-      margin: 0 0 0 0;
+      margin: 0;
       background: rgba(220, 38, 38, 0.06);
       border-bottom: 1px solid rgba(220, 38, 38, 0.15);
+      border-left: 3px solid var(--error-color);
       color: var(--error-color);
       font-size: 12px;
     }
@@ -1551,13 +1574,17 @@ const injectStyles = () => {
       font-size: 12px;
       font-weight: 600;
       border: 1px solid var(--primary-color);
-      border-radius: 6px;
+      border-radius: 8px;
       background: transparent;
       color: var(--primary-color);
       cursor: pointer;
-      transition: all 0.15s ease;
+      transition: all 0.25s ease;
     }
-    .btn-review:hover:not(:disabled) { background: rgba(37, 99, 235, 0.08); }
+    .btn-review:hover:not(:disabled) {
+      background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), transparent);
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.15);
+      transform: translateY(-1px);
+    }
     .btn-review:disabled { opacity: 0.5; cursor: default; }
 
     .review-result { margin-top: 10px; }
@@ -1628,22 +1655,27 @@ const injectStyles = () => {
       gap: 6px;
       background: none;
       border: 1px solid var(--success-color);
-      border-radius: 6px;
+      border-radius: 8px;
       padding: 8px 14px;
       color: var(--success-color);
       font-size: 12px;
       font-weight: 600;
       cursor: pointer;
-      transition: all 0.15s ease;
+      transition: all 0.25s ease;
     }
-    .btn-semantic-test-toggle:hover { background: rgba(22, 163, 106, 0.08); }
+    .btn-semantic-test-toggle:hover {
+      background: rgba(22, 163, 106, 0.08);
+      box-shadow: 0 2px 8px rgba(22, 163, 106, 0.15);
+      transform: translateY(-1px);
+    }
 
     .semantic-test-panel {
       margin-top: 10px;
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
+      border: 1px solid rgba(22, 163, 106, 0.2);
+      border-radius: 10px;
       overflow: hidden;
-      background: var(--input-bg);
+      background: linear-gradient(135deg, var(--input-bg), rgba(22, 163, 106, 0.02));
+      box-shadow: 0 2px 8px rgba(22, 163, 106, 0.06);
     }
 
     .semantic-test-header {
