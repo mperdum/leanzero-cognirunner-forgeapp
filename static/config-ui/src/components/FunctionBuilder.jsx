@@ -8,6 +8,7 @@
 import React from "react";
 import FunctionBlock from "./FunctionBlock";
 import Tooltip from "./Tooltip";
+import ReviewPanel from "./ReviewPanel";
 
 const MAX_FUNCTIONS = 50;
 
@@ -93,6 +94,12 @@ export default function FunctionBuilder({ functions, setFunctions }) {
           {" "}to pass results between steps.
         </p>
       )}
+
+      {/* AI Review for the entire static post-function */}
+      <ReviewPanel
+        configType="postfunction-static"
+        config={{ functions }}
+      />
     </div>
   );
 }

@@ -11,6 +11,7 @@ import Tooltip from "./Tooltip";
 import CustomSelect from "./CustomSelect";
 import IssuePicker from "./IssuePicker";
 import DocRepository from "./DocRepository";
+import ReviewPanel from "./ReviewPanel";
 
 export default function SemanticConfig({
   conditionPrompt,
@@ -146,6 +147,12 @@ export default function SemanticConfig({
       <DocRepository
         selectedDocs={selectedDocIds || []}
         onSelectionChange={onDocSelectionChange}
+      />
+
+      {/* AI Review */}
+      <ReviewPanel
+        configType="postfunction-semantic"
+        config={{ fieldId, conditionPrompt, actionPrompt, actionFieldId, selectedDocIds }}
       />
 
       {/* Test Panel */}

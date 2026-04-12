@@ -23,6 +23,7 @@ import FunctionBuilder from "./components/FunctionBuilder";
 import CustomSelect from "./components/CustomSelect";
 import IssuePicker from "./components/IssuePicker";
 import DocRepository from "./components/DocRepository";
+import ReviewPanel from "./components/ReviewPanel";
 
 // Inject styles directly - more reliable in Forge iframe
 const injectStyles = () => {
@@ -1507,6 +1508,75 @@ const injectStyles = () => {
       font-size: 12px;
     }
 
+    /* AI Review panel */
+    .review-panel {
+      margin: 12px 0;
+    }
+
+    .btn-review {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid var(--primary-color);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--primary-color);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-review:hover:not(:disabled) { background: rgba(37, 99, 235, 0.08); }
+    .btn-review:disabled { opacity: 0.5; cursor: default; }
+
+    .review-result { margin-top: 10px; }
+
+    .review-verdict {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 6px;
+      border: 1px solid;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .review-verdict-icon { flex-shrink: 0; font-size: 16px; }
+    .review-verdict-text { flex: 1; }
+
+    .review-items {
+      margin-top: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .review-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .review-item-icon { flex-shrink: 0; }
+
+    .review-item-success { background: rgba(22, 163, 106, 0.06); color: var(--text-color); }
+    .review-item-warning { background: rgba(217, 119, 6, 0.06); color: var(--text-color); }
+    .review-item-error { background: rgba(220, 38, 38, 0.06); color: var(--text-color); }
+    .review-item-tip { background: rgba(37, 99, 235, 0.06); color: var(--text-color); }
+
+    .review-meta {
+      margin-top: 4px;
+      font-size: 10px;
+      color: var(--text-muted);
+      text-align: right;
+    }
+
     .validator-test-section {
       margin-top: 12px;
       padding-top: 12px;
@@ -2328,7 +2398,13 @@ function App() {
           />
         </div>
 
-        {/* Validator Test Panel */}
+        {/* AI Review + Test */}
+        <div className="validator-test-section">
+          <ReviewPanel
+            configType={isPostFunction ? undefined : "validator"}
+            config={{ fieldId, prompt, enableTools, selectedDocIds: validatorDocIds }}
+          />
+        </div>
         <div className="validator-test-section">
           <button
             className="btn-semantic-test-toggle"

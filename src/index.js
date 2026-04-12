@@ -1710,6 +1710,127 @@ resolver.define("searchIssues", async ({ payload }) => {
  * Returns the AI decision, the proposed value, and the reasoning.
  */
 /**
+ * AI-powered review of a validator, semantic PF, or static PF configuration.
+ * The AI reviews the config for correctness, efficiency, and potential issues.
+ * It is user-friendly: if the config is functional, it says so without nitpicking.
+ */
+resolver.define("reviewConfig", async ({ payload }) => {
+  const { configType, config } = payload;
+  if (!configType || !config) {
+    return { success: false, error: "No configuration to review" };
+  }
+
+  try {
+    const apiKey = await getOpenAIKey();
+    if (!apiKey) return { success: false, error: "No OpenAI API key configured" };
+    const model = await getOpenAIModel();
+
+    let configDescription = "";
+
+    if (configType === "validator" || configType === "condition") {
+      configDescription = `## Validator / Condition Configuration
+- **Field to validate:** ${config.fieldId || "(not set)"}
+- **Validation prompt:** ${config.prompt || "(empty)"}
+- **JQL Search (agentic mode):** ${config.enableTools === true ? "Always enabled" : config.enableTools === false ? "Disabled" : "Auto-detect from prompt"}
+- **Context documents attached:** ${config.selectedDocIds?.length || 0}
+
+This runs on EVERY workflow transition where it's configured. Each run costs one OpenAI API call.`;
+    } else if (configType === "postfunction-semantic") {
+      configDescription = `## Semantic Post-Function Configuration
+- **Source field:** ${config.fieldId || "description"}
+- **Condition prompt:** ${config.conditionPrompt || "(empty)"}
+- **Action prompt:** ${config.actionPrompt || "(empty)"}
+- **Target field to update:** ${config.actionFieldId || "(not set)"}
+- **Context documents attached:** ${config.selectedDocIds?.length || 0}
+
+This runs on EVERY workflow transition. Each run costs one OpenAI API call. The AI evaluates the condition, and if met, generates a new value and writes it to the target field.`;
+    } else if (configType === "postfunction-static") {
+      const fns = config.functions || [];
+      const fnDescriptions = fns.map((fn, i) => {
+        const name = fn.name || `Step ${i + 1}`;
+        const hasCode = fn.code && fn.code.trim().length > 0;
+        return `### Step ${i + 1}: ${name}
+- Operation type: ${fn.operationType || "not set"}
+- Description: ${fn.operationPrompt || "(empty)"}
+- Variable name: ${fn.variableName || "(none)"}
+- Has code: ${hasCode ? "Yes" : "No"}
+- Backoff enabled: ${fn.includeBackoff ? "Yes" : "No"}
+${hasCode ? `- Code:\n\`\`\`javascript\n${fn.code.substring(0, 2000)}\n\`\`\`` : ""}`;
+      }).join("\n\n");
+
+      configDescription = `## Static Post-Function Configuration
+- **Number of steps:** ${fns.length}
+- **Context documents attached:** ${config.selectedDocIds?.length || 0}
+
+This runs on EVERY workflow transition. The code runs directly — NO AI cost at runtime (AI was only used to generate the code).
+
+${fnDescriptions}`;
+    }
+
+    const systemPrompt = `You are a friendly configuration reviewer for CogniRunner, a Jira workflow automation tool. Review the configuration below and give practical feedback.
+
+## Your review style:
+- Be USER-FRIENDLY and encouraging. If the configuration is functional and reasonable, say so clearly: "This looks good! Test it against a few issues to verify it works as expected."
+- Do NOT nitpick style, naming, or minor preferences.
+- DO flag real issues: missing required fields, logical errors, code bugs, potential timeouts.
+- For static post-functions, focus on: code correctness, API usage, error handling, efficiency, and timeout risk (30s Forge limit).
+- For semantic post-functions, flag: vague prompts that will produce inconsistent results, missing target fields, overly broad conditions.
+- For validators, flag: prompts that are too strict (will frustrate users), prompts that are too vague (will pass everything), missing field selection.
+- Flag AI COST concerns only when significant: e.g., agentic mode enabled unnecessarily, or a semantic PF runs on high-traffic transitions.
+- Include specific fixes when you find problems — tell the user exactly what to change.
+
+## Response format:
+Respond with ONLY a valid JSON object:
+{
+  "verdict": "good" | "needs_attention" | "has_issues",
+  "summary": "One sentence overall assessment",
+  "items": [
+    {
+      "type": "success" | "warning" | "error" | "tip",
+      "message": "Clear, actionable feedback"
+    }
+  ]
+}
+
+Rules for verdict:
+- "good": Configuration is functional and well-structured. Minor tips are OK.
+- "needs_attention": Works but has inefficiencies or risks worth addressing.
+- "has_issues": Has bugs, missing fields, or logical errors that will cause failures.`;
+
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model,
+        temperature: 0.2,
+        max_completion_tokens: 1500,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: `Review this configuration:\n\n${configDescription}` },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      return { success: false, error: `AI review failed (HTTP ${response.status})` };
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) return { success: false, error: "Empty response from AI" };
+
+    try {
+      const review = JSON.parse(content.replace(/^```json\s*\n?/i, "").replace(/\n?```\s*$/i, ""));
+      return { success: true, review, tokens: data.usage?.total_tokens };
+    } catch {
+      return { success: true, review: { verdict: "good", summary: content.substring(0, 200), items: [] }, tokens: data.usage?.total_tokens };
+    }
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+/**
  * Test a validator/condition against a real issue in dry-run mode.
  * Runs the full AI validation but does NOT block any transition.
  */
