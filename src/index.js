@@ -54,6 +54,27 @@ const promptRequiresTools = (prompt) => {
 };
 
 /**
+ * Fetch context document contents by IDs from KVS.
+ * Returns concatenated text suitable for injecting into AI prompts.
+ * Used by validators, semantic PFs, and code generation at runtime.
+ */
+const fetchContextDocs = async (docIds) => {
+  if (!docIds || !Array.isArray(docIds) || docIds.length === 0) return "";
+  try {
+    const contents = await Promise.all(
+      docIds.map(async (id) => {
+        const doc = await storage.get(`doc_repo:${id}`);
+        return doc ? `### ${doc.title}\n${doc.content}` : null;
+      }),
+    );
+    return contents.filter(Boolean).join("\n\n---\n\n");
+  } catch (error) {
+    console.error("Failed to fetch context docs:", error);
+    return "";
+  }
+};
+
+/**
  * Store a validation log entry
  */
 const storeLog = async (logEntry) => {
@@ -1432,7 +1453,7 @@ IMPORTANT: Use these variables in your code. For example, if a prior step stored
         max_completion_tokens: 4000,
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `Generate JavaScript code for this post-function step:\n\n${prompt}${contextDocs ? `\n\n## Additional Context / Reference Documentation\n\n${contextDocs.substring(0, 10000)}` : ""}` },
+          { role: "user", content: `Generate JavaScript code for this post-function step:\n\n${prompt}${contextDocs ? `\n\n## Additional Context / Reference Documentation\n\n${contextDocs.substring(0, 30000)}` : ""}` },
         ],
       }),
     });
@@ -1529,7 +1550,7 @@ resolver.define("searchIssues", async ({ payload }) => {
  * Runs the full AI validation but does NOT block any transition.
  */
 resolver.define("testValidation", async ({ payload }) => {
-  const { issueKey, fieldId, prompt, enableTools } = payload;
+  const { issueKey, fieldId, prompt, enableTools, selectedDocIds } = payload;
   if (!issueKey) return { success: false, error: "Select an issue to test against" };
   if (!prompt) return { success: false, error: "Validation prompt is required" };
 
@@ -1538,6 +1559,9 @@ resolver.define("testValidation", async ({ payload }) => {
   const sourceFieldId = fieldId || "description";
 
   try {
+    // Fetch context docs
+    const contextDocsText = await fetchContextDocs(selectedDocIds);
+    if (contextDocsText) logs.push(`Loaded ${(selectedDocIds || []).length} context document(s)`);
     // Fetch real issue
     logs.push(`Fetching issue ${issueKey}...`);
     const issueResponse = await api.asApp().requestJira(
@@ -1571,10 +1595,10 @@ resolver.define("testValidation", async ({ payload }) => {
       const deadline = Date.now() + 22000;
       const issueContext = `Issue: ${issueKey}`;
       validationResult = await callOpenAIWithTools(
-        fieldValue, prompt, undefined, issueContext, projectKey, sourceFieldId, deadline,
+        fieldValue, prompt, undefined, issueContext, projectKey, sourceFieldId, deadline, contextDocsText,
       );
     } else {
-      validationResult = await callOpenAI(fieldValue, prompt);
+      validationResult = await callOpenAI(fieldValue, prompt, undefined, contextDocsText);
     }
 
     logs.push(`Result: ${validationResult.isValid ? "PASS" : "FAIL"}`);
@@ -1615,7 +1639,7 @@ resolver.define("testValidation", async ({ payload }) => {
 });
 
 resolver.define("testSemanticPostFunction", async ({ payload }) => {
-  const { issueKey, fieldId, conditionPrompt, actionPrompt, actionFieldId } = payload;
+  const { issueKey, fieldId, conditionPrompt, actionPrompt, actionFieldId, selectedDocIds } = payload;
   if (!issueKey) return { success: false, error: "Select an issue to test against" };
   if (!conditionPrompt) return { success: false, error: "Condition prompt is required" };
 
@@ -1623,6 +1647,10 @@ resolver.define("testSemanticPostFunction", async ({ payload }) => {
   const logs = [];
 
   try {
+    // Fetch context docs
+    const contextDocsText = await fetchContextDocs(selectedDocIds);
+    if (contextDocsText) logs.push(`Loaded ${(selectedDocIds || []).length} context document(s)`);
+
     // Fetch the real issue
     logs.push(`Fetching issue ${issueKey}...`);
     const issueResponse = await api.asApp().requestJira(
@@ -1668,7 +1696,8 @@ You MUST respond with ONLY a valid JSON object (no markdown, no explanation):
   "decision": "UPDATE" or "SKIP",
   "value": "the new field value (only if UPDATE)",
   "reason": "brief explanation of your decision"
-}`;
+}`
+    + (contextDocsText ? `\n\n## Reference Documentation\nUse the following documentation to inform your decisions:\n\n${contextDocsText.substring(0, 30000)}` : "");
 
     const userContent = `Field value:\n${fieldValue || "(empty)"}\n\nCONDITION: ${conditionPrompt}\n\nACTION: ${actionPrompt || "Generate an appropriate value for the target field."}`;
 
@@ -2378,7 +2407,7 @@ const TOOL_REGISTRY = {
  * @param {string} validationPrompt - The validation criteria
  * @param {Array} [attachmentParts] - Optional OpenAI content parts for attachments (images/files)
  */
-const callOpenAI = async (fieldValue, validationPrompt, attachmentParts) => {
+const callOpenAI = async (fieldValue, validationPrompt, attachmentParts, contextDocsText) => {
   const apiKey = await getOpenAIKey();
   if (!apiKey) {
     console.error("OpenAI API key not configured");
@@ -2408,7 +2437,8 @@ You must respond with ONLY a JSON object in this exact format:
 or
 {"isValid": false, "reason": "Brief explanation of why validation failed"}
 
-Do not include any other text, markdown, or explanation outside the JSON object.`;
+Do not include any other text, markdown, or explanation outside the JSON object.`
+  + (contextDocsText ? `\n\n## Reference Documentation\nUse the following documentation to inform your validation decisions:\n\n${contextDocsText.substring(0, 30000)}` : "");
 
   // Build user message content — multimodal when attachments are present
   let userContent;
@@ -2502,7 +2532,7 @@ Respond with JSON only.`;
  * @param {number} deadline - Unix timestamp (ms) after which we must bail out
  * @returns {{ isValid: boolean, reason: string, toolMeta?: object }}
  */
-const callOpenAIWithTools = async (fieldValue, validationPrompt, attachmentParts, issueContext, projectKey, validatedFieldId, deadline) => {
+const callOpenAIWithTools = async (fieldValue, validationPrompt, attachmentParts, issueContext, projectKey, validatedFieldId, deadline, contextDocsText) => {
   const apiKey = await getOpenAIKey();
   if (!apiKey) {
     console.error("OpenAI API key not configured");
@@ -2550,7 +2580,8 @@ RESPONSE FORMAT:
 - Keep reasons to 1-2 sentences.
 - On rejection due to potential duplicates, list the specific issue keys and briefly explain why each matches.
 - On pass, a simple confirmation is sufficient.
-- Do not include any text outside the JSON object.`;
+- Do not include any text outside the JSON object.`
+  + (contextDocsText ? `\n\n## Reference Documentation\nUse the following documentation to inform your validation decisions:\n\n${contextDocsText.substring(0, 30000)}` : "");
 
   // Build initial user message
   let userContent;
@@ -2821,6 +2852,9 @@ export const validate = async (args) => {
     projectKey = modifiedFields.project.key;
   }
 
+  // Fetch context documents if configured
+  const contextDocsText = await fetchContextDocs(configuration?.selectedDocIds);
+
   // Pre-compute agentic context if tools will be used
   const deadline = useTools ? Date.now() + AGENTIC_TIMEOUT_MS : 0;
   const issueContext = useTools
@@ -2864,8 +2898,8 @@ export const validate = async (args) => {
       // No attachments — send empty to OpenAI for prompt-based validation
       logFieldValue = "(no attachments)";
       validationResult = useTools
-        ? await callOpenAIWithTools("(no attachments)", validationPrompt, undefined, issueContext, projectKey, fieldId, deadline)
-        : await callOpenAI("(no attachments)", validationPrompt);
+        ? await callOpenAIWithTools("(no attachments)", validationPrompt, undefined, issueContext, projectKey, fieldId, deadline, contextDocsText)
+        : await callOpenAI("(no attachments)", validationPrompt, undefined, contextDocsText);
     } else {
       // Build attachment summary for logging
       const summary = attachments.map((a) =>
@@ -2914,8 +2948,8 @@ export const validate = async (args) => {
 
       const attParts = attachmentParts.length > 0 ? attachmentParts : undefined;
       validationResult = useTools
-        ? await callOpenAIWithTools(textContext, validationPrompt, attParts, issueContext, projectKey, fieldId, deadline)
-        : await callOpenAI(textContext, validationPrompt, attParts);
+        ? await callOpenAIWithTools(textContext, validationPrompt, attParts, issueContext, projectKey, fieldId, deadline, contextDocsText)
+        : await callOpenAI(textContext, validationPrompt, attParts, contextDocsText);
     }
   } else {
     // Standard field validation — get text value and validate
@@ -2928,8 +2962,8 @@ export const validate = async (args) => {
     );
 
     validationResult = useTools
-      ? await callOpenAIWithTools(fieldValue, validationPrompt, undefined, issueContext, projectKey, fieldId, deadline)
-      : await callOpenAI(fieldValue, validationPrompt);
+      ? await callOpenAIWithTools(fieldValue, validationPrompt, undefined, issueContext, projectKey, fieldId, deadline, contextDocsText)
+      : await callOpenAI(fieldValue, validationPrompt, undefined, contextDocsText);
   }
 
   console.log("Validation result:", validationResult);
@@ -2977,6 +3011,9 @@ const executeSemanticPostFunction = async (issueKey, config) => {
   // Fetch the current value of the source field
   const fieldValue = await getFieldValue(issueKey, fieldId || "description", null);
 
+  // Fetch context documents if configured
+  const contextDocsText = await fetchContextDocs(config.selectedDocIds);
+
   // Build unified prompt: condition evaluation + action instruction
   const systemPrompt = `You are a workflow automation assistant. You will be given a field value and two instructions:
 1. CONDITION: Evaluate whether this condition is met based on the field value.
@@ -2987,7 +3024,8 @@ You MUST respond with ONLY a valid JSON object (no markdown, no explanation):
   "decision": "UPDATE" or "SKIP",
   "value": "the new field value (only if UPDATE)",
   "reason": "brief explanation of your decision"
-}`;
+}`
+  + (contextDocsText ? `\n\n## Reference Documentation\nUse the following documentation to inform your decisions:\n\n${contextDocsText.substring(0, 30000)}` : "");
 
   const userContent = `Field value:\n${fieldValue || "(empty)"}\n\nCONDITION: ${conditionPrompt}\n\nACTION: ${actionPrompt || "Generate an appropriate value for the target field."}`;
 

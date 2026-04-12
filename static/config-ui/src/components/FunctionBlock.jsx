@@ -135,7 +135,7 @@ return { success: true };`)}`;
 export default function FunctionBlock({ index, functionData, priorSteps, onUpdate, onRemove, isOnly }) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [showApiRef, setShowApiRef] = useState(false);
-  const [selectedDocs, setSelectedDocs] = useState([]);
+  const [selectedDocs, setSelectedDocs] = useState(functionData.selectedDocIds || []);
   const [testRunning, setTestRunning] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [testTarget, setTestTarget] = useState("");
@@ -404,7 +404,7 @@ export default function FunctionBlock({ index, functionData, priorSteps, onUpdat
       {/* Documentation library — shared reference docs for AI code generation */}
       <DocRepository
         selectedDocs={selectedDocs}
-        onSelectionChange={setSelectedDocs}
+        onSelectionChange={(ids) => { setSelectedDocs(ids); onUpdate({ selectedDocIds: ids }); }}
       />
 
       {/* Inline context — for one-off notes not worth saving to the library */}

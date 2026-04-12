@@ -10,6 +10,7 @@ import { invoke } from "@forge/bridge";
 import Tooltip from "./Tooltip";
 import CustomSelect from "./CustomSelect";
 import IssuePicker from "./IssuePicker";
+import DocRepository from "./DocRepository";
 
 export default function SemanticConfig({
   conditionPrompt,
@@ -22,6 +23,8 @@ export default function SemanticConfig({
   fields,
   loadingFields,
   errorFields,
+  selectedDocIds,
+  onDocSelectionChange,
 }) {
   const [showTest, setShowTest] = useState(false);
   const [testIssue, setTestIssue] = useState("");
@@ -38,6 +41,7 @@ export default function SemanticConfig({
         conditionPrompt,
         actionPrompt,
         actionFieldId,
+        selectedDocIds: selectedDocIds || [],
       });
       setTestResult(result);
     } catch (e) {
@@ -137,6 +141,12 @@ export default function SemanticConfig({
           />
         )}
       </div>
+
+      {/* Documentation Library */}
+      <DocRepository
+        selectedDocs={selectedDocIds || []}
+        onSelectionChange={onDocSelectionChange}
+      />
 
       {/* Test Panel */}
       <div className="semantic-test-section">

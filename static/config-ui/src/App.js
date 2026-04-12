@@ -22,6 +22,7 @@ import SemanticConfig from "./components/SemanticConfig";
 import FunctionBuilder from "./components/FunctionBuilder";
 import CustomSelect from "./components/CustomSelect";
 import IssuePicker from "./components/IssuePicker";
+import DocRepository from "./components/DocRepository";
 
 // Inject styles directly - more reliable in Forge iframe
 const injectStyles = () => {
@@ -1657,6 +1658,7 @@ let currentConditionPrompt = "";
 let currentActionPrompt = "";
 let currentActionFieldId = "";
 let currentFunctions = [];
+let currentValidatorDocIds = [];
 
 function App() {
   const [fieldId, setFieldId] = useState("");
@@ -1682,6 +1684,9 @@ function App() {
   const [validatorTestIssue, setValidatorTestIssue] = useState("");
   const [validatorTestRunning, setValidatorTestRunning] = useState(false);
   const [validatorTestResult, setValidatorTestResult] = useState(null);
+
+  // Doc library for validators — persisted as selectedDocIds in config
+  const [validatorDocIds, setValidatorDocIds] = useState([]);
 
   // BYOK state — used to show cost notice when user's own key is active
   const [isByok, setIsByok] = useState(false);
@@ -1724,6 +1729,7 @@ function App() {
   useEffect(() => { currentActionPrompt = actionPrompt; }, [actionPrompt]);
   useEffect(() => { currentActionFieldId = actionFieldId; }, [actionFieldId]);
   useEffect(() => { currentFunctions = functions; }, [functions]);
+  useEffect(() => { currentValidatorDocIds = validatorDocIds; }, [validatorDocIds]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -1869,6 +1875,11 @@ function App() {
               setFunctions(config.functions);
               currentFunctions = config.functions;
             }
+            // Load saved doc IDs for validators/conditions
+            if (config.selectedDocIds && Array.isArray(config.selectedDocIds)) {
+              setValidatorDocIds(config.selectedDocIds);
+              currentValidatorDocIds = config.selectedDocIds;
+            }
           }
         } catch (e) {
           console.log("Could not load existing config:", e);
@@ -1943,6 +1954,11 @@ function App() {
               if (currentEnableTools !== null) {
                 config.enableTools = currentEnableTools;
               }
+            }
+
+            // Save selected doc IDs for all module types (validators, conditions, semantic PFs)
+            if (currentValidatorDocIds.length > 0) {
+              config.selectedDocIds = currentValidatorDocIds;
             }
 
             console.log("Saving configuration:", config);
@@ -2124,6 +2140,8 @@ function App() {
             fields={fields}
             loadingFields={fieldsLoading}
             errorFields={fieldsError}
+            selectedDocIds={validatorDocIds}
+            onDocSelectionChange={(ids) => { setValidatorDocIds(ids); currentValidatorDocIds = ids; }}
           />
         </div>
       )}
@@ -2302,6 +2320,14 @@ function App() {
           </p>
         </div>
 
+        {/* Documentation Library for validators */}
+        <div className="form-group">
+          <DocRepository
+            selectedDocs={validatorDocIds}
+            onSelectionChange={(ids) => { setValidatorDocIds(ids); currentValidatorDocIds = ids; }}
+          />
+        </div>
+
         {/* Validator Test Panel */}
         <div className="validator-test-section">
           <button
@@ -2337,6 +2363,7 @@ function App() {
                           fieldId: fieldId,
                           prompt: prompt,
                           enableTools: enableTools,
+                          selectedDocIds: validatorDocIds,
                         });
                         setValidatorTestResult(result);
                       } catch (e) {
