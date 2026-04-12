@@ -20,6 +20,7 @@ import React, { useState, useEffect } from "react";
 import TabBar from "./components/TabBar";
 import DocsTab from "./components/DocsTab";
 import SettingsTab from "./components/SettingsTab";
+import CustomSelect from "./components/CustomSelect";
 
 const injectStyles = () => {
   if (document.getElementById("app-styles")) return;
@@ -864,15 +865,16 @@ function App() {
           <span className="section-title">Configured Rules</span>
           <div className="section-actions">
             {isAdmin && (
-              <select
-                className="btn-small"
-                value={rulesFilter}
-                onChange={(e) => { setRulesFilter(e.target.value); }}
-                style={{ cursor: "pointer" }}
-              >
-                <option value="all">All Rules</option>
-                <option value="mine">My Rules</option>
-              </select>
+              <div style={{ width: "140px" }}>
+                <CustomSelect
+                  value={rulesFilter}
+                  onChange={(v) => setRulesFilter(v)}
+                  options={[
+                    { value: "all", label: "All Rules" },
+                    { value: "mine", label: "My Rules" },
+                  ]}
+                />
+              </div>
             )}
             <button className="btn-small" onClick={() => fetchConfigs(true)} disabled={refreshingConfigs}>
               {refreshingConfigs ? "Refreshing..." : "Refresh"}

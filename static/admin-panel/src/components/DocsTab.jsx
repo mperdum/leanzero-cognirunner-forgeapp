@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from "react";
+import CustomSelect from "./CustomSelect";
 
 const CATEGORIES = [
   "API Documentation", "Field Mappings", "JSON Schemas",
@@ -87,15 +88,16 @@ export default function DocsTab({ invoke, isAdmin, accountId }) {
         <span className="section-title">Documentation Library</span>
         <div className="section-actions">
           {isAdmin && (
-            <select
-              className="btn-small"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              style={{ cursor: "pointer" }}
-            >
-              <option value="all">All Documents</option>
-              <option value="mine">My Documents</option>
-            </select>
+            <div style={{ width: "160px" }}>
+              <CustomSelect
+                value={filter}
+                onChange={setFilter}
+                options={[
+                  { value: "all", label: "All Documents" },
+                  { value: "mine", label: "My Documents" },
+                ]}
+              />
+            </div>
           )}
           <button className="btn-small" onClick={() => setShowAdd(!showAdd)}>
             {showAdd ? "Cancel" : "+ Add Document"}
@@ -114,14 +116,14 @@ export default function DocsTab({ invoke, isAdmin, accountId }) {
             placeholder="Document title"
             style={{ marginBottom: "8px", width: "100%", padding: "8px", border: "1px solid var(--border-color)", borderRadius: "4px", background: "var(--input-bg)", color: "var(--text-color)", fontSize: "13px" }}
           />
-          <select
-            className="doc-input"
-            value={newCategory}
-            onChange={(e) => setNewCategory(e.target.value)}
-            style={{ marginBottom: "8px", padding: "8px", border: "1px solid var(--border-color)", borderRadius: "4px", background: "var(--input-bg)", color: "var(--text-color)", fontSize: "12px", cursor: "pointer" }}
-          >
-            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <div style={{ marginBottom: "8px", width: "220px" }}>
+            <CustomSelect
+              value={newCategory}
+              onChange={setNewCategory}
+              options={CATEGORIES.map((c) => ({ value: c, label: c }))}
+              placeholder="Category..."
+            />
+          </div>
           <textarea
             value={newContent}
             onChange={(e) => setNewContent(e.target.value)}
