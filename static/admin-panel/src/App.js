@@ -737,19 +737,17 @@ function App() {
         } catch (e) {
           console.log("Could not check license:", e);
         }
+        // Detect if accessed from jira:adminPage (auto-admin)
+        const moduleType = context?.extension?.type;
+        if (moduleType === "jira:adminPage") {
+          setIsAdmin(true);
+        }
       } catch (e) {
         console.log("Bridge not available:", e);
       }
 
       // Check admin status BEFORE fetching configs
       let userIsAdmin = false;
-
-      // If accessed from jira:adminPage, user is a Jira admin by definition
-      const context = await bridge.view.getContext();
-      const moduleType = context?.extension?.type;
-      if (moduleType === "jira:adminPage") {
-        userIsAdmin = true;
-      }
 
       try {
         const adminResult = await invoke("checkIsAdmin");
@@ -764,7 +762,7 @@ function App() {
         console.log("Could not check admin status:", e);
       }
 
-      setIsAdmin(userIsAdmin);
+      setIsAdmin((prev) => prev || userIsAdmin);
 
       // Fetch configs with the correct filter (state hasn't updated yet)
       await fetchConfigs(false, userIsAdmin ? "all" : "mine");
