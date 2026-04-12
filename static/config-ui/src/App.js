@@ -94,14 +94,15 @@ const injectStyles = () => {
     }
 
     .icon-wrapper {
-      padding: 10px;
-      border-radius: 8px;
+      padding: 12px;
+      border-radius: 12px;
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
-      background-color: var(--icon-bg);
+      background: linear-gradient(135deg, var(--icon-bg), rgba(37, 99, 235, 0.12));
       color: var(--primary-color);
+      box-shadow: 0 0 16px rgba(37, 99, 235, 0.1);
     }
 
     .title {
@@ -121,10 +122,12 @@ const injectStyles = () => {
 
     .card {
       padding: 20px;
-      border-radius: 8px;
+      border-radius: 12px;
       border: 1px solid var(--border-color);
       background-color: var(--card-bg);
       margin-bottom: 16px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+      transition: box-shadow 0.3s ease;
     }
 
     .form-group { margin-bottom: 20px; }
@@ -147,15 +150,19 @@ const injectStyles = () => {
       padding: 10px 12px;
       font-size: 14px;
       border: 2px solid var(--border-color);
-      border-radius: 4px;
+      border-radius: 8px;
       background-color: var(--input-bg);
       color: var(--text-color);
       outline: none;
-      transition: border-color 0.15s ease-in-out;
+      transition: all 0.2s ease;
     }
 
-    .input:focus, .textarea:focus { border-color: var(--primary-color); }
+    .input:focus, .textarea:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
     .input-error { border-color: var(--error-color) !important; }
+    .input-error:focus { box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1); }
 
     .textarea {
       resize: vertical;
@@ -173,11 +180,11 @@ const injectStyles = () => {
       padding: 10px 36px 10px 12px;
       font-size: 14px;
       border: 2px solid var(--border-color);
-      border-radius: 4px;
+      border-radius: 8px;
       background-color: var(--input-bg);
       color: var(--text-color);
       outline: none;
-      transition: border-color 0.15s ease-in-out;
+      transition: all 0.2s ease;
       cursor: pointer;
       text-align: left;
       position: relative;
@@ -188,8 +195,12 @@ const injectStyles = () => {
       line-height: 1.5;
     }
 
+    .dropdown-trigger:hover { border-color: rgba(37, 99, 235, 0.4); }
     .dropdown-trigger:focus,
-    .dropdown-trigger.dropdown-open { border-color: var(--primary-color); }
+    .dropdown-trigger.dropdown-open {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
     .dropdown-trigger.dropdown-error { border-color: var(--error-color) !important; }
 
     .dropdown-trigger .dropdown-placeholder { color: var(--text-muted); }
@@ -213,9 +224,9 @@ const injectStyles = () => {
       right: 0;
       z-index: 1000;
       background-color: var(--card-bg);
-      border: 1px solid var(--border-color);
-      border-radius: 4px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+      border: 1px solid rgba(37, 99, 235, 0.2);
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
       max-height: 320px;
       display: flex;
       flex-direction: column;
@@ -282,7 +293,8 @@ const injectStyles = () => {
     .dropdown-item.dropdown-highlighted { background-color: var(--code-bg); }
 
     .dropdown-item.dropdown-selected {
-      background-color: var(--icon-bg);
+      background: linear-gradient(90deg, rgba(37, 99, 235, 0.1), rgba(37, 99, 235, 0.03));
+      border-left: 3px solid var(--primary-color);
     }
 
     .dropdown-item-name {
@@ -363,7 +375,7 @@ const injectStyles = () => {
       align-items: center;
       gap: 8px;
       padding: 12px 16px;
-      border-radius: 4px;
+      border-radius: 10px;
       font-size: 13px;
       margin-bottom: 16px;
       border: 1px solid;
@@ -389,17 +401,24 @@ const injectStyles = () => {
       gap: 8px;
       padding: 10px 20px;
       font-size: 14px;
-      font-weight: 500;
+      font-weight: 600;
       border: none;
-      border-radius: 4px;
+      border-radius: 8px;
       cursor: pointer;
-      transition: all 0.15s ease-in-out;
-      background-color: var(--primary-color);
+      transition: all 0.25s ease;
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
       color: #FFFFFF;
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
     }
 
-    html[data-color-mode="dark"] .button { color: #1D2125; }
-    .button:hover { opacity: 0.9; }
+    html[data-color-mode="dark"] .button {
+      color: #FFFFFF;
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+    }
+    .button:hover {
+      box-shadow: 0 4px 16px rgba(37, 99, 235, 0.4);
+      transform: translateY(-1px);
+    }
 
     .button-disabled {
       cursor: not-allowed;
@@ -424,6 +443,7 @@ const injectStyles = () => {
       border-top-color: var(--primary-color);
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
+      box-shadow: 0 0 12px rgba(37, 99, 235, 0.2);
     }
 
     .loading-text {
@@ -536,10 +556,10 @@ const injectStyles = () => {
 
     .pf-type-card {
       border: 2px solid var(--border-color);
-      border-radius: 10px;
-      padding: 14px;
+      border-radius: 12px;
+      padding: 16px;
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: all 0.3s ease;
       background: var(--card-bg);
     }
 
@@ -550,8 +570,14 @@ const injectStyles = () => {
 
     .pf-type-active {
       border-color: var(--primary-color);
-      background: var(--icon-bg);
-      box-shadow: 0 0 0 1px var(--primary-color);
+      background: linear-gradient(135deg, rgba(37, 99, 235, 0.06), rgba(37, 99, 235, 0.02));
+      box-shadow: 0 0 20px rgba(37, 99, 235, 0.15);
+      animation: cardGlow 3s ease-in-out infinite;
+    }
+
+    @keyframes cardGlow {
+      0%, 100% { box-shadow: 0 0 20px rgba(37, 99, 235, 0.15); }
+      50% { box-shadow: 0 0 28px rgba(37, 99, 235, 0.25); }
     }
 
     .pf-type-header {
@@ -591,10 +617,11 @@ const injectStyles = () => {
 
     /* === How it works banner === */
     .pf-how-it-works {
-      background: var(--icon-bg);
-      border-radius: 8px;
-      padding: 12px 16px;
+      background: linear-gradient(135deg, var(--icon-bg), rgba(37, 99, 235, 0.04));
+      border-radius: 10px;
+      padding: 14px 16px;
       margin-bottom: 16px;
+      border: 1px solid rgba(37, 99, 235, 0.1);
     }
 
     .pf-how-header {
@@ -623,15 +650,17 @@ const injectStyles = () => {
 
     .function-block {
       border: 1px solid var(--border-color);
-      border-radius: 10px;
+      border-radius: 12px;
       padding: 16px;
       margin-bottom: 12px;
       background: var(--input-bg);
-      transition: border-color 0.2s ease;
+      transition: all 0.3s ease;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.02);
     }
 
     .function-block:hover {
-      border-color: var(--primary-color);
+      border-color: rgba(37, 99, 235, 0.3);
+      box-shadow: 0 4px 16px rgba(37, 99, 235, 0.08);
     }
 
     .function-header {
@@ -675,15 +704,16 @@ const injectStyles = () => {
     }
 
     .btn-generate {
-      padding: 8px 16px;
+      padding: 8px 18px;
       font-size: 13px;
       font-weight: 600;
       border: none;
-      border-radius: 6px;
-      background: var(--primary-color);
+      border-radius: 8px;
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
       color: white;
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: all 0.25s ease;
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
     }
     .btn-generate:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
     .btn-generate:disabled { opacity: 0.5; cursor: default; transform: none; }
@@ -1112,7 +1142,7 @@ const injectStyles = () => {
     /* === CodeMirror overrides === */
     .cm-editor {
       border: 2px solid var(--border-color);
-      border-radius: 6px;
+      border-radius: 10px;
       overflow: hidden;
       font-size: 13px;
     }
