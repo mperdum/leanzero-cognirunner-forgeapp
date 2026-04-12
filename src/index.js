@@ -2343,13 +2343,19 @@ resolver.define("testPostFunction", async ({ payload }) => {
 
 export const handler = resolver.getDefinitions();
 
+// In-memory key cache — avoids KVS read on every invocation
+let _cachedKey = null;
+let _cachedKeyChecked = false;
+
 /**
  * Get the OpenAI API key — checks BYOK (user-provided) key first, falls back to factory key.
  */
 const getOpenAIKey = async () => {
+  if (_cachedKeyChecked) return _cachedKey || process.env.OPENAI_API_KEY;
   try {
     const byokKey = await storage.get("COGNIRUNNER_OPENAI_API_KEY");
-    if (byokKey) return byokKey;
+    _cachedKeyChecked = true;
+    if (byokKey) { _cachedKey = byokKey; return byokKey; }
   } catch (error) {
     console.error("Error reading BYOK API key from storage:", error);
   }
@@ -2368,74 +2374,33 @@ const isByokActive = async () => {
   }
 };
 
-/**
- * Auto-detect the best available mini model from OpenAI.
- * Queries /v1/models, picks the latest *-mini model, caches in KVS for 24h.
- */
-const detectBestMiniModel = async (apiKey) => {
-  const CACHE_KEY = "COGNIRUNNER_AUTO_MODEL";
-  const FALLBACK = "gpt-4o-mini"; // safe universal fallback
-
-  // Check cache first (avoid calling /v1/models on every request)
-  try {
-    const cached = await storage.get(CACHE_KEY);
-    if (cached && cached.model && cached.ts && (Date.now() - cached.ts < 24 * 60 * 60 * 1000)) {
-      return cached.model;
-    }
-  } catch (e) { /* cache miss */ }
-
-  // Query available models
-  try {
-    const response = await fetch("https://api.openai.com/v1/models", {
-      method: "GET",
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
-    if (!response.ok) return FALLBACK;
-    const data = await response.json();
-    const models = (data.data || []).map((m) => m.id).sort();
-
-    // Priority order: newest mini models first
-    const miniPreference = [
-      "gpt-5.4-mini", "gpt-5.2-mini", "gpt-5-mini",
-      "gpt-4.1-mini", "gpt-4o-mini",
-    ];
-    const bestMini = miniPreference.find((m) => models.includes(m)) || FALLBACK;
-
-    // Cache for 24 hours
-    try {
-      await storage.set(CACHE_KEY, { model: bestMini, ts: Date.now() });
-    } catch (e) { /* cache write failed, not critical */ }
-
-    console.log(`Auto-detected best mini model: ${bestMini}`);
-    return bestMini;
-  } catch (e) {
-    console.error("Model auto-detection failed:", e);
-    return FALLBACK;
-  }
-};
+// In-memory model cache — avoids KVS + /v1/models calls on every invocation
+let _cachedModel = null;
 
 /**
- * Get the OpenAI model — if BYOK, checks user-saved model; if factory, auto-detects best mini.
+ * Get the OpenAI model. Fast path: in-memory cache or env var.
+ * No /v1/models call — that's too slow for the 25s Forge resolver timeout.
+ * Model detection happens lazily in the BYOK settings UI, not at runtime.
  */
 const getOpenAIModel = async () => {
+  // Fast: in-memory cache
+  if (_cachedModel) return _cachedModel;
+
   try {
-    const byok = await isByokActive();
-    if (byok) {
+    // Check BYOK saved model
+    const byokKey = await storage.get("COGNIRUNNER_OPENAI_API_KEY");
+    if (byokKey) {
       const savedModel = await storage.get("COGNIRUNNER_OPENAI_MODEL");
-      if (savedModel) return savedModel;
+      if (savedModel) { _cachedModel = savedModel; return savedModel; }
     }
   } catch (error) {
     console.error("Error reading OpenAI model from storage:", error);
   }
 
-  // If env var is explicitly set, use it
-  if (process.env.OPENAI_MODEL) return process.env.OPENAI_MODEL;
-
-  // Auto-detect the best available mini model
-  const apiKey = await getOpenAIKey();
-  if (apiKey) return detectBestMiniModel(apiKey);
-
-  return "gpt-4o-mini"; // absolute fallback
+  // Use env var or default
+  const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
+  _cachedModel = model;
+  return model;
 };
 
 /**
