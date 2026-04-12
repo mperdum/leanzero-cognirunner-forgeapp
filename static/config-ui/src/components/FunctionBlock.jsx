@@ -439,7 +439,7 @@ export default function FunctionBlock({ index, functionData, priorSteps, onUpdat
             />
             <span>
               Exponential backoff with jitter
-              <Tooltip text="Automatically retries failed API calls up to 3 times with increasing delays (1s, 2s, 4s) plus random jitter to avoid thundering herd. Essential for external APIs and high-traffic Jira instances." />
+              <Tooltip text="Retries failed API calls up to 3 times with increasing delays (1s, 2s, 4s) plus random jitter. Tradeoff: retries can add up to ~15 seconds of execution time. Forge post-functions have a 30-second hard limit — if you chain multiple steps with backoff enabled, later steps may time out. Best for: single-step functions, external APIs, or steps that must not fail silently. Skip for: multi-step chains where speed matters, or when the API is reliable." />
             </span>
           </label>
         </div>
