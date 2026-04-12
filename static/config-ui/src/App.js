@@ -21,6 +21,7 @@ import { invoke } from "@forge/bridge";
 import SemanticConfig from "./components/SemanticConfig";
 import FunctionBuilder from "./components/FunctionBuilder";
 import CustomSelect from "./components/CustomSelect";
+import IssuePicker from "./components/IssuePicker";
 
 // Inject styles directly - more reliable in Forge iframe
 const injectStyles = () => {
@@ -1470,6 +1471,12 @@ const injectStyles = () => {
       font-size: 12px;
     }
 
+    .validator-test-section {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border-color);
+    }
+
     .semantic-config { padding: 16px; }
 
     /* Semantic test panel */
@@ -1634,6 +1641,12 @@ function App() {
   const searchInputRef = useRef(null);
   const listRef = useRef(null);
   const [dropdownFlipUp, setDropdownFlipUp] = useState(false);
+
+  // Validator test state
+  const [validatorTestOpen, setValidatorTestOpen] = useState(false);
+  const [validatorTestIssue, setValidatorTestIssue] = useState("");
+  const [validatorTestRunning, setValidatorTestRunning] = useState(false);
+  const [validatorTestResult, setValidatorTestResult] = useState(null);
 
   // BYOK state — used to show cost notice when user's own key is active
   const [isByok, setIsByok] = useState(false);
@@ -2252,6 +2265,123 @@ function App() {
             validation (e.g. duplicate detection). Auto-detect activates this when your
             prompt mentions duplicates, similarity, or existing issues. Adds latency.
           </p>
+        </div>
+
+        {/* Validator Test Panel */}
+        <div className="validator-test-section">
+          <button
+            className="btn-semantic-test-toggle"
+            onClick={() => setValidatorTestOpen(!validatorTestOpen)}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polygon points="5 3 19 12 5 21 5 3" />
+            </svg>
+            <span>{validatorTestOpen ? "Hide Test" : "Test Validation"}</span>
+          </button>
+
+          {validatorTestOpen && (
+            <div className="semantic-test-panel" style={{ marginTop: "10px" }}>
+              <div className="semantic-test-header">
+                <span className="test-panel-badge">Dry run — no transition is blocked</span>
+              </div>
+
+              <div className="form-group" style={{ margin: "10px 12px 8px" }}>
+                <label className="label" style={{ fontSize: "11px", marginBottom: "4px" }}>
+                  Test against issue
+                </label>
+                <div className="test-target-row">
+                  <IssuePicker value={validatorTestIssue} onChange={setValidatorTestIssue} />
+                  <button
+                    className="btn-run-test"
+                    onClick={async () => {
+                      setValidatorTestRunning(true);
+                      setValidatorTestResult(null);
+                      try {
+                        const result = await invoke("testValidation", {
+                          issueKey: validatorTestIssue.trim(),
+                          fieldId: fieldId,
+                          prompt: prompt,
+                          enableTools: enableTools,
+                        });
+                        setValidatorTestResult(result);
+                      } catch (e) {
+                        setValidatorTestResult({ success: false, error: e.message, logs: [] });
+                      }
+                      setValidatorTestRunning(false);
+                    }}
+                    disabled={validatorTestRunning || !validatorTestIssue.trim() || !fieldId.trim() || !prompt.trim()}
+                  >
+                    {validatorTestRunning ? "Running..." : "Run Test"}
+                  </button>
+                </div>
+              </div>
+
+              {validatorTestResult && (
+                <div className={`semantic-test-result ${validatorTestResult.success ? (validatorTestResult.isValid ? "st-update" : "st-error") : "st-error"}`}>
+                  <div className="st-result-header">
+                    {validatorTestResult.success ? (
+                      <span className={`test-badge ${validatorTestResult.isValid ? "test-badge-pass" : "test-badge-fail"}`}>
+                        {validatorTestResult.isValid ? "PASS" : "FAIL"}
+                      </span>
+                    ) : (
+                      <span className="test-badge test-badge-fail">ERROR</span>
+                    )}
+                    <span className="test-result-meta">
+                      {validatorTestResult.issueKey}
+                      {validatorTestResult.mode === "agentic" ? " (agentic)" : ""}
+                      {validatorTestResult.executionTimeMs ? ` — ${validatorTestResult.executionTimeMs}ms` : ""}
+                    </span>
+                    <button className="test-dismiss" onClick={() => setValidatorTestResult(null)}>&times;</button>
+                  </div>
+
+                  {validatorTestResult.error && !validatorTestResult.success && (
+                    <div className="st-section"><strong>Error:</strong> {validatorTestResult.error}</div>
+                  )}
+
+                  {validatorTestResult.reason && (
+                    <div className="st-section">
+                      <div className="st-section-label">AI Reasoning</div>
+                      <div className="st-reason">{validatorTestResult.reason}</div>
+                    </div>
+                  )}
+
+                  {validatorTestResult.fieldValue && (
+                    <div className="st-section">
+                      <div className="st-section-label">Field Value ({validatorTestResult.fieldId})</div>
+                      <pre className="st-value">{validatorTestResult.fieldValue}</pre>
+                    </div>
+                  )}
+
+                  {validatorTestResult.toolInfo && (
+                    <div className="st-section">
+                      <div className="st-section-label">JQL Search (Agentic)</div>
+                      <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+                        {validatorTestResult.toolInfo.toolRounds} round{validatorTestResult.toolInfo.toolRounds !== 1 ? "s" : ""}, {validatorTestResult.toolInfo.totalResults} result{validatorTestResult.toolInfo.totalResults !== 1 ? "s" : ""}
+                      </div>
+                      {validatorTestResult.toolInfo.queries?.map((q, i) => (
+                        <div key={i} className="test-log-line" style={{ marginTop: "2px" }}><code>{q}</code></div>
+                      ))}
+                    </div>
+                  )}
+
+                  {validatorTestResult.logs && validatorTestResult.logs.length > 0 && (
+                    <div className="st-section">
+                      <div className="st-section-label">Execution Log</div>
+                      {validatorTestResult.logs.map((log, i) => (
+                        <div key={i} className="test-log-line"><code>{log}</code></div>
+                      ))}
+                    </div>
+                  )}
+
+                  {validatorTestResult.success && !validatorTestResult.isValid && (
+                    <div className="st-section" style={{ fontSize: "12px", color: "var(--text-muted)", fontStyle: "italic" }}>
+                      In production, this would block the transition with: "AI Validation failed: {validatorTestResult.reason}"
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
       )}

@@ -1524,6 +1524,96 @@ resolver.define("searchIssues", async ({ payload }) => {
  * Runs the full AI evaluation (condition + action) but does NOT write the result back.
  * Returns the AI decision, the proposed value, and the reasoning.
  */
+/**
+ * Test a validator/condition against a real issue in dry-run mode.
+ * Runs the full AI validation but does NOT block any transition.
+ */
+resolver.define("testValidation", async ({ payload }) => {
+  const { issueKey, fieldId, prompt, enableTools } = payload;
+  if (!issueKey) return { success: false, error: "Select an issue to test against" };
+  if (!prompt) return { success: false, error: "Validation prompt is required" };
+
+  const startTime = Date.now();
+  const logs = [];
+  const sourceFieldId = fieldId || "description";
+
+  try {
+    // Fetch real issue
+    logs.push(`Fetching issue ${issueKey}...`);
+    const issueResponse = await api.asApp().requestJira(
+      route`/rest/api/3/issue/${issueKey}?expand=renderedFields`,
+    );
+    if (!issueResponse.ok) {
+      return { success: false, error: `Failed to fetch ${issueKey}: HTTP ${issueResponse.status}`, logs };
+    }
+    const issue = await issueResponse.json();
+    logs.push(`Fetched ${issue.key}: "${issue.fields?.summary}"`);
+
+    // Extract field value
+    const rawValue = issue.fields?.[sourceFieldId];
+    const fieldValue = extractFieldDisplayValue(rawValue);
+    logs.push(`Field "${sourceFieldId}": ${fieldValue ? fieldValue.substring(0, 200) + (fieldValue.length > 200 ? "..." : "") : "(empty)"}`);
+
+    // Determine if tools (JQL search) should be used
+    const useTools = enableTools === true
+      || (enableTools !== false && promptRequiresTools(prompt));
+    logs.push(`Mode: ${useTools ? "Agentic (JQL search enabled)" : "Standard"}`);
+
+    // Extract project key for JQL scoping
+    let projectKey = null;
+    const dashIndex = issueKey.indexOf("-");
+    if (dashIndex > 0) projectKey = issueKey.substring(0, dashIndex);
+
+    // Run validation
+    logs.push("Running AI validation...");
+    let validationResult;
+    if (useTools) {
+      const deadline = Date.now() + 22000;
+      const issueContext = `Issue: ${issueKey}`;
+      validationResult = await callOpenAIWithTools(
+        fieldValue, prompt, undefined, issueContext, projectKey, sourceFieldId, deadline,
+      );
+    } else {
+      validationResult = await callOpenAI(fieldValue, prompt);
+    }
+
+    logs.push(`Result: ${validationResult.isValid ? "PASS" : "FAIL"}`);
+    logs.push(`Reason: ${validationResult.reason}`);
+
+    // Add tool metadata if agentic
+    let toolInfo = null;
+    if (validationResult.toolMeta) {
+      toolInfo = {
+        toolsUsed: validationResult.toolMeta.toolsUsed,
+        toolRounds: validationResult.toolMeta.toolRounds,
+        queries: validationResult.toolMeta.queries?.map((q) => q.substring(0, 150)),
+        totalResults: validationResult.toolMeta.totalResults,
+      };
+      logs.push(`JQL: ${toolInfo.toolRounds} round(s), ${toolInfo.totalResults} result(s)`);
+      if (toolInfo.queries?.length > 0) {
+        toolInfo.queries.forEach((q) => logs.push(`  Query: ${q}`));
+      }
+    }
+
+    return {
+      success: true,
+      isValid: validationResult.isValid,
+      reason: validationResult.reason,
+      fieldId: sourceFieldId,
+      fieldValue: fieldValue ? fieldValue.substring(0, 500) : "(empty)",
+      issueKey,
+      issueSummary: issue.fields?.summary,
+      toolInfo,
+      mode: useTools ? "agentic" : "standard",
+      logs,
+      executionTimeMs: Date.now() - startTime,
+    };
+  } catch (error) {
+    logs.push(`Error: ${error.message}`);
+    return { success: false, error: error.message, logs, executionTimeMs: Date.now() - startTime };
+  }
+});
+
 resolver.define("testSemanticPostFunction", async ({ payload }) => {
   const { issueKey, fieldId, conditionPrompt, actionPrompt, actionFieldId } = payload;
   if (!issueKey) return { success: false, error: "Select an issue to test against" };
