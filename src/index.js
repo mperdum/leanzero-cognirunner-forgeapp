@@ -30,6 +30,30 @@ const CONFIG_REGISTRY_KEY = "config_registry";
 // Forge context doesn't expose the app UUID at runtime; only environmentId and installContext
 // are available, neither of which matches the app UUID in rule parameters.key.
 const APP_ID = "36415848-6868-4697-9554-3c3ad87b8da9";
+const APP_ADMINS_KEY = "app_admins";
+
+/**
+ * Check if a user is an admin (Jira site admin OR app admin).
+ */
+const requireAdmin = async (accountId) => {
+  if (!accountId) return false;
+  // Check Jira admin group membership
+  try {
+    const resp = await api.asApp().requestJira(
+      route`/rest/api/3/group/member?groupname=jira-administrators&maxResults=200`,
+    );
+    if (resp.ok) {
+      const data = await resp.json();
+      if ((data.values || []).some((u) => u.accountId === accountId)) return true;
+    }
+  } catch (e) { /* fall through to app admins */ }
+  // Check app admins list in KVS
+  try {
+    const appAdmins = (await storage.get(APP_ADMINS_KEY)) || [];
+    if (appAdmins.some((a) => (typeof a === "string" ? a : a.accountId) === accountId)) return true;
+  } catch (e) { /* not admin */ }
+  return false;
+};
 
 // === Agentic validation constants ===
 const MAX_TOOL_ROUNDS = 3;
@@ -144,7 +168,7 @@ resolver.define("clearLogs", async () => {
  * Resolver: Register a validator/condition config in the registry
  * Called from config-ui when a rule is saved
  */
-resolver.define("registerConfig", async ({ payload }) => {
+resolver.define("registerConfig", async ({ payload, context }) => {
   try {
     const { id, type, fieldId, prompt, workflow } = payload;
     if (!id || !fieldId) {
@@ -193,6 +217,7 @@ resolver.define("registerConfig", async ({ payload }) => {
         fieldId,
         prompt: (prompt || "").substring(0, 200),
         workflow: Object.keys(workflowData).length > 0 ? workflowData : undefined,
+        createdBy: context.accountId || null,
         createdAt: now,
         updatedAt: now,
       });
@@ -356,9 +381,9 @@ async function fetchProjectsForWorkflow(workflowId) {
  * Auto-cleans orphaned entries whose rules no longer exist in Jira.
  * Uses /rest/api/3/workflows/search to check if workflow+transition still exists.
  */
-resolver.define("getConfigs", async () => {
+resolver.define("getConfigs", async ({ payload, context }) => {
   try {
-    const configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
     if (configs.length === 0) {
       return { success: true, configs: [], removedCount: 0 };
     }
@@ -420,7 +445,14 @@ resolver.define("getConfigs", async () => {
       console.log("Some workflow API calls failed — partial orphan cleanup only");
     }
 
-    return { success: true, configs: surviving, removedCount: removed.length };
+    // Apply ownership filter
+    const filter = payload?.filter;
+    let filtered = surviving;
+    if (filter === "mine" && context?.accountId) {
+      filtered = surviving.filter((c) => c.createdBy === context.accountId);
+    }
+
+    return { success: true, configs: filtered, removedCount: removed.length };
   } catch (error) {
     console.error("Failed to get configs:", error);
     return { success: false, error: error.message, configs: [] };
@@ -874,13 +906,99 @@ resolver.define("getFields", async () => {
   }
 });
 
+// === Admin & Permission Resolvers ===
+
+/**
+ * Check if the current user is an admin. Returns isAdmin flag and accountId.
+ */
+resolver.define("checkIsAdmin", async ({ context }) => {
+  const accountId = context.accountId;
+  const isAdmin = await requireAdmin(accountId);
+  return { success: true, isAdmin, accountId };
+});
+
+/**
+ * Get the list of app admins (admin only).
+ */
+resolver.define("getAppAdmins", async ({ context }) => {
+  if (!(await requireAdmin(context.accountId))) {
+    return { success: false, error: "Admin access required" };
+  }
+  const admins = (await storage.get(APP_ADMINS_KEY)) || [];
+  return { success: true, admins };
+});
+
+/**
+ * Add an app admin by accountId (admin only).
+ */
+resolver.define("addAppAdmin", async ({ payload, context }) => {
+  if (!(await requireAdmin(context.accountId))) {
+    return { success: false, error: "Admin access required" };
+  }
+  const { accountId, displayName } = payload;
+  if (!accountId) return { success: false, error: "Account ID required" };
+
+  let admins = (await storage.get(APP_ADMINS_KEY)) || [];
+  if (admins.some((a) => (typeof a === "string" ? a : a.accountId) === accountId)) {
+    return { success: false, error: "Already an app admin" };
+  }
+  admins.push({ accountId, displayName: displayName || accountId });
+  await storage.set(APP_ADMINS_KEY, admins);
+  return { success: true };
+});
+
+/**
+ * Remove an app admin (admin only).
+ */
+resolver.define("removeAppAdmin", async ({ payload, context }) => {
+  if (!(await requireAdmin(context.accountId))) {
+    return { success: false, error: "Admin access required" };
+  }
+  const { accountId } = payload;
+  let admins = (await storage.get(APP_ADMINS_KEY)) || [];
+  admins = admins.filter((a) => (typeof a === "string" ? a : a.accountId) !== accountId);
+  await storage.set(APP_ADMINS_KEY, admins);
+  return { success: true };
+});
+
+/**
+ * Search Jira users by name/email for the admin picker (admin only).
+ */
+resolver.define("searchUsers", async ({ payload, context }) => {
+  if (!(await requireAdmin(context.accountId))) {
+    return { success: true, users: [] };
+  }
+  try {
+    const { query } = payload;
+    if (!query || query.length < 2) return { success: true, users: [] };
+    const resp = await api.asApp().requestJira(
+      route`/rest/api/3/user/search?query=${query}&maxResults=10`,
+    );
+    if (!resp.ok) return { success: true, users: [] };
+    const users = await resp.json();
+    return {
+      success: true,
+      users: users.map((u) => ({
+        accountId: u.accountId,
+        displayName: u.displayName,
+        avatarUrl: u.avatarUrls?.["24x24"],
+      })),
+    };
+  } catch (e) {
+    return { success: true, users: [] };
+  }
+});
+
 // === BYOK (Bring Your Own Key) Resolvers ===
 
 /**
  * Save a user-provided OpenAI API key (BYOK).
  * Validates the key format before storing.
  */
-resolver.define("saveOpenAIKey", async ({ payload }) => {
+resolver.define("saveOpenAIKey", async ({ payload, context }) => {
+  if (!(await requireAdmin(context.accountId))) {
+    return { success: false, error: "Admin access required" };
+  }
   try {
     const { key } = payload;
     if (!key || typeof key !== "string" || !key.startsWith("sk-")) {
@@ -915,7 +1033,10 @@ resolver.define("getOpenAIKey", async () => {
  * Remove the BYOK key, reverting to factory key.
  * Also clears the saved model selection since factory key has no model choice.
  */
-resolver.define("removeOpenAIKey", async () => {
+resolver.define("removeOpenAIKey", async ({ context }) => {
+  if (!(await requireAdmin(context.accountId))) {
+    return { success: false, error: "Admin access required" };
+  }
   try {
     await storage.delete("COGNIRUNNER_OPENAI_API_KEY");
     await storage.delete("COGNIRUNNER_OPENAI_MODEL");
@@ -1007,7 +1128,7 @@ resolver.define("getOpenAIModelFromKVS", async () => {
 /**
  * Register (create/update) a post-function configuration.
  */
-resolver.define("registerPostFunction", async ({ payload }) => {
+resolver.define("registerPostFunction", async ({ payload, context }) => {
   try {
     const { id, type, fieldId, prompt, conditionPrompt, actionPrompt, actionFieldId, functions, workflow } = payload;
     if (!id) return { success: false, error: "Missing post-function ID" };
@@ -1027,6 +1148,7 @@ resolver.define("registerPostFunction", async ({ payload }) => {
       functions: functions || [],
       workflow: workflow || {},
       disabled: existing >= 0 ? configs[existing].disabled : false,
+      createdBy: existing >= 0 ? (configs[existing].createdBy || context.accountId) : context.accountId,
       createdAt: existing >= 0 ? configs[existing].createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -1126,7 +1248,7 @@ const MAX_DOCS = 50;
 /**
  * Save a reference document to the shared repository.
  */
-resolver.define("saveContextDoc", async ({ payload }) => {
+resolver.define("saveContextDoc", async ({ payload, context }) => {
   try {
     const { title, content, category } = payload;
     if (!title || !content) {
@@ -1142,6 +1264,7 @@ resolver.define("saveContextDoc", async ({ payload }) => {
       title: title.substring(0, 100),
       category: category || "General",
       contentLength: content.length,
+      createdBy: context.accountId || null,
       createdAt: new Date().toISOString(),
     };
 
@@ -1164,9 +1287,13 @@ resolver.define("saveContextDoc", async ({ payload }) => {
 /**
  * List all documents in the shared repository (index only, no content).
  */
-resolver.define("getContextDocs", async () => {
+resolver.define("getContextDocs", async ({ payload, context }) => {
   try {
-    const index = (await storage.get(DOC_REPO_INDEX_KEY)) || [];
+    let index = (await storage.get(DOC_REPO_INDEX_KEY)) || [];
+    const filter = payload?.filter;
+    if (filter === "mine" && context?.accountId) {
+      index = index.filter((d) => d.createdBy === context.accountId);
+    }
     return { success: true, docs: index };
   } catch (error) {
     console.error("Failed to get context docs:", error);

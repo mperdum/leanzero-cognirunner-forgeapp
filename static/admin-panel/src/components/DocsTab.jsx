@@ -1,0 +1,200 @@
+/*
+ * CogniRunner - AI-powered workflow validation for Jira
+ * Copyright (C) 2025 LeanZero
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+import React, { useState, useEffect, useCallback } from "react";
+
+const CATEGORIES = [
+  "API Documentation", "Field Mappings", "JSON Schemas",
+  "Business Rules", "Code Snippets", "General",
+];
+
+export default function DocsTab({ invoke, isAdmin, accountId }) {
+  const [docs, setDocs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState(isAdmin ? "all" : "mine");
+  const [showAdd, setShowAdd] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newContent, setNewContent] = useState("");
+  const [newCategory, setNewCategory] = useState("General");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [expandedDoc, setExpandedDoc] = useState(null);
+  const [expandedContent, setExpandedContent] = useState("");
+
+  const loadDocs = useCallback(async () => {
+    try {
+      const result = await invoke("getContextDocs", { filter });
+      if (result.success) setDocs(result.docs || []);
+    } catch (e) {
+      console.error("Failed to load docs:", e);
+    }
+    setLoading(false);
+  }, [invoke, filter]);
+
+  useEffect(() => { loadDocs(); }, [loadDocs]);
+
+  const handleSave = async () => {
+    if (!newTitle.trim() || !newContent.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await invoke("saveContextDoc", {
+        title: newTitle.trim(),
+        content: newContent.trim(),
+        category: newCategory,
+      });
+      if (result.success) {
+        setNewTitle(""); setNewContent(""); setNewCategory("General"); setShowAdd(false);
+        await loadDocs();
+      } else {
+        setError(result.error);
+      }
+    } catch (e) {
+      setError(e.message);
+    }
+    setSaving(false);
+  };
+
+  const handleDelete = async (id) => {
+    try {
+      await invoke("deleteContextDoc", { id });
+      await loadDocs();
+    } catch (e) {
+      console.error("Failed to delete:", e);
+    }
+  };
+
+  const handleExpand = async (id) => {
+    if (expandedDoc === id) { setExpandedDoc(null); return; }
+    setExpandedDoc(id);
+    try {
+      const result = await invoke("getContextDocContent", { id });
+      if (result.success) setExpandedContent(result.doc.content);
+    } catch (e) {
+      setExpandedContent("Failed to load");
+    }
+  };
+
+  const formatSize = (len) => len < 1024 ? `${len} B` : `${(len / 1024).toFixed(1)} KB`;
+
+  return (
+    <div className="docs-tab">
+      <div className="section-header">
+        <span className="section-title">Documentation Library</span>
+        <div className="section-actions">
+          {isAdmin && (
+            <select
+              className="btn-small"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              style={{ cursor: "pointer" }}
+            >
+              <option value="all">All Documents</option>
+              <option value="mine">My Documents</option>
+            </select>
+          )}
+          <button className="btn-small" onClick={() => setShowAdd(!showAdd)}>
+            {showAdd ? "Cancel" : "+ Add Document"}
+          </button>
+        </div>
+      </div>
+
+      {showAdd && (
+        <div className="card" style={{ marginBottom: "12px", padding: "16px" }}>
+          {error && <div style={{ color: "var(--error-color)", fontSize: "12px", marginBottom: "8px" }}>{error}</div>}
+          <input
+            type="text"
+            className="doc-input"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            placeholder="Document title"
+            style={{ marginBottom: "8px", width: "100%", padding: "8px", border: "1px solid var(--border-color)", borderRadius: "4px", background: "var(--input-bg)", color: "var(--text-color)", fontSize: "13px" }}
+          />
+          <select
+            className="doc-input"
+            value={newCategory}
+            onChange={(e) => setNewCategory(e.target.value)}
+            style={{ marginBottom: "8px", padding: "8px", border: "1px solid var(--border-color)", borderRadius: "4px", background: "var(--input-bg)", color: "var(--text-color)", fontSize: "12px", cursor: "pointer" }}
+          >
+            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <textarea
+            value={newContent}
+            onChange={(e) => setNewContent(e.target.value)}
+            placeholder="Paste documentation, JSON schemas, API specs..."
+            rows={8}
+            style={{ width: "100%", padding: "8px", border: "1px solid var(--border-color)", borderRadius: "4px", background: "var(--input-bg)", color: "var(--text-color)", fontSize: "12px", fontFamily: "SFMono-Regular, Consolas, monospace", resize: "vertical" }}
+          />
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "8px" }}>
+            <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{newContent.length > 0 ? formatSize(newContent.length) : ""}</span>
+            <button className="btn-small" onClick={handleSave} disabled={saving || !newTitle.trim() || !newContent.trim()} style={{ background: "var(--primary-color)", color: "white", border: "none" }}>
+              {saving ? "Saving..." : "Save"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="card">
+        {loading ? (
+          <div className="empty-state">Loading documents...</div>
+        ) : docs.length === 0 ? (
+          <div className="empty-state">
+            {filter === "mine" ? "You haven't added any documents yet." : "No documents in the library yet."}
+          </div>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Category</th>
+                <th>Size</th>
+                <th>Created</th>
+                {isAdmin && <th>Owner</th>}
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {docs.map((doc) => {
+                const canDelete = isAdmin || doc.createdBy === accountId;
+                return (
+                  <React.Fragment key={doc.id}>
+                    <tr>
+                      <td style={{ fontWeight: "500" }}>{doc.title}</td>
+                      <td><span className="type-badge type-validator">{doc.category}</span></td>
+                      <td><span className="timestamp">{formatSize(doc.contentLength)}</span></td>
+                      <td><span className="timestamp">{new Date(doc.createdAt).toLocaleDateString()}</span></td>
+                      {isAdmin && <td><span className="timestamp">{doc.createdBy === accountId ? "You" : (doc.createdBy || "—")}</span></td>}
+                      <td>
+                        <div className="row-actions">
+                          <button className="btn-small" onClick={() => handleExpand(doc.id)}>
+                            {expandedDoc === doc.id ? "Hide" : "View"}
+                          </button>
+                          {canDelete && (
+                            <button className="btn-small btn-danger" onClick={() => handleDelete(doc.id)}>Delete</button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                    {expandedDoc === doc.id && (
+                      <tr>
+                        <td colSpan={isAdmin ? 6 : 5} style={{ padding: "0 14px 14px" }}>
+                          <pre style={{ margin: 0, padding: "10px", background: "var(--code-bg)", borderRadius: "4px", fontSize: "11px", fontFamily: "SFMono-Regular, Consolas, monospace", maxHeight: "200px", overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word", color: "var(--text-secondary)" }}>
+                            {expandedContent}
+                          </pre>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}

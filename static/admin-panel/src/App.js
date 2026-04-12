@@ -17,7 +17,9 @@
  */
 
 import React, { useState, useEffect } from "react";
-import OpenAIConfig from "./components/OpenAIConfig";
+import TabBar from "./components/TabBar";
+import DocsTab from "./components/DocsTab";
+import SettingsTab from "./components/SettingsTab";
 
 const injectStyles = () => {
   if (document.getElementById("app-styles")) return;
@@ -455,6 +457,35 @@ const injectStyles = () => {
 
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* Tab bar */
+    .tab-bar {
+      display: flex;
+      gap: 0;
+      margin-bottom: 20px;
+      border-bottom: 2px solid var(--border-color);
+    }
+
+    .tab-btn {
+      padding: 10px 20px;
+      font-size: 13px;
+      font-weight: 500;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .tab-btn:hover { color: var(--text-color); }
+
+    .tab-active {
+      color: var(--primary-color);
+      border-bottom-color: var(--primary-color);
+      font-weight: 600;
+    }
+
     /* Custom dropdown */
     .dropdown { position: relative; }
 
@@ -574,6 +605,12 @@ const injectStyles = () => {
 let invoke;
 let router;
 
+const TABS = [
+  { key: "rules", label: "Rules" },
+  { key: "docs", label: "Documentation" },
+  { key: "settings", label: "Settings", adminOnly: true },
+];
+
 function App() {
   const [configs, setConfigs] = useState([]);
   const [logs, setLogs] = useState([]);
@@ -581,12 +618,16 @@ function App() {
   const [logsLoading, setLogsLoading] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
   const [licenseActive, setLicenseActive] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [accountId, setAccountId] = useState(null);
+  const [activeTab, setActiveTab] = useState("rules");
+  const [rulesFilter, setRulesFilter] = useState("all");
 
   const fetchConfigs = async (showLoading = false) => {
     if (!invoke) return;
     if (showLoading) setRefreshingConfigs(true);
     try {
-      const result = await invoke("getConfigs");
+      const result = await invoke("getConfigs", { filter: rulesFilter });
       if (result.success) {
         setConfigs(result.configs || []);
         if (result.removedCount > 0) {
@@ -699,11 +740,30 @@ function App() {
         console.log("Bridge not available:", e);
       }
 
+      // Check admin status
+      try {
+        const adminResult = await invoke("checkIsAdmin");
+        if (adminResult.success) {
+          setIsAdmin(adminResult.isAdmin);
+          setAccountId(adminResult.accountId);
+          if (!adminResult.isAdmin) {
+            setRulesFilter("mine");
+          }
+        }
+      } catch (e) {
+        console.log("Could not check admin status:", e);
+      }
+
       await fetchConfigs();
       setLoading(false);
     };
     init();
   }, []);
+
+  // Re-fetch configs when filter changes
+  useEffect(() => {
+    if (!loading && invoke) fetchConfigs();
+  }, [rulesFilter]);
 
   if (loading) {
     return (
@@ -760,7 +820,7 @@ function App() {
 
       {licenseBanner}
 
-      <OpenAIConfig invoke={invoke} />
+      <TabBar tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} isAdmin={isAdmin} />
 
       {toggleError && (
         <div className="alert alert-error">
@@ -798,10 +858,22 @@ function App() {
       )}
 
       {/* Configured Rules Section */}
+      {activeTab === "rules" && (<>
       <div className="section">
         <div className="section-header">
           <span className="section-title">Configured Rules</span>
           <div className="section-actions">
+            {isAdmin && (
+              <select
+                className="btn-small"
+                value={rulesFilter}
+                onChange={(e) => { setRulesFilter(e.target.value); }}
+                style={{ cursor: "pointer" }}
+              >
+                <option value="all">All Rules</option>
+                <option value="mine">My Rules</option>
+              </select>
+            )}
             <button className="btn-small" onClick={() => fetchConfigs(true)} disabled={refreshingConfigs}>
               {refreshingConfigs ? "Refreshing..." : "Refresh"}
             </button>
@@ -957,6 +1029,17 @@ function App() {
           </div>
         )}
       </div>
+      </>)}
+
+      {/* Documentation Tab */}
+      {activeTab === "docs" && (
+        <DocsTab invoke={invoke} isAdmin={isAdmin} accountId={accountId} />
+      )}
+
+      {/* Settings Tab (admin only) */}
+      {activeTab === "settings" && isAdmin && (
+        <SettingsTab invoke={invoke} />
+      )}
     </div>
   );
 }
