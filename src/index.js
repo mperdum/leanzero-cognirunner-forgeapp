@@ -1643,7 +1643,7 @@ IMPORTANT: Use these variables in your code. For example, if a prior step stored
       body: JSON.stringify({
         model,
         temperature: 0.15,
-        max_completion_tokens: 4000,
+        max_tokens: 4000,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: `Generate JavaScript code for this post-function step:\n\n${prompt}${contextDocs ? `\n\n## Additional Context / Reference Documentation\n\n${contextDocs.substring(0, 30000)}` : ""}` },
@@ -1832,7 +1832,7 @@ Rules for verdict:
       body: JSON.stringify({
         model,
         temperature: 0.2,
-        max_completion_tokens: 1500,
+        max_tokens: 1500,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: `Review this configuration:\n\n${configDescription}` },
@@ -1841,7 +1841,9 @@ Rules for verdict:
     });
 
     if (!response.ok) {
-      return { success: false, error: `AI review failed (HTTP ${response.status})` };
+      const errBody = await response.text().catch(() => "");
+      console.error("AI review error:", response.status, errBody);
+      return { success: false, error: `AI review failed (HTTP ${response.status}). ${errBody.substring(0, 100)}` };
     }
 
     const data = await response.json();
@@ -2026,7 +2028,7 @@ You MUST respond with ONLY a valid JSON object (no markdown, no explanation):
       body: JSON.stringify({
         model,
         temperature: 0.1,
-        max_completion_tokens: 1000,
+        max_tokens: 1000,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userContent },
@@ -2794,7 +2796,7 @@ Respond with JSON only.`;
           { role: "system", content: systemPrompt },
           { role: "user", content: userContent },
         ],
-        max_completion_tokens: 1000,
+        max_tokens: 1000,
       }),
     });
 
@@ -2938,7 +2940,7 @@ RESPONSE FORMAT:
       const requestBody = {
         model,
         messages,
-        max_completion_tokens: 1000,
+        max_tokens: 1000,
       };
 
       // Offer tools only if we haven't exhausted tool-call rounds
@@ -3384,7 +3386,7 @@ You MUST respond with ONLY a valid JSON object (no markdown, no explanation):
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, temperature: 0.1, max_completion_tokens: 1000,
+      body: JSON.stringify({ model, temperature: 0.1, max_tokens: 1000,
         messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }],
       }),
     });
