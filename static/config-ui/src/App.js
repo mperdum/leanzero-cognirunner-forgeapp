@@ -954,6 +954,29 @@ const injectStyles = () => {
       overflow-y: auto;
     }
 
+    .doc-validation {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      margin-top: 4px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-family: SFMono-Regular, Consolas, monospace;
+    }
+
+    .doc-validation-error {
+      background: rgba(220, 38, 38, 0.08);
+      color: var(--error-color);
+      border: 1px solid rgba(220, 38, 38, 0.2);
+    }
+
+    .doc-validation-ok {
+      background: rgba(22, 163, 106, 0.08);
+      color: var(--success-color);
+      border: 1px solid rgba(22, 163, 106, 0.2);
+    }
+
     .doc-selection-info {
       padding: 8px 12px;
       font-size: 11px;

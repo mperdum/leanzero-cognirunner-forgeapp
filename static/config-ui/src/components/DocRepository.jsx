@@ -28,6 +28,7 @@ export default function DocRepository({ selectedDocs, onSelectionChange }) {
   const [newCategory, setNewCategory] = useState("General");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [validationMsg, setValidationMsg] = useState(null); // { type: "error"|"ok", msg }
   const [expandedDoc, setExpandedDoc] = useState(null);
   const [expandedContent, setExpandedContent] = useState("");
   const [loadingContent, setLoadingContent] = useState(false);
@@ -44,9 +45,65 @@ export default function DocRepository({ selectedDocs, onSelectionChange }) {
 
   useEffect(() => { loadDocs(); }, [loadDocs]);
 
+  // Validate content based on category
+  const validateContent = useCallback((content, category) => {
+    if (!content.trim()) {
+      setValidationMsg(null);
+      return true;
+    }
+
+    if (category === "JSON Schemas" || category === "Field Mappings") {
+      try {
+        const parsed = JSON.parse(content);
+        const type = Array.isArray(parsed) ? "array" : typeof parsed;
+        const count = Array.isArray(parsed)
+          ? `${parsed.length} items`
+          : type === "object"
+            ? `${Object.keys(parsed).length} keys`
+            : type;
+        setValidationMsg({ type: "ok", msg: `Valid JSON (${count})` });
+        return true;
+      } catch (e) {
+        const match = e.message.match(/position (\d+)/);
+        const pos = match ? ` at position ${match[1]}` : "";
+        setValidationMsg({ type: "error", msg: `Invalid JSON${pos}: ${e.message.split(" at ")[0]}` });
+        return false;
+      }
+    }
+
+    if (category === "Code Snippets") {
+      try {
+        new Function(content);
+        setValidationMsg({ type: "ok", msg: "Valid JavaScript syntax" });
+        return true;
+      } catch (e) {
+        setValidationMsg({ type: "error", msg: `JS syntax error: ${e.message}` });
+        return false;
+      }
+    }
+
+    // No validation for other categories
+    setValidationMsg(null);
+    return true;
+  }, []);
+
+  // Re-validate when content or category changes
+  useEffect(() => {
+    if (newContent.trim()) {
+      validateContent(newContent, newCategory);
+    } else {
+      setValidationMsg(null);
+    }
+  }, [newContent, newCategory, validateContent]);
+
   const handleSave = async () => {
     if (!newTitle.trim() || !newContent.trim()) {
       setError("Title and content are required");
+      return;
+    }
+    // Block save on validation errors
+    if (!validateContent(newContent, newCategory)) {
+      setError("Fix validation errors before saving");
       return;
     }
     setSaving(true);
@@ -156,12 +213,26 @@ export default function DocRepository({ selectedDocs, onSelectionChange }) {
             </div>
           </div>
           <textarea
-            className="textarea doc-content-input"
+            className={`textarea doc-content-input ${validationMsg?.type === "error" ? "input-error" : ""}`}
             rows={10}
             value={newContent}
             onChange={(e) => setNewContent(e.target.value)}
             placeholder={"Paste documentation, JSON schemas, API specs, field mappings, or any reference material.\n\nExamples:\n- REST API endpoint docs with request/response formats\n- Custom field IDs and their meanings\n- Business rules for automation logic\n- JSON payload structures"}
           />
+          {validationMsg && (
+            <div className={`doc-validation ${validationMsg.type === "error" ? "doc-validation-error" : "doc-validation-ok"}`}>
+              {validationMsg.type === "error" ? (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+                </svg>
+              ) : (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M20 6L9 17l-5-5" />
+                </svg>
+              )}
+              <span>{validationMsg.msg}</span>
+            </div>
+          )}
           <div className="doc-add-actions">
             <span className="doc-size-hint">
               {newContent.length > 0 ? formatSize(newContent.length) : ""}{newContent.length > 200000 ? " (too large)" : ""}
@@ -169,7 +240,7 @@ export default function DocRepository({ selectedDocs, onSelectionChange }) {
             <button
               className="btn-save-doc"
               onClick={handleSave}
-              disabled={saving || !newTitle.trim() || !newContent.trim() || newContent.length > 200000}
+              disabled={saving || !newTitle.trim() || !newContent.trim() || newContent.length > 200000 || validationMsg?.type === "error"}
             >
               {saving ? "Saving..." : "Save to Library"}
             </button>
