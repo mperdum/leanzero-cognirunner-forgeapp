@@ -459,6 +459,233 @@ const injectStyles = () => {
 
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* Permissions tab */
+    .perm-tab { }
+
+    .perm-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .perm-header-icon {
+      padding: 10px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--icon-bg), rgba(37, 99, 235, 0.12));
+      color: var(--primary-color);
+      flex-shrink: 0;
+      display: flex;
+      box-shadow: 0 0 12px rgba(37, 99, 235, 0.1);
+    }
+
+    .perm-title {
+      margin: 0 0 4px;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-color);
+    }
+
+    .perm-subtitle {
+      margin: 0;
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    /* Search input */
+    .perm-search-wrap {
+      position: relative;
+      margin-bottom: 16px;
+    }
+
+    .perm-search-input-wrap {
+      display: flex;
+      align-items: center;
+      border: 2px solid var(--border-color);
+      border-radius: 10px;
+      background: var(--input-bg);
+      padding: 0 12px;
+      transition: all 0.2s ease;
+    }
+    .perm-search-input-wrap:focus-within {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    .perm-search-icon { color: var(--text-muted); flex-shrink: 0; }
+
+    .perm-search-input {
+      flex: 1;
+      border: none;
+      background: transparent;
+      color: var(--text-color);
+      font-size: 13px;
+      padding: 10px 10px;
+      outline: none;
+      font-family: inherit;
+    }
+    .perm-search-input::placeholder { color: var(--text-muted); }
+
+    .perm-search-loading { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+
+    .perm-search-clear {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 18px;
+      padding: 0 2px;
+      line-height: 1;
+    }
+    .perm-search-clear:hover { color: var(--text-color); }
+
+    /* Search results dropdown */
+    .perm-search-results {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      z-index: 50;
+      background: var(--card-bg);
+      border: 1px solid rgba(37, 99, 235, 0.2);
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+      overflow: hidden;
+    }
+    html[data-color-mode="dark"] .perm-search-results {
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+
+    .perm-search-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .perm-search-item:last-child { border-bottom: none; }
+    .perm-search-item:hover { background: var(--code-bg); }
+    .perm-search-item:active { background: rgba(37, 99, 235, 0.08); }
+    .perm-search-disabled { opacity: 0.5; cursor: default; }
+    .perm-search-disabled:hover { background: transparent; }
+    .perm-search-adding { opacity: 0.7; cursor: wait; }
+
+    .perm-search-name {
+      flex: 1;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-color);
+    }
+
+    .perm-search-badge {
+      font-size: 10px;
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    .perm-search-add-icon {
+      color: var(--primary-color);
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+    .perm-search-item:hover .perm-search-add-icon { opacity: 1; }
+
+    /* Avatar */
+    .perm-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      object-fit: cover;
+      flex-shrink: 0;
+    }
+
+    .perm-avatar-placeholder {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary-color), #1d4ed8);
+      color: white;
+      font-size: 12px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    /* Admin list */
+    .perm-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .perm-empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 32px;
+      color: var(--text-muted);
+      font-size: 13px;
+      border: 2px dashed var(--border-color);
+      border-radius: 12px;
+    }
+
+    .perm-admin-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      background: var(--card-bg);
+      transition: all 0.2s ease;
+    }
+    .perm-admin-card:hover {
+      border-color: rgba(37, 99, 235, 0.2);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+
+    .perm-admin-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .perm-admin-name {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-color);
+    }
+
+    .perm-admin-role {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .perm-remove-btn {
+      padding: 5px 12px;
+      font-size: 11px;
+      font-weight: 500;
+      border: 1px solid var(--error-color);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--error-color);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      opacity: 0;
+    }
+    .perm-admin-card:hover .perm-remove-btn { opacity: 1; }
+    .perm-remove-btn:hover {
+      background: rgba(220, 38, 38, 0.08);
+      box-shadow: 0 2px 6px rgba(220, 38, 38, 0.15);
+    }
+    .perm-remove-btn:disabled { opacity: 0.5; cursor: default; }
+
     /* Tab bar */
     .tab-bar {
       display: flex;
