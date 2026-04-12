@@ -460,11 +460,11 @@ const injectStyles = () => {
 
     .tooltip-wrap:hover .tooltip-icon { opacity: 1; }
 
-    .tooltip-bubble {
+    /* Portal-rendered tooltip (escapes overflow:hidden) */
+    .tooltip-portal {
       position: absolute;
-      left: 50%;
       transform: translateX(-50%);
-      z-index: 1000;
+      z-index: 99999;
       padding: 10px 14px;
       border-radius: 8px;
       background: #0f172a;
@@ -477,19 +477,20 @@ const injectStyles = () => {
       text-transform: none;
       white-space: normal;
       width: 280px;
+      max-width: calc(100vw - 32px);
       pointer-events: none;
       box-shadow: 0 8px 24px rgba(0,0,0,0.25), 0 0 0 1px rgba(255,255,255,0.06);
       animation: tooltipFadeIn 0.15s ease;
     }
 
-    html[data-color-mode="dark"] .tooltip-bubble {
+    html[data-color-mode="dark"] .tooltip-portal {
       background: #1e293b;
       color: #e2e8f0;
       box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.08);
     }
 
     /* Arrow */
-    .tooltip-bubble::after {
+    .tooltip-portal::after {
       content: '';
       position: absolute;
       left: 50%;
@@ -497,14 +498,12 @@ const injectStyles = () => {
       border: 6px solid transparent;
     }
 
-    .tooltip-bottom { top: calc(100% + 10px); }
     .tooltip-bottom::after {
       bottom: 100%;
       border-bottom-color: #0f172a;
     }
     html[data-color-mode="dark"] .tooltip-bottom::after { border-bottom-color: #1e293b; }
 
-    .tooltip-top { bottom: calc(100% + 10px); }
     .tooltip-top::after {
       top: 100%;
       border-top-color: #0f172a;
@@ -516,7 +515,9 @@ const injectStyles = () => {
       to { opacity: 1; transform: translateX(-50%) translateY(0); }
     }
 
-    .tooltip-top { animation-name: tooltipFadeInUp; }
+    .tooltip-top.tooltip-portal {
+      animation-name: tooltipFadeInUp;
+    }
 
     @keyframes tooltipFadeInUp {
       from { opacity: 0; transform: translateX(-50%) translateY(-4px); }
