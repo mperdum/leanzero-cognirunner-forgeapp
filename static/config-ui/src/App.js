@@ -2074,7 +2074,7 @@ function App() {
               <strong>Semantic</strong>
             </div>
             <p className="pf-type-desc">AI runs on every transition to evaluate and act. Best for decisions requiring judgment.</p>
-            <span className="pf-type-tag pf-tag-semantic">AI cost per run</span>
+            {isByok && <span className="pf-type-tag pf-tag-semantic">AI cost per run</span>}
           </div>
           <div
             className={`pf-type-card ${postFunctionType === "static" ? "pf-type-active" : ""}`}
@@ -2088,7 +2088,7 @@ function App() {
               <strong>Static</strong>
             </div>
             <p className="pf-type-desc">AI generates code once during setup. That code runs on every transition with zero AI cost.</p>
-            <span className="pf-type-tag pf-tag-static">No AI cost at runtime</span>
+            {isByok && <span className="pf-type-tag pf-tag-static">No AI cost at runtime</span>}
           </div>
         </div>
       )}
