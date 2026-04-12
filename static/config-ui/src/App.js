@@ -817,7 +817,7 @@ const injectStyles = () => {
     }
 
     .doc-add-row { display: flex; gap: 8px; }
-    .doc-category-select { max-width: 200px; font-size: 12px; }
+    .doc-category-select { width: 220px; font-size: 12px; }
 
     .doc-content-input {
       font-family: SFMono-Regular, Consolas, monospace;

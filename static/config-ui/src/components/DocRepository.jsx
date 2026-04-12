@@ -8,6 +8,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { invoke } from "@forge/bridge";
 import Tooltip from "./Tooltip";
+import CustomSelect from "./CustomSelect";
 
 const CATEGORIES = [
   "API Documentation",
@@ -145,15 +146,14 @@ export default function DocRepository({ selectedDocs, onSelectionChange }) {
             placeholder="Document title (e.g., 'Sprint Field API', 'Webhook Payload Schema')"
           />
           <div className="doc-add-row">
-            <select
-              className="input doc-category-select"
-              value={newCategory}
-              onChange={(e) => setNewCategory(e.target.value)}
-            >
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
+            <div className="doc-category-select">
+              <CustomSelect
+                value={newCategory}
+                onChange={setNewCategory}
+                options={CATEGORIES.map((c) => ({ value: c, label: c }))}
+                placeholder="Category..."
+              />
+            </div>
           </div>
           <textarea
             className="textarea doc-content-input"
