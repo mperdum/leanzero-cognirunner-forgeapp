@@ -1519,6 +1519,130 @@ resolver.define("searchIssues", async ({ payload }) => {
   }
 });
 
+/**
+ * Test a semantic post-function in dry-run mode against a real issue.
+ * Runs the full AI evaluation (condition + action) but does NOT write the result back.
+ * Returns the AI decision, the proposed value, and the reasoning.
+ */
+resolver.define("testSemanticPostFunction", async ({ payload }) => {
+  const { issueKey, fieldId, conditionPrompt, actionPrompt, actionFieldId } = payload;
+  if (!issueKey) return { success: false, error: "Select an issue to test against" };
+  if (!conditionPrompt) return { success: false, error: "Condition prompt is required" };
+
+  const startTime = Date.now();
+  const logs = [];
+
+  try {
+    // Fetch the real issue
+    logs.push(`Fetching issue ${issueKey}...`);
+    const issueResponse = await api.asApp().requestJira(
+      route`/rest/api/3/issue/${issueKey}?expand=renderedFields`,
+    );
+    if (!issueResponse.ok) {
+      return { success: false, error: `Failed to fetch ${issueKey}: HTTP ${issueResponse.status}`, logs };
+    }
+    const issue = await issueResponse.json();
+    logs.push(`Fetched ${issue.key}: "${issue.fields?.summary}"`);
+
+    // Extract source field value
+    const sourceFieldId = fieldId || "description";
+    const rawValue = issue.fields?.[sourceFieldId];
+    let fieldValue = "";
+    if (rawValue && typeof rawValue === "object" && rawValue.type === "doc") {
+      // Extract text from ADF
+      const extractAdf = (node) => {
+        if (!node) return "";
+        if (node.type === "text") return node.text || "";
+        if (node.content) return node.content.map(extractAdf).join(node.type === "paragraph" ? "\n" : "");
+        return "";
+      };
+      fieldValue = extractAdf(rawValue);
+    } else {
+      fieldValue = rawValue ? String(rawValue) : "";
+    }
+    logs.push(`Source field "${sourceFieldId}": ${fieldValue ? fieldValue.substring(0, 150) + (fieldValue.length > 150 ? "..." : "") : "(empty)"}`);
+
+    // Call OpenAI to evaluate condition + action
+    const apiKey = await getOpenAIKey();
+    if (!apiKey) {
+      return { success: false, error: "No OpenAI API key configured", logs };
+    }
+    const model = await getOpenAIModel();
+
+    const systemPrompt = `You are a workflow automation assistant. You will be given a field value and two instructions:
+1. CONDITION: Evaluate whether this condition is met based on the field value.
+2. ACTION: If the condition is met, generate the new value for the target field.
+
+You MUST respond with ONLY a valid JSON object (no markdown, no explanation):
+{
+  "decision": "UPDATE" or "SKIP",
+  "value": "the new field value (only if UPDATE)",
+  "reason": "brief explanation of your decision"
+}`;
+
+    const userContent = `Field value:\n${fieldValue || "(empty)"}\n\nCONDITION: ${conditionPrompt}\n\nACTION: ${actionPrompt || "Generate an appropriate value for the target field."}`;
+
+    logs.push(`Calling AI (model: ${model})...`);
+
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.1,
+        max_completion_tokens: 1000,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userContent },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      logs.push(`AI error: ${response.status}`);
+      return { success: false, error: `AI error (${response.status})`, logs };
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) {
+      logs.push("AI returned empty response");
+      return { success: false, error: "Empty AI response", logs };
+    }
+
+    const result = JSON.parse(content);
+    logs.push(`AI decision: ${result.decision}`);
+    logs.push(`Reason: ${result.reason}`);
+
+    if (result.decision === "UPDATE") {
+      logs.push(`Proposed value for "${actionFieldId || sourceFieldId}": ${typeof result.value === "string" ? result.value.substring(0, 200) : JSON.stringify(result.value)}`);
+      logs.push(`DRY RUN — field was NOT updated`);
+    }
+
+    return {
+      success: true,
+      decision: result.decision,
+      reason: result.reason,
+      proposedValue: result.value,
+      targetField: actionFieldId || sourceFieldId,
+      sourceField: sourceFieldId,
+      sourceValue: fieldValue ? fieldValue.substring(0, 300) : "(empty)",
+      issueKey,
+      issueSummary: issue.fields?.summary,
+      logs,
+      executionTimeMs: Date.now() - startTime,
+      tokensUsed: data.usage?.total_tokens,
+    };
+  } catch (error) {
+    logs.push(`Error: ${error.message}`);
+    return { success: false, error: error.message, logs, executionTimeMs: Date.now() - startTime };
+  }
+});
+
 resolver.define("testPostFunction", async ({ payload }) => {
   const { code, issueKey, jql } = payload;
   if (!code || typeof code !== "string") {

@@ -5,9 +5,11 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import React from "react";
+import React, { useState } from "react";
+import { invoke } from "@forge/bridge";
 import Tooltip from "./Tooltip";
 import CustomSelect from "./CustomSelect";
+import IssuePicker from "./IssuePicker";
 
 export default function SemanticConfig({
   conditionPrompt,
@@ -16,10 +18,34 @@ export default function SemanticConfig({
   setActionPrompt,
   actionFieldId,
   setActionFieldId,
+  fieldId,
   fields,
   loadingFields,
   errorFields,
 }) {
+  const [showTest, setShowTest] = useState(false);
+  const [testIssue, setTestIssue] = useState("");
+  const [testRunning, setTestRunning] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+
+  const handleTest = async () => {
+    setTestRunning(true);
+    setTestResult(null);
+    try {
+      const result = await invoke("testSemanticPostFunction", {
+        issueKey: testIssue.trim(),
+        fieldId: fieldId || "description",
+        conditionPrompt,
+        actionPrompt,
+        actionFieldId,
+      });
+      setTestResult(result);
+    } catch (e) {
+      setTestResult({ success: false, error: e.message, logs: [] });
+    }
+    setTestRunning(false);
+  };
+
   return (
     <div className="semantic-config">
       <div className="pf-how-it-works">
@@ -109,6 +135,100 @@ export default function SemanticConfig({
               { label: "Custom Fields", filter: (o) => !!o.custom },
             ]}
           />
+        )}
+      </div>
+
+      {/* Test Panel */}
+      <div className="semantic-test-section">
+        <button
+          className="btn-semantic-test-toggle"
+          onClick={() => setShowTest(!showTest)}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polygon points="5 3 19 12 5 21 5 3" />
+          </svg>
+          <span>{showTest ? "Hide Test" : "Test Run"}</span>
+          <Tooltip text="Test your semantic post-function against a real issue. The AI evaluates the condition and generates a proposed value — but does NOT write it back. Completely safe." />
+        </button>
+
+        {showTest && (
+          <div className="semantic-test-panel">
+            <div className="semantic-test-header">
+              <span className="test-panel-badge">Dry run — the target field will NOT be updated</span>
+            </div>
+
+            <div className="form-group" style={{ margin: "10px 0 8px" }}>
+              <label className="label" style={{ fontSize: "11px", marginBottom: "4px" }}>
+                Test against issue
+              </label>
+              <div className="test-target-row">
+                <IssuePicker value={testIssue} onChange={setTestIssue} />
+                <button
+                  className="btn-run-test"
+                  onClick={handleTest}
+                  disabled={testRunning || !testIssue.trim() || !conditionPrompt.trim()}
+                >
+                  {testRunning ? "Running..." : "Run Test"}
+                </button>
+              </div>
+            </div>
+
+            {/* Result */}
+            {testResult && (
+              <div className={`semantic-test-result ${testResult.success ? (testResult.decision === "UPDATE" ? "st-update" : "st-skip") : "st-error"}`}>
+                <div className="st-result-header">
+                  {testResult.success ? (
+                    <span className={`test-badge ${testResult.decision === "UPDATE" ? "test-badge-pass" : "test-badge-skip"}`}>
+                      {testResult.decision}
+                    </span>
+                  ) : (
+                    <span className="test-badge test-badge-fail">ERROR</span>
+                  )}
+                  <span className="test-result-meta">
+                    {testResult.issueKey && `${testResult.issueKey}`}
+                    {testResult.executionTimeMs ? ` — ${testResult.executionTimeMs}ms` : ""}
+                    {testResult.tokensUsed ? ` — ${testResult.tokensUsed} tokens` : ""}
+                  </span>
+                  <button className="test-dismiss" onClick={() => setTestResult(null)}>&times;</button>
+                </div>
+
+                {testResult.error && (
+                  <div className="st-section"><strong>Error:</strong> {testResult.error}</div>
+                )}
+
+                {testResult.reason && (
+                  <div className="st-section">
+                    <div className="st-section-label">AI Reasoning</div>
+                    <div className="st-reason">{testResult.reason}</div>
+                  </div>
+                )}
+
+                {testResult.sourceValue && (
+                  <div className="st-section">
+                    <div className="st-section-label">Source Field ({testResult.sourceField})</div>
+                    <pre className="st-value">{testResult.sourceValue}</pre>
+                  </div>
+                )}
+
+                {testResult.decision === "UPDATE" && testResult.proposedValue !== undefined && (
+                  <div className="st-section">
+                    <div className="st-section-label">Proposed Value for {testResult.targetField}</div>
+                    <pre className="st-value st-proposed">{typeof testResult.proposedValue === "string" ? testResult.proposedValue : JSON.stringify(testResult.proposedValue, null, 2)}</pre>
+                    <p className="hint" style={{ margin: "4px 0 0" }}>This value was NOT written. Dry run only.</p>
+                  </div>
+                )}
+
+                {testResult.logs && testResult.logs.length > 0 && (
+                  <div className="st-section">
+                    <div className="st-section-label">Execution Log</div>
+                    {testResult.logs.map((log, i) => (
+                      <div key={i} className="test-log-line"><code>{log}</code></div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

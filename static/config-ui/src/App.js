@@ -1471,6 +1471,110 @@ const injectStyles = () => {
     }
 
     .semantic-config { padding: 16px; }
+
+    /* Semantic test panel */
+    .semantic-test-section {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .btn-semantic-test-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: none;
+      border: 1px solid var(--success-color);
+      border-radius: 6px;
+      padding: 8px 14px;
+      color: var(--success-color);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-semantic-test-toggle:hover { background: rgba(22, 163, 106, 0.08); }
+
+    .semantic-test-panel {
+      margin-top: 10px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--input-bg);
+    }
+
+    .semantic-test-header {
+      padding: 8px 12px;
+      background: var(--code-bg);
+      border-bottom: 1px solid var(--border-color);
+      font-size: 10px;
+    }
+
+    .semantic-test-result {
+      border-top: 1px solid var(--border-color);
+      overflow: hidden;
+    }
+
+    .st-update { border-color: var(--success-color); }
+    .st-skip { border-color: var(--primary-color); }
+    .st-error { border-color: var(--error-color); }
+
+    .st-result-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      font-size: 12px;
+    }
+
+    .st-update .st-result-header { background: rgba(22, 163, 106, 0.06); }
+    .st-skip .st-result-header { background: rgba(37, 99, 235, 0.06); }
+    .st-error .st-result-header { background: rgba(220, 38, 38, 0.06); }
+
+    .test-badge-skip {
+      background: rgba(37, 99, 235, 0.15);
+      color: var(--primary-color);
+    }
+
+    .st-section {
+      padding: 8px 12px;
+      border-top: 1px solid var(--border-color);
+      font-size: 12px;
+    }
+
+    .st-section-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .st-reason {
+      color: var(--text-color);
+      line-height: 1.5;
+    }
+
+    .st-value {
+      margin: 0;
+      padding: 8px 10px;
+      background: var(--code-bg);
+      border-radius: 4px;
+      font-family: SFMono-Regular, Consolas, monospace;
+      font-size: 11px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--text-secondary);
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .st-proposed {
+      color: var(--success-color);
+      border: 1px solid rgba(22, 163, 106, 0.2);
+    }
   `;
   document.head.appendChild(style);
 };
@@ -1968,6 +2072,7 @@ function App() {
             setActionPrompt={setActionPrompt}
             actionFieldId={actionFieldId}
             setActionFieldId={setActionFieldId}
+            fieldId={fieldId}
             fields={fields}
             loadingFields={fieldsLoading}
             errorFields={fieldsError}
