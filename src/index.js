@@ -154,7 +154,10 @@ resolver.define("getLogs", async () => {
 /**
  * Resolver: Clear validation logs
  */
-resolver.define("clearLogs", async () => {
+resolver.define("clearLogs", async ({ context }) => {
+  if (!(await requireAdmin(context.accountId))) {
+    return { success: false, error: "Admin access required" };
+  }
   try {
     await storage.set(LOGS_STORAGE_KEY, []);
     return { success: true };
@@ -234,10 +237,16 @@ resolver.define("registerConfig", async ({ payload, context }) => {
 /**
  * Resolver: Remove a config from the registry (KVS only)
  */
-resolver.define("removeConfig", async ({ payload }) => {
+resolver.define("removeConfig", async ({ payload, context }) => {
   try {
     const { id } = payload;
     let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    const target = configs.find((c) => c.id === id);
+    if (target && target.createdBy && target.createdBy !== context.accountId) {
+      if (!(await requireAdmin(context.accountId))) {
+        return { success: false, error: "You can only remove rules you created" };
+      }
+    }
     configs = configs.filter((c) => c.id !== id);
     await storage.set(CONFIG_REGISTRY_KEY, configs);
     return { success: true };
@@ -251,13 +260,16 @@ resolver.define("removeConfig", async ({ payload }) => {
  * Resolver: Disable a workflow rule via KVS flag.
  * The validate function checks this flag and skips AI validation when disabled.
  */
-resolver.define("disableRule", async ({ payload }) => {
+resolver.define("disableRule", async ({ payload, context }) => {
   try {
     const { id } = payload;
     let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
     const config = configs.find((c) => c.id === id);
     if (!config) {
       return { success: false, error: "Config not found in registry" };
+    }
+    if (config.createdBy && config.createdBy !== context.accountId && !(await requireAdmin(context.accountId))) {
+      return { success: false, error: "You can only manage rules you created" };
     }
     configs = configs.map((c) => c.id === id ? { ...c, disabled: true, updatedAt: new Date().toISOString() } : c);
     await storage.set(CONFIG_REGISTRY_KEY, configs);
@@ -271,13 +283,16 @@ resolver.define("disableRule", async ({ payload }) => {
 /**
  * Resolver: Re-enable a previously disabled workflow rule via KVS flag.
  */
-resolver.define("enableRule", async ({ payload }) => {
+resolver.define("enableRule", async ({ payload, context }) => {
   try {
     const { id } = payload;
     let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
     const config = configs.find((c) => c.id === id);
     if (!config) {
       return { success: false, error: "Config not found in registry" };
+    }
+    if (config.createdBy && config.createdBy !== context.accountId && !(await requireAdmin(context.accountId))) {
+      return { success: false, error: "You can only manage rules you created" };
     }
     configs = configs.map((c) => c.id === id ? { ...c, disabled: false, updatedAt: new Date().toISOString() } : c);
     await storage.set(CONFIG_REGISTRY_KEY, configs);
@@ -1087,7 +1102,10 @@ resolver.define("getOpenAIModels", async () => {
 /**
  * Save the user's model selection. Only works when BYOK is active.
  */
-resolver.define("saveOpenAIModel", async ({ payload }) => {
+resolver.define("saveOpenAIModel", async ({ payload, context }) => {
+  if (!(await requireAdmin(context.accountId))) {
+    return { success: false, error: "Admin access required" };
+  }
   try {
     const { model } = payload;
     if (!model || typeof model !== "string") {
@@ -1170,10 +1188,16 @@ resolver.define("registerPostFunction", async ({ payload, context }) => {
 /**
  * Remove a post-function configuration by ID.
  */
-resolver.define("removePostFunction", async ({ payload }) => {
+resolver.define("removePostFunction", async ({ payload, context }) => {
   try {
     const { id } = payload;
     let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
+    const target = configs.find((c) => c.id === id);
+    if (target && target.createdBy && target.createdBy !== context.accountId) {
+      if (!(await requireAdmin(context.accountId))) {
+        return { success: false, error: "You can only remove post-functions you created" };
+      }
+    }
     configs = configs.filter((c) => c.id !== id);
     await storage.set(CONFIG_REGISTRY_KEY, configs);
     return { success: true };
@@ -1186,12 +1210,15 @@ resolver.define("removePostFunction", async ({ payload }) => {
 /**
  * Disable a post-function (skip execution without removing config).
  */
-resolver.define("disablePostFunction", async ({ payload }) => {
+resolver.define("disablePostFunction", async ({ payload, context }) => {
   try {
     const { id } = payload;
     let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
     const idx = configs.findIndex((c) => c.id === id);
     if (idx < 0) return { success: false, error: "Post-function not found" };
+    if (configs[idx].createdBy && configs[idx].createdBy !== context.accountId && !(await requireAdmin(context.accountId))) {
+      return { success: false, error: "You can only manage post-functions you created" };
+    }
     configs[idx].disabled = true;
     configs[idx].updatedAt = new Date().toISOString();
     await storage.set(CONFIG_REGISTRY_KEY, configs);
@@ -1205,12 +1232,15 @@ resolver.define("disablePostFunction", async ({ payload }) => {
 /**
  * Re-enable a disabled post-function.
  */
-resolver.define("enablePostFunction", async ({ payload }) => {
+resolver.define("enablePostFunction", async ({ payload, context }) => {
   try {
     const { id } = payload;
     let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
     const idx = configs.findIndex((c) => c.id === id);
     if (idx < 0) return { success: false, error: "Post-function not found" };
+    if (configs[idx].createdBy && configs[idx].createdBy !== context.accountId && !(await requireAdmin(context.accountId))) {
+      return { success: false, error: "You can only manage post-functions you created" };
+    }
     configs[idx].disabled = false;
     configs[idx].updatedAt = new Date().toISOString();
     await storage.set(CONFIG_REGISTRY_KEY, configs);
@@ -1319,13 +1349,20 @@ resolver.define("getContextDocContent", async ({ payload }) => {
 /**
  * Delete a document from the shared repository.
  */
-resolver.define("deleteContextDoc", async ({ payload }) => {
+resolver.define("deleteContextDoc", async ({ payload, context }) => {
   try {
     const { id } = payload;
+    // Check ownership — users can only delete their own docs, admins can delete any
+    const index = (await storage.get(DOC_REPO_INDEX_KEY)) || [];
+    const doc = index.find((d) => d.id === id);
+    if (doc && doc.createdBy && doc.createdBy !== context.accountId) {
+      if (!(await requireAdmin(context.accountId))) {
+        return { success: false, error: "You can only delete documents you created" };
+      }
+    }
     await storage.delete(`${DOC_REPO_PREFIX}${id}`);
-    let index = (await storage.get(DOC_REPO_INDEX_KEY)) || [];
-    index = index.filter((d) => d.id !== id);
-    await storage.set(DOC_REPO_INDEX_KEY, index);
+    const updated = index.filter((d) => d.id !== id);
+    await storage.set(DOC_REPO_INDEX_KEY, updated);
     return { success: true };
   } catch (error) {
     console.error("Failed to delete context doc:", error);
