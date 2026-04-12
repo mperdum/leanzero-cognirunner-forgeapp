@@ -624,11 +624,11 @@ function App() {
   const [activeTab, setActiveTab] = useState("rules");
   const [rulesFilter, setRulesFilter] = useState("all");
 
-  const fetchConfigs = async (showLoading = false) => {
+  const fetchConfigs = async (showLoading = false, filterOverride) => {
     if (!invoke) return;
     if (showLoading) setRefreshingConfigs(true);
     try {
-      const result = await invoke("getConfigs", { filter: rulesFilter });
+      const result = await invoke("getConfigs", { filter: filterOverride || rulesFilter });
       if (result.success) {
         setConfigs(result.configs || []);
         if (result.removedCount > 0) {
@@ -741,10 +741,12 @@ function App() {
         console.log("Bridge not available:", e);
       }
 
-      // Check admin status
+      // Check admin status BEFORE fetching configs
+      let userIsAdmin = false;
       try {
         const adminResult = await invoke("checkIsAdmin");
         if (adminResult.success) {
+          userIsAdmin = adminResult.isAdmin;
           setIsAdmin(adminResult.isAdmin);
           setAccountId(adminResult.accountId);
           if (!adminResult.isAdmin) {
@@ -755,7 +757,8 @@ function App() {
         console.log("Could not check admin status:", e);
       }
 
-      await fetchConfigs();
+      // Fetch configs with the correct filter (state hasn't updated yet)
+      await fetchConfigs(false, userIsAdmin ? "all" : "mine");
       setLoading(false);
     };
     init();
