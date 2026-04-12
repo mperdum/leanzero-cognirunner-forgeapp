@@ -19,7 +19,8 @@
 import React, { useState, useEffect } from "react";
 import TabBar from "./components/TabBar";
 import DocsTab from "./components/DocsTab";
-import SettingsTab from "./components/SettingsTab";
+import PermissionsTab from "./components/PermissionsTab";
+import SettingsOpenAITab from "./components/SettingsOpenAITab";
 import CustomSelect from "./components/CustomSelect";
 
 const injectStyles = () => {
@@ -609,7 +610,8 @@ let router;
 const TABS = [
   { key: "rules", label: "Rules" },
   { key: "docs", label: "Documentation" },
-  { key: "settings", label: "Permissions", adminOnly: true },
+  { key: "permissions", label: "Permissions", adminOnly: true },
+  { key: "settings", label: "Settings", adminOnly: true },
 ];
 
 function App() {
@@ -1048,9 +1050,14 @@ function App() {
         <DocsTab invoke={invoke} isAdmin={isAdmin} accountId={accountId} />
       )}
 
-      {/* Settings Tab (admin only) */}
+      {/* Permissions Tab (admin only) — app admin management */}
+      {activeTab === "permissions" && isAdmin && (
+        <PermissionsTab invoke={invoke} />
+      )}
+
+      {/* Settings Tab (admin only) — BYOK / OpenAI config */}
       {activeTab === "settings" && isAdmin && (
-        <SettingsTab invoke={invoke} />
+        <SettingsOpenAITab invoke={invoke} />
       )}
     </div>
   );
