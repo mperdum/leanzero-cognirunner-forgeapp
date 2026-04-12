@@ -1472,6 +1472,53 @@ IMPORTANT: Use these variables in your code. For example, if a prior step stored
  * Write operations (updateIssue, transitionIssue) are ALWAYS dry-run —
  * they log what would happen but never mutate Jira data.
  */
+
+/**
+ * Search issues for the issue picker — type-ahead search by key or summary text.
+ */
+resolver.define("searchIssues", async ({ payload }) => {
+  try {
+    const { query, projectKey } = payload;
+    if (!query || query.length < 2) return { success: true, issues: [] };
+
+    // If query looks like an issue key (e.g., PROJ-123), search by key
+    const isKey = /^[A-Z]+-\d+$/i.test(query.trim());
+    let jql;
+    if (isKey) {
+      jql = `key = "${query.trim().toUpperCase()}"`;
+    } else {
+      const escaped = query.replace(/"/g, '\\"');
+      const projectFilter = projectKey ? `project = ${projectKey} AND ` : "";
+      jql = `${projectFilter}(summary ~ "${escaped}" OR key = "${escaped.toUpperCase()}") ORDER BY updated DESC`;
+    }
+
+    const response = await api.asApp().requestJira(
+      route`/rest/api/3/search`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jql, maxResults: 8, fields: ["summary", "status", "issuetype", "priority"] }),
+      },
+    );
+
+    if (!response.ok) return { success: true, issues: [] };
+
+    const data = await response.json();
+    const issues = (data.issues || []).map((i) => ({
+      key: i.key,
+      summary: i.fields.summary,
+      status: i.fields.status?.name,
+      type: i.fields.issuetype?.name,
+      priority: i.fields.priority?.name,
+    }));
+
+    return { success: true, issues };
+  } catch (error) {
+    console.error("Issue search error:", error);
+    return { success: true, issues: [] };
+  }
+});
+
 resolver.define("testPostFunction", async ({ payload }) => {
   const { code, issueKey, jql } = payload;
   if (!code || typeof code !== "string") {

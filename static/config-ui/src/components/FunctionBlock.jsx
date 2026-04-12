@@ -11,6 +11,7 @@ import Tooltip from "./Tooltip";
 import CustomSelect from "./CustomSelect";
 import CodeEditor from "./CodeEditor";
 import DocRepository from "./DocRepository";
+import IssuePicker from "./IssuePicker";
 
 const OPERATION_TYPES = [
   {
@@ -536,16 +537,13 @@ export default function FunctionBlock({ index, functionData, priorSteps, onUpdat
 
               <div className="test-panel-target">
                 <label className="label" style={{ fontSize: "11px", marginBottom: "4px" }}>
-                  Test against
-                  <Tooltip text="Enter an issue key (e.g., PROJ-123) to test with real issue data. Or enter a JQL query to find an issue. Leave empty to use mock data." />
+                  Test against issue
+                  <Tooltip text="Search for a Jira issue to test your code with real data. api.getIssue() and api.searchJql() will return real results. Writes (updateIssue, transitionIssue) are always safe — they log what would happen but never change anything." />
                 </label>
                 <div className="test-target-row">
-                  <input
-                    type="text"
-                    className="input test-target-input"
+                  <IssuePicker
                     value={testTarget}
-                    onChange={(e) => setTestTarget(e.target.value)}
-                    placeholder='Issue key (PROJ-123) or JQL (project = PROJ AND status = "To Do")'
+                    onChange={setTestTarget}
                   />
                   <button
                     className="btn-run-test"
@@ -554,11 +552,11 @@ export default function FunctionBlock({ index, functionData, priorSteps, onUpdat
                       setTestResult(null);
                       try {
                         const target = testTarget.trim();
-                        const isJql = target && (target.includes("=") || target.includes("~") || target.startsWith("project") || target.startsWith("status") || target.startsWith("issuetype"));
+                        const isKey = /^[A-Z]+-\d+$/i.test(target);
                         const result = await invoke("testPostFunction", {
                           code: functionData.code,
-                          issueKey: target && !isJql ? target : undefined,
-                          jql: isJql ? target : undefined,
+                          issueKey: isKey ? target : undefined,
+                          jql: target && !isKey ? target : undefined,
                         });
                         setTestResult(result);
                       } catch (e) {
@@ -566,15 +564,15 @@ export default function FunctionBlock({ index, functionData, priorSteps, onUpdat
                       }
                       setTestRunning(false);
                     }}
-                    disabled={testRunning}
+                    disabled={testRunning || !functionData.code?.trim()}
                   >
-                    {testRunning ? "Running..." : "Run"}
+                    {testRunning ? "Running..." : "Run Test"}
                   </button>
                 </div>
                 <p className="hint" style={{ marginTop: "4px" }}>
                   {testTarget.trim()
-                    ? "Reads will use real Jira data. Writes are always safe (dry run)."
-                    : "No issue specified — will use mock data. Enter an issue key for real data."
+                    ? "Reads use real Jira data. Writes are always safe (dry run)."
+                    : "No issue selected — will use mock data. Search for an issue for real results."
                   }
                 </p>
               </div>

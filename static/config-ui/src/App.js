@@ -1254,6 +1254,126 @@ const injectStyles = () => {
       font-family: SFMono-Regular, Consolas, monospace;
     }
 
+    /* === Issue Picker === */
+    .issue-picker {
+      position: relative;
+      flex: 1;
+    }
+
+    .issue-picker-input-wrap {
+      display: flex;
+      align-items: center;
+      border: 2px solid var(--border-color);
+      border-radius: 4px;
+      background: var(--input-bg);
+      padding: 0 8px;
+      transition: border-color 0.15s ease;
+    }
+
+    .issue-picker-input-wrap:focus-within {
+      border-color: var(--primary-color);
+    }
+
+    .issue-picker-icon { color: var(--text-muted); flex-shrink: 0; }
+
+    .issue-picker-input {
+      flex: 1;
+      border: none;
+      background: transparent;
+      color: var(--text-color);
+      font-size: 12px;
+      font-family: SFMono-Regular, Consolas, monospace;
+      padding: 7px 8px;
+      outline: none;
+    }
+
+    .issue-picker-input::placeholder { color: var(--text-muted); }
+
+    .issue-picker-loading {
+      font-size: 12px;
+      color: var(--text-muted);
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse { 50% { opacity: 0.3; } }
+
+    .issue-picker-clear {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 16px;
+      padding: 0 2px;
+      line-height: 1;
+    }
+    .issue-picker-clear:hover { color: var(--text-color); }
+
+    .issue-picker-dropdown {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      z-index: 100;
+      background: var(--card-bg);
+      border: 2px solid var(--primary-color);
+      border-radius: 6px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    html[data-color-mode="dark"] .issue-picker-dropdown {
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+
+    .issue-picker-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border-color);
+      transition: background 0.1s ease;
+    }
+
+    .issue-picker-item:last-child { border-bottom: none; }
+    .issue-picker-item:hover,
+    .issue-picker-highlighted { background: var(--code-bg); }
+
+    .issue-picker-item-key {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+    }
+
+    .issue-picker-type-icon { font-size: 14px; }
+
+    .issue-picker-item-summary {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .issue-picker-item-meta {
+      display: flex;
+      gap: 8px;
+      margin-top: 3px;
+      font-size: 10px;
+    }
+
+    .issue-picker-status {
+      padding: 1px 6px;
+      border-radius: 3px;
+      background: var(--code-bg);
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .issue-picker-priority {
+      color: var(--text-muted);
+    }
+
     .btn-run-test {
       padding: 6px 16px;
       font-size: 12px;
