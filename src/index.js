@@ -1404,6 +1404,103 @@ resolver.define("deleteContextDoc", async ({ payload, context }) => {
  * The AI knows the full sandbox API surface and generates working code
  * from a natural language description.
  */
+/**
+ * AI assistant for choosing the right Jira REST endpoint.
+ * User describes what they want, AI suggests endpoint + method + body.
+ */
+resolver.define("suggestEndpoint", async ({ payload }) => {
+  const { prompt } = payload;
+  if (!prompt || prompt.length < 5) return { success: false, error: "Describe what you want to do" };
+
+  try {
+    const apiKey = await getOpenAIKey();
+    if (!apiKey) return { success: false, error: "No OpenAI API key configured" };
+    const model = await getOpenAIModel();
+
+    const systemPrompt = `You are a Jira REST API assistant. Given a user's description of what they want to do, suggest the correct Jira REST API v3 endpoint.
+
+Available endpoints (from Forge, using api.asApp().requestJira()):
+
+ISSUES:
+- GET /rest/api/3/issue/{issueIdOrKey} — Get issue details
+- PUT /rest/api/3/issue/{issueIdOrKey} — Update issue fields
+- POST /rest/api/3/issue — Create a new issue
+- DELETE /rest/api/3/issue/{issueIdOrKey} — Delete an issue
+
+SEARCH:
+- POST /rest/api/3/search — Search issues by JQL (body: {jql, maxResults, fields})
+
+TRANSITIONS:
+- GET /rest/api/3/issue/{issueIdOrKey}/transitions — List available transitions
+- POST /rest/api/3/issue/{issueIdOrKey}/transitions — Execute transition (body: {transition: {id}})
+
+COMMENTS:
+- GET /rest/api/3/issue/{issueIdOrKey}/comment — Get comments
+- POST /rest/api/3/issue/{issueIdOrKey}/comment — Add comment (body must use ADF format)
+- PUT /rest/api/3/issue/{issueIdOrKey}/comment/{commentId} — Update comment
+- DELETE /rest/api/3/issue/{issueIdOrKey}/comment/{commentId} — Delete comment
+
+LINKS:
+- POST /rest/api/3/issueLink — Link two issues (body: {type, outwardIssue, inwardIssue})
+- POST /rest/api/3/issue/{issueIdOrKey}/remotelink — Add external URL link
+
+WORKLOGS:
+- POST /rest/api/3/issue/{issueIdOrKey}/worklog — Log work (body: {timeSpent, comment})
+- GET /rest/api/3/issue/{issueIdOrKey}/worklog — Get worklogs
+
+WATCHERS:
+- POST /rest/api/3/issue/{issueIdOrKey}/watchers — Add watcher (body: "accountId")
+
+PROPERTIES:
+- PUT /rest/api/3/issue/{issueIdOrKey}/properties/{key} — Set app property on issue
+- GET /rest/api/3/issue/{issueIdOrKey}/properties — List properties
+
+IMPORTANT: Description and comment fields require ADF (Atlassian Document Format):
+{
+  "type": "doc", "version": 1,
+  "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Your text"}]}]
+}
+
+Respond with ONLY a valid JSON object:
+{
+  "method": "GET|POST|PUT|DELETE",
+  "path": "/rest/api/3/...",
+  "description": "What this endpoint does",
+  "body": null or the JSON body as a string,
+  "explanation": "Brief explanation of why this endpoint and how to use it"
+}`;
+
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model,
+        temperature: 0.1,
+        max_completion_tokens: 1500,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: prompt },
+        ],
+      }),
+    });
+
+    if (!response.ok) return { success: false, error: `AI error (${response.status})` };
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) return { success: false, error: "Empty AI response" };
+
+    try {
+      const suggestion = JSON.parse(content.replace(/^```json\s*\n?/i, "").replace(/\n?```\s*$/i, ""));
+      return { success: true, suggestion, tokens: data.usage?.total_tokens };
+    } catch {
+      return { success: true, suggestion: { explanation: content.substring(0, 500) } };
+    }
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 resolver.define("generatePostFunctionCode", async ({ payload }) => {
   const { prompt, operationType, endpoint, method, includeBackoff, contextDocs, priorSteps } = payload;
   if (!prompt || typeof prompt !== "string") {

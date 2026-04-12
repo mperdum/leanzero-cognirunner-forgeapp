@@ -1121,6 +1121,33 @@ const injectStyles = () => {
       to { opacity: 1; transform: scale(1); }
     }
 
+    /* REST API section */
+    .rest-api-section {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .endpoint-assist-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .endpoint-suggestion {
+      margin-top: 8px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, rgba(37, 99, 235, 0.06), transparent);
+      border: 1px solid rgba(37, 99, 235, 0.15);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .endpoint-suggestion-text {
+      margin: 0;
+      color: var(--text-color);
+    }
+
     /* Operation-specific fields */
     .op-fields {
       display: grid;

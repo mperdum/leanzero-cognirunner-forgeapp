@@ -12,6 +12,7 @@ import CustomSelect from "./CustomSelect";
 import CodeEditor from "./CodeEditor";
 import DocRepository from "./DocRepository";
 import IssuePicker from "./IssuePicker";
+import JIRA_ENDPOINTS_DATA from "../data/jira-endpoints";
 
 const OPERATION_TYPES = [
   {
@@ -141,9 +142,29 @@ export default function FunctionBlock({ index, functionData, priorSteps, onUpdat
   const [testTarget, setTestTarget] = useState("");
   const [showTestPanel, setShowTestPanel] = useState(false);
   const [opSuggested, setOpSuggested] = useState(false);
+  const [endpointQuery, setEndpointQuery] = useState("");
+  const [suggestingEndpoint, setSuggestingEndpoint] = useState(false);
+  const [endpointSuggestion, setEndpointSuggestion] = useState(null);
   const suggestTimer = useRef(null);
 
   const update = (field, value) => onUpdate({ [field]: value });
+
+  const handleEndpointSuggest = async () => {
+    if (!endpointQuery.trim()) return;
+    setSuggestingEndpoint(true);
+    setEndpointSuggestion(null);
+    try {
+      const result = await invoke("suggestEndpoint", { prompt: endpointQuery.trim() });
+      if (result.success && result.suggestion) {
+        setEndpointSuggestion(result.suggestion);
+      } else {
+        setEndpointSuggestion({ explanation: result.error || "Could not find a suggestion" });
+      }
+    } catch (e) {
+      setEndpointSuggestion({ explanation: "Error: " + e.message });
+    }
+    setSuggestingEndpoint(false);
+  };
 
   // Auto-suggest operation type from prompt text (client-side heuristic, instant)
   const suggestOperationType = useCallback((text) => {
@@ -328,31 +349,118 @@ export default function FunctionBlock({ index, functionData, priorSteps, onUpdat
 
       {/* Operation-specific fields */}
       {opType === "rest_api_internal" && (
-        <div className="op-fields">
+        <div className="rest-api-section">
+          {/* AI Endpoint Assistant */}
           <div className="form-group">
             <label className="label">
-              HTTP Method
-              <Tooltip text="The HTTP method for the Jira REST API call. GET reads data, POST creates, PUT replaces, PATCH partially updates, DELETE removes." />
+              Find endpoint
+              <Tooltip text="Describe what you want to do and the AI will suggest the right endpoint, method, and request body." />
             </label>
-            <CustomSelect
-              value={functionData.method || "GET"}
-              onChange={(v) => update("method", v)}
-              options={HTTP_METHODS}
-            />
+            <div className="endpoint-assist-row">
+              <input
+                type="text"
+                className="input"
+                value={endpointQuery}
+                onChange={(e) => setEndpointQuery(e.target.value)}
+                placeholder='e.g., "Add a comment to the issue" or "Link two issues together"'
+                onKeyDown={(e) => { if (e.key === "Enter") handleEndpointSuggest(); }}
+              />
+              <button
+                className="btn-generate"
+                style={{ whiteSpace: "nowrap", flexShrink: 0 }}
+                onClick={handleEndpointSuggest}
+                disabled={suggestingEndpoint || !endpointQuery.trim()}
+              >
+                {suggestingEndpoint ? "Finding..." : "Suggest"}
+              </button>
+            </div>
+            {endpointSuggestion?.explanation && (
+              <div className="endpoint-suggestion">
+                <p className="endpoint-suggestion-text">{endpointSuggestion.explanation}</p>
+                {endpointSuggestion.path && (
+                  <button
+                    className="btn-generate-secondary"
+                    style={{ marginTop: "6px", fontSize: "11px", padding: "4px 10px" }}
+                    onClick={() => {
+                      if (endpointSuggestion.method) update("method", endpointSuggestion.method);
+                      if (endpointSuggestion.path) update("endpoint", endpointSuggestion.path);
+                      if (endpointSuggestion.body) update("requestBody", endpointSuggestion.body);
+                      setEndpointSuggestion(null);
+                    }}
+                  >
+                    Apply suggestion
+                  </button>
+                )}
+              </div>
+            )}
           </div>
+
+          {/* Endpoint picker */}
           <div className="form-group">
             <label className="label">
               Endpoint
-              <Tooltip text="The Jira REST API path. Use ${issueKey} for the current issue. Example: /rest/api/3/issue/${issueKey}/comment" />
+              <Tooltip text="Select a Jira REST API endpoint from the catalog, or type a custom path. Use {issueIdOrKey} as placeholder." />
             </label>
-            <input
-              type="text"
-              className="input"
+            <CustomSelect
               value={functionData.endpoint || ""}
-              onChange={(e) => update("endpoint", e.target.value)}
-              placeholder="/rest/api/3/issue/${issueKey}"
+              onChange={(v) => {
+                update("endpoint", v);
+                const ep = JIRA_ENDPOINTS_DATA.find((e) => e.path === v);
+                if (ep) {
+                  update("method", ep.method);
+                  if (ep.body) update("requestBody", ep.body);
+                }
+              }}
+              searchable
+              searchPlaceholder="Search endpoints..."
+              placeholder="Select or type an endpoint..."
+              options={JIRA_ENDPOINTS_DATA.map((e) => ({
+                value: e.path,
+                label: `${e.method} ${e.path.replace("/rest/api/3/", "")}`,
+                meta: e.description,
+                type: e.category,
+              }))}
             />
           </div>
+
+          <div className="op-fields">
+            <div className="form-group">
+              <label className="label">HTTP Method</label>
+              <CustomSelect
+                value={functionData.method || "GET"}
+                onChange={(v) => update("method", v)}
+                options={HTTP_METHODS}
+              />
+            </div>
+            <div className="form-group">
+              <label className="label">Custom Path (override)</label>
+              <input
+                type="text"
+                className="input"
+                value={functionData.endpoint || ""}
+                onChange={(e) => update("endpoint", e.target.value)}
+                placeholder="/rest/api/3/issue/{issueIdOrKey}"
+                style={{ fontFamily: "SFMono-Regular, Consolas, monospace", fontSize: "12px" }}
+              />
+            </div>
+          </div>
+
+          {/* Request Body */}
+          {(functionData.method || "GET") !== "GET" && (
+            <div className="form-group">
+              <label className="label">
+                Request Body (JSON)
+                <Tooltip text="The JSON body to send with the request. Required for POST and PUT. Use ADF format for description and comment fields." />
+              </label>
+              <textarea
+                className="textarea context-textarea"
+                rows={8}
+                value={functionData.requestBody || ""}
+                onChange={(e) => update("requestBody", e.target.value)}
+                placeholder='{\n  "fields": {\n    "summary": "Updated value"\n  }\n}'
+              />
+            </div>
+          )}
         </div>
       )}
 
