@@ -84,6 +84,14 @@ modules:
       resolver:
         function: resolver
 
+  # Admin page - Jira admin settings (guaranteed access for site admins)
+  jira:adminPage:
+    - key: cognirunner-admin-settings
+      resource: admin-panel-resource
+      title: CogniRunner Settings
+      resolver:
+        function: resolver
+
   # Lambda function for validation logic
   function:
     - key: validate

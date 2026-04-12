@@ -743,19 +743,28 @@ function App() {
 
       // Check admin status BEFORE fetching configs
       let userIsAdmin = false;
+
+      // If accessed from jira:adminPage, user is a Jira admin by definition
+      const context = await bridge.view.getContext();
+      const moduleType = context?.extension?.type;
+      if (moduleType === "jira:adminPage") {
+        userIsAdmin = true;
+      }
+
       try {
         const adminResult = await invoke("checkIsAdmin");
         if (adminResult.success) {
-          userIsAdmin = adminResult.isAdmin;
-          setIsAdmin(adminResult.isAdmin);
+          if (adminResult.isAdmin) userIsAdmin = true;
           setAccountId(adminResult.accountId);
-          if (!adminResult.isAdmin) {
+          if (!userIsAdmin && !adminResult.isAdmin) {
             setRulesFilter("mine");
           }
         }
       } catch (e) {
         console.log("Could not check admin status:", e);
       }
+
+      setIsAdmin(userIsAdmin);
 
       // Fetch configs with the correct filter (state hasn't updated yet)
       await fetchConfigs(false, userIsAdmin ? "all" : "mine");

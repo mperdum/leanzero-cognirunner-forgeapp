@@ -940,8 +940,22 @@ resolver.define("getFields", async () => {
  * Check if the current user is an admin. Returns isAdmin flag and accountId.
  */
 resolver.define("checkIsAdmin", async ({ context }) => {
-  const accountId = context.accountId;
-  console.log(`checkIsAdmin called for accountId: ${accountId}`);
+  const accountId = context?.accountId;
+  console.log(`checkIsAdmin called for accountId: ${accountId || "(none)"}`);
+  if (!accountId) {
+    // No accountId in context — try to get it from the principal
+    console.log("No accountId in context, context keys:", Object.keys(context || {}));
+    // If we can't identify the user, check if ANY admins exist
+    try {
+      const appAdmins = (await storage.get(APP_ADMINS_KEY)) || [];
+      if (appAdmins.length === 0) {
+        // No admins at all — grant admin to allow initial setup
+        console.log("No admins configured and no accountId — granting admin for setup");
+        return { success: true, isAdmin: true, accountId: null };
+      }
+    } catch (e) { /* fall through */ }
+    return { success: true, isAdmin: false, accountId: null };
+  }
   const isAdmin = await requireAdmin(accountId);
   console.log(`checkIsAdmin result: ${isAdmin} for ${accountId}`);
   return { success: true, isAdmin, accountId };
