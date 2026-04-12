@@ -1825,6 +1825,7 @@ function App() {
 
   // Post-function state
   const [isPostFunction, setIsPostFunction] = useState(false);
+  const [isCondition, setIsCondition] = useState(false);
   const [postFunctionType, setPostFunctionType] = useState(null); // null | "semantic" | "static"
   const [conditionPrompt, setConditionPrompt] = useState("");
   const [actionPrompt, setActionPrompt] = useState("");
@@ -1971,8 +1972,11 @@ function App() {
             }
           }
 
-          // Detect if this is a post-function module
+          // Detect module type
           const extType = context?.extension?.type;
+          if (extType === "jira:workflowCondition") {
+            setIsCondition(true);
+          }
           if (extType === "jira:workflowPostFunction") {
             setIsPostFunction(true);
             // Determine sub-type from existing config or default to semantic
@@ -2195,16 +2199,47 @@ function App() {
         </div>
         <div>
           <h3 className="title">
-            {isPostFunction ? "Post Function Configuration" : "AI Validator Configuration"}
+            {isPostFunction ? "Post Function Configuration"
+              : isCondition ? "AI Condition Configuration"
+              : "AI Validator Configuration"}
           </h3>
           <p className="subtitle">
             {isPostFunction
               ? "Configure AI-powered post-function for this workflow transition"
-              : "Configure AI-powered field validation for this workflow transition"
+              : isCondition
+                ? "Configure AI-powered condition for this workflow transition"
+                : "Configure AI-powered field validation for this workflow transition"
             }
           </p>
         </div>
       </div>
+
+      {/* Module type indicator for validators/conditions */}
+      {!isPostFunction && (
+        <div className="pf-type-selector">
+          <div className={`pf-type-card ${!isCondition ? "pf-type-active" : ""}`}>
+            <div className="pf-type-header">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+              <strong>Validator</strong>
+            </div>
+            <p className="pf-type-desc">Blocks the transition if the AI determines the field content does not meet your criteria.</p>
+            {isByok && <span className="pf-type-tag pf-tag-semantic">AI cost per run</span>}
+          </div>
+          <div className={`pf-type-card ${isCondition ? "pf-type-active" : ""}`}>
+            <div className="pf-type-header">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M8 12l2 2 4-4" />
+              </svg>
+              <strong>Condition</strong>
+            </div>
+            <p className="pf-type-desc">Hides or shows the transition button based on AI evaluation. Does not block — just controls visibility.</p>
+            {isByok && <span className="pf-type-tag pf-tag-semantic">AI cost per run</span>}
+          </div>
+        </div>
+      )}
 
       {/* Post-function type selector */}
       {isPostFunction && (
