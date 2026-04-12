@@ -260,6 +260,56 @@ const injectStyles = () => {
       color: var(--text-secondary);
     }
 
+    .log-recommendation {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      margin-top: 6px;
+      padding: 6px 8px;
+      border-radius: 4px;
+      background: rgba(37, 99, 235, 0.06);
+      border-left: 3px solid var(--primary-color);
+      font-size: 11px;
+      line-height: 1.5;
+      color: var(--text-color);
+    }
+
+    .log-rec-icon { flex-shrink: 0; font-size: 13px; }
+
+    .log-trace {
+      margin-top: 6px;
+    }
+
+    .log-trace-toggle {
+      font-size: 10px;
+      color: var(--text-muted);
+      cursor: pointer;
+      user-select: none;
+    }
+    .log-trace-toggle:hover { color: var(--text-secondary); }
+
+    .log-trace-content {
+      margin-top: 4px;
+      padding: 6px 8px;
+      background: var(--code-bg);
+      border-radius: 4px;
+      font-family: SFMono-Regular, Consolas, monospace;
+      font-size: 10px;
+      line-height: 1.6;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .log-trace-line {
+      color: var(--text-secondary);
+      padding: 1px 0;
+    }
+
+    .log-trace-error {
+      color: var(--error-color);
+      font-weight: 600;
+    }
+
     .no-logs {
       padding: 16px;
       text-align: center;
@@ -945,6 +995,29 @@ function App() {
                           {log.toolMeta.queries.map((q, i) => <div key={i}>{q}</div>)}
                         </div>
                       )}
+                    </div>
+                  )}
+                  {log.recommendation && (
+                    <div className="log-recommendation">
+                      <span className="log-rec-icon">💡</span>
+                      <span>{log.recommendation}</span>
+                    </div>
+                  )}
+                  {log.trace && Array.isArray(log.trace) && log.trace.length > 0 && (
+                    <details className="log-trace">
+                      <summary className="log-trace-toggle">Execution trace ({log.trace.length} entries)</summary>
+                      <div className="log-trace-content">
+                        {log.trace.map((t, i) => (
+                          <div key={i} className={`log-trace-line ${t.startsWith && t.startsWith("ERROR") ? "log-trace-error" : ""}`}>
+                            {t}
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                  {log.aiTimeMs && (
+                    <div className="log-details" style={{ fontSize: "10px", color: "var(--text-muted)" }}>
+                      AI: {log.aiTimeMs}ms{log.tokens ? ` · ${log.tokens} tokens` : ""}{log.docCount ? ` · ${log.docCount} doc(s)` : ""}
                     </div>
                   )}
                 </div>

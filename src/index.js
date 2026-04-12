@@ -3184,14 +3184,24 @@ export const validate = async (args) => {
  */
 const executeSemanticPostFunction = async (issueKey, config) => {
   const { conditionPrompt, actionPrompt, actionFieldId, fieldId } = config;
+  const trace = []; // Execution trace for detailed logging
+  const sourceFieldId = fieldId || "description";
 
-  // Fetch the current value of the source field
-  const fieldValue = await getFieldValue(issueKey, fieldId || "description", null);
+  // Step 1: Fetch source field
+  trace.push(`Reading field "${sourceFieldId}" from ${issueKey}`);
+  const fieldValue = await getFieldValue(issueKey, sourceFieldId, null);
+  const fieldLen = fieldValue ? fieldValue.length : 0;
+  trace.push(fieldLen > 0
+    ? `Field content: ${fieldLen} chars — "${fieldValue.substring(0, 80)}${fieldLen > 80 ? "..." : ""}"`
+    : `Field "${sourceFieldId}" is empty`
+  );
 
-  // Fetch context documents if configured
+  // Step 2: Fetch context documents
   const contextDocsText = await fetchContextDocs(config.selectedDocIds);
+  const docCount = config.selectedDocIds?.length || 0;
+  if (docCount > 0) trace.push(`Loaded ${docCount} reference document(s) (${contextDocsText.length} chars)`);
 
-  // Build unified prompt: condition evaluation + action instruction
+  // Step 3: Build prompts
   const systemPrompt = `You are a workflow automation assistant. You will be given a field value and two instructions:
 1. CONDITION: Evaluate whether this condition is met based on the field value.
 2. ACTION: If the condition is met, generate the new value for the target field.
@@ -3207,66 +3217,109 @@ You MUST respond with ONLY a valid JSON object (no markdown, no explanation):
   const userContent = `Field value:\n${fieldValue || "(empty)"}\n\nCONDITION: ${conditionPrompt}\n\nACTION: ${actionPrompt || "Generate an appropriate value for the target field."}`;
 
   try {
+    // Step 4: Get API credentials
     const apiKey = await getOpenAIKey();
     if (!apiKey) {
-      return { success: false, decision: "SKIP", reason: "No OpenAI API key configured" };
+      trace.push("ERROR: No OpenAI API key configured");
+      return { success: false, decision: "SKIP", reason: "No OpenAI API key configured", trace,
+        recommendation: "Go to CogniRunner Settings and configure an OpenAI API key, or ask your admin to set the OPENAI_API_KEY environment variable via forge variables." };
     }
     const model = await getOpenAIModel();
+    const byok = await isByokActive();
+    trace.push(`Using model: ${model} (${byok ? "BYOK key" : "factory key"})`);
 
+    // Step 5: Call OpenAI
+    trace.push("Evaluating condition with AI...");
+    const aiStart = Date.now();
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.1,
-        max_completion_tokens: 1000,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userContent },
-        ],
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model, temperature: 0.1, max_completion_tokens: 1000,
+        messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }],
       }),
     });
+    const aiTimeMs = Date.now() - aiStart;
 
     if (!response.ok) {
-      const errText = await response.text();
-      console.error("OpenAI API error in semantic PF:", response.status, errText);
-      return { success: false, decision: "SKIP", reason: `OpenAI error: ${response.status}` };
+      const status = response.status;
+      trace.push(`ERROR: OpenAI returned HTTP ${status} (${aiTimeMs}ms)`);
+      const rec = status === 401 || status === 403
+        ? "Your API key is invalid or expired. Check it in CogniRunner Settings or regenerate it on the OpenAI dashboard."
+        : status === 429
+          ? "OpenAI rate limit reached. Wait a few minutes or upgrade your OpenAI plan for higher limits."
+          : status === 404
+            ? `Model "${model}" not found. Change the model in CogniRunner Settings to gpt-4o-mini or another available model.`
+            : "Check your OpenAI API key and account status at platform.openai.com.";
+      return { success: false, decision: "SKIP", reason: `OpenAI error: ${status}`, trace, recommendation: rec, aiTimeMs };
     }
 
+    // Step 6: Parse response
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
+    const tokens = data.usage?.total_tokens;
+    trace.push(`AI responded in ${aiTimeMs}ms${tokens ? ` (${tokens} tokens)` : ""}`);
+
     if (!content) {
-      return { success: false, decision: "SKIP", reason: "Empty response from AI" };
+      trace.push("ERROR: AI returned empty response");
+      return { success: false, decision: "SKIP", reason: "Empty response from AI", trace,
+        recommendation: "The AI did not generate a response. Try simplifying your condition prompt or making the action prompt more specific." };
     }
 
-    const result = JSON.parse(content);
+    let result;
+    try {
+      result = JSON.parse(content);
+    } catch (parseErr) {
+      trace.push(`ERROR: AI response is not valid JSON: ${content.substring(0, 100)}`);
+      return { success: false, decision: "SKIP", reason: "Invalid JSON from AI", trace,
+        recommendation: "The AI generated text that isn't valid JSON. Simplify your prompts — avoid asking for complex formatting. The AI should return only {decision, value, reason}." };
+    }
+
+    trace.push(`Decision: ${result.decision} — ${result.reason || "no reason"}`);
+
+    // Step 7: Execute update if decision is UPDATE
     if (result.decision === "UPDATE" && actionFieldId && result.value !== undefined) {
-      // Update the target field via Jira REST API
+      trace.push(`Updating field "${actionFieldId}" on ${issueKey}...`);
       const updateBody = { fields: { [actionFieldId]: result.value } };
       const updateResponse = await api.asApp().requestJira(
         route`/rest/api/3/issue/${issueKey}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(updateBody),
-        },
+        { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updateBody) },
       );
       if (!updateResponse.ok) {
-        const errText = await updateResponse.text();
-        console.error("Failed to update field:", updateResponse.status, errText);
-        return { success: false, decision: "UPDATE", reason: `Field update failed: ${updateResponse.status}` };
+        const errStatus = updateResponse.status;
+        trace.push(`ERROR: Field update failed with HTTP ${errStatus}`);
+        const rec = errStatus === 400
+          ? `The value format is wrong for field "${actionFieldId}". Check if it's a text, select, or ADF field — each requires a different format. Edit your action prompt to specify the correct format.`
+          : errStatus === 403
+            ? `The app doesn't have permission to edit "${actionFieldId}". Check that write:jira-work scope is configured and the field is editable.`
+            : errStatus === 404
+              ? `Issue ${issueKey} or field "${actionFieldId}" not found. Verify the field ID is correct in your post-function configuration.`
+              : `Jira returned HTTP ${errStatus}. Check the field ID and value format.`;
+        return { success: false, decision: "UPDATE", reason: `Field update failed: ${errStatus}`, trace, recommendation: rec, aiTimeMs, tokens };
       }
-      console.log(`Semantic PF: Updated field ${actionFieldId} on ${issueKey}`);
-      return { success: true, decision: "UPDATE", value: result.value, reason: result.reason };
+      const valuePreview = typeof result.value === "string" ? result.value.substring(0, 150) : JSON.stringify(result.value).substring(0, 150);
+      trace.push(`Successfully updated "${actionFieldId}" → "${valuePreview}${valuePreview.length >= 150 ? "..." : ""}"`);
+      return { success: true, decision: "UPDATE", value: result.value, reason: result.reason, trace, aiTimeMs, tokens,
+        sourceFieldId, sourceFieldLength: fieldLen, docCount };
     }
 
-    return { success: true, decision: "SKIP", reason: result.reason || "Condition not met" };
+    if (result.decision === "UPDATE" && !actionFieldId) {
+      trace.push("WARNING: AI decided UPDATE but no target field configured");
+      return { success: false, decision: "UPDATE", reason: "No target field configured", trace,
+        recommendation: "The AI wants to update a field but no target field is set. Go to Edit and select a Target Field in the post-function configuration." };
+    }
+
+    trace.push("Condition not met — no action taken");
+    return { success: true, decision: "SKIP", reason: result.reason || "Condition not met", trace, aiTimeMs, tokens,
+      sourceFieldId, sourceFieldLength: fieldLen, docCount };
   } catch (error) {
     console.error("Semantic post-function error:", error);
-    return { success: false, decision: "SKIP", reason: error.message };
+    trace.push(`ERROR: ${error.message}`);
+    return { success: false, decision: "SKIP", reason: error.message, trace,
+      recommendation: error.message.includes("JSON")
+        ? "The AI response couldn't be parsed. Try simplifying your prompts."
+        : error.message.includes("fetch")
+          ? "Network error reaching OpenAI. Check your internet connection and API key."
+          : "An unexpected error occurred. Check the execution trace for details." };
   }
 };
 
@@ -3277,13 +3330,16 @@ You MUST respond with ONLY a valid JSON object (no markdown, no explanation):
 const executeStaticPostFunction = async (issueKey, config) => {
   const functions = config.functions || [];
   if (functions.length === 0) {
-    return { success: true, changes: [], logs: ["No function blocks to execute"] };
+    return { success: true, changes: [], logs: ["No function blocks to execute"],
+      recommendation: "No code steps configured. Go to Edit and add at least one function block with code." };
   }
 
   const executionLogs = [];
   const changes = [];
   const variables = {};
   const startTime = Date.now();
+  const stepResults = []; // Per-step trace
+  let failedStep = null;
 
   // Build API surface for sandbox
   const createApi = () => ({
@@ -3325,19 +3381,37 @@ const executeStaticPostFunction = async (issueKey, config) => {
     context: { issueKey },
   });
 
+  executionLogs.push(`Starting ${functions.length} step(s) for ${issueKey}`);
+
   for (let i = 0; i < functions.length; i++) {
     const fn = functions[i];
-    const fnName = fn.name || `Function ${i + 1}`;
+    const fnName = fn.name || `Step ${i + 1}`;
+    const stepStart = Date.now();
+    const stepTrace = { name: fnName, index: i + 1 };
 
     // Check deadline (leave 5s buffer)
     if (Date.now() - startTime > 25000) {
-      executionLogs.push(`Timeout: skipping ${fnName} and remaining functions`);
+      const remaining = functions.length - i;
+      executionLogs.push(`TIMEOUT: Skipping "${fnName}" and ${remaining - 1} remaining step(s). Execution exceeded 25s safety limit.`);
+      stepTrace.status = "timeout";
+      stepTrace.recommendation = `This step was skipped because earlier steps took too long. Optimize previous steps: reduce JQL result counts, avoid unnecessary getIssue calls, or split into separate post-functions.`;
+      stepResults.push(stepTrace);
+      failedStep = fnName;
       break;
     }
 
     if (!fn.code || fn.code.trim().length === 0) {
-      executionLogs.push(`${fnName}: No code to execute, skipping`);
+      executionLogs.push(`"${fnName}": No code — skipping`);
+      stepTrace.status = "empty";
+      stepTrace.recommendation = `This step has no code. Either delete it or click "Generate Code" to create code from your description.`;
+      stepResults.push(stepTrace);
       continue;
+    }
+
+    // Show available variables for this step
+    const availableVars = Object.keys(variables);
+    if (availableVars.length > 0) {
+      executionLogs.push(`"${fnName}": Variables available: ${availableVars.join(", ")}`);
     }
 
     try {
@@ -3345,12 +3419,15 @@ const executeStaticPostFunction = async (issueKey, config) => {
 
       // Inject variable references into code
       let code = fn.code;
+      let varsInjected = 0;
       for (const [varName, varValue] of Object.entries(variables)) {
         const placeholder = "${" + varName + "}";
         if (code.includes(placeholder)) {
           code = code.split(placeholder).join(JSON.stringify(varValue));
+          varsInjected++;
         }
       }
+      if (varsInjected > 0) executionLogs.push(`"${fnName}": Injected ${varsInjected} variable(s)`);
 
       // Execute in sandbox via Function constructor
       const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
@@ -3360,20 +3437,68 @@ const executeStaticPostFunction = async (issueKey, config) => {
       // Store result for variable chaining
       if (fn.variableName) {
         variables[fn.variableName] = result;
+        const resultType = result === null ? "null" : result === undefined ? "undefined" : Array.isArray(result) ? `array(${result.length})` : typeof result;
+        executionLogs.push(`"${fnName}": Stored result in "${fn.variableName}" (${resultType})`);
       }
 
-      executionLogs.push(`${fnName}: completed successfully`);
+      const stepMs = Date.now() - stepStart;
+      executionLogs.push(`"${fnName}": Completed in ${stepMs}ms`);
+      stepTrace.status = "success";
+      stepTrace.timeMs = stepMs;
+      stepResults.push(stepTrace);
     } catch (error) {
-      executionLogs.push(`${fnName}: ERROR - ${error.message}`);
+      const stepMs = Date.now() - stepStart;
+      failedStep = fnName;
+      executionLogs.push(`"${fnName}": ERROR after ${stepMs}ms — ${error.message}`);
       console.error(`Static PF ${fnName} error:`, error);
+
+      // Generate context-specific recommendation
+      let rec;
+      if (error.message.includes("SyntaxError") || error.message.includes("Unexpected token")) {
+        rec = `Code syntax error in "${fnName}". Check for missing semicolons, unclosed braces, or typos. Click "Regenerate Code" to fix.`;
+      } else if (error.message.includes("getIssue failed: 404")) {
+        rec = `Issue not found. The issue key might be wrong or the issue was deleted. Check your code references api.context.issueKey.`;
+      } else if (error.message.includes("getIssue failed: 403")) {
+        rec = `Permission denied reading issue. The app needs read:jira-work scope. Contact your Jira admin.`;
+      } else if (error.message.includes("updateIssue failed: 400")) {
+        rec = `Invalid field update. The field value format is wrong. Text fields need strings, select fields need {value: "..."}, ADF fields need document objects.`;
+      } else if (error.message.includes("updateIssue failed")) {
+        rec = `Failed to update issue. Check the field ID is correct and the app has write:jira-work permission.`;
+      } else if (error.message.includes("searchJql failed")) {
+        rec = `JQL search failed. Check your JQL syntax — common issues: unescaped quotes, invalid field names, missing project clause.`;
+      } else if (error.message.includes("transitionIssue failed")) {
+        rec = `Workflow transition failed. The transition ID might not be valid for the current issue state. Check available transitions in the workflow.`;
+      } else if (error.message.includes("is not defined")) {
+        const match = error.message.match(/(\w+) is not defined/);
+        rec = match
+          ? `Variable "${match[1]}" is not defined. If it comes from a previous step, make sure that step has a Result Variable named "${match[1]}" and completed successfully.`
+          : `A variable is not defined. Check your variable references match the Result Variable names from previous steps.`;
+      } else if (error.message.includes("Cannot read propert")) {
+        rec = `Trying to read a property of null/undefined. Add a null check: if (value && value.property) { ... }. The issue or field might not exist.`;
+      } else {
+        rec = `Error in "${fnName}": ${error.message}. Use api.log() to debug values, and Test Run with a real issue to trace the problem.`;
+      }
+
+      stepTrace.status = "error";
+      stepTrace.error = error.message;
+      stepTrace.timeMs = stepMs;
+      stepTrace.recommendation = rec;
+      stepResults.push(stepTrace);
     }
   }
 
+  const totalMs = Date.now() - startTime;
+  const successCount = stepResults.filter((s) => s.status === "success").length;
+  executionLogs.push(`Finished: ${successCount}/${functions.length} step(s) succeeded in ${totalMs}ms, ${changes.length} change(s) made`);
+
   return {
-    success: true,
+    success: !failedStep,
     changes,
     logs: executionLogs,
-    executionTimeMs: Date.now() - startTime,
+    executionTimeMs: totalMs,
+    stepResults,
+    failedStep,
+    recommendation: failedStep ? stepResults.find((s) => s.recommendation)?.recommendation : undefined,
   };
 };
 
@@ -3435,37 +3560,56 @@ export const executePostFunction = async (args) => {
     if (type.includes("semantic")) {
       const result = await executeSemanticPostFunction(issue.key, config);
       console.log("Semantic PF result:", result);
-      await storeLog({
+      const logEntry = {
         type: "postfunction-semantic",
         issueKey: issue.key,
         fieldId: config.actionFieldId || config.fieldId || "",
         isValid: result.success,
-        reason: result.decision === "UPDATE"
-          ? `Updated field "${config.actionFieldId}": ${result.reason}`
-          : `Skipped: ${result.reason}`,
         decision: result.decision,
         executionTimeMs: Date.now() - pfStartTime,
-      });
+        aiTimeMs: result.aiTimeMs,
+        tokens: result.tokens,
+        sourceFieldId: result.sourceFieldId,
+        docCount: result.docCount,
+      };
+      if (result.decision === "UPDATE" && result.success) {
+        logEntry.reason = `Updated "${config.actionFieldId}": ${result.reason}`;
+      } else if (result.decision === "UPDATE" && !result.success) {
+        logEntry.reason = `Tried to update "${config.actionFieldId}" but failed: ${result.reason}`;
+      } else {
+        logEntry.reason = `Skipped: ${result.reason}`;
+      }
+      if (result.trace) logEntry.trace = result.trace;
+      if (result.recommendation) logEntry.recommendation = result.recommendation;
+      await storeLog(logEntry);
     } else if (type.includes("static")) {
       const result = await executeStaticPostFunction(issue.key, config);
       console.log("Static PF result:", JSON.stringify(result));
-      await storeLog({
+      const logEntry = {
         type: "postfunction-static",
         issueKey: issue.key,
         fieldId: "static-code",
         isValid: result.success,
-        reason: result.success
-          ? `Executed ${config.functions?.length || 0} step(s): ${(result.logs || []).slice(-1)[0] || "completed"}`
-          : `Error: ${(result.logs || []).filter((l) => l.includes("ERROR")).join("; ") || "unknown"}`,
         executionTimeMs: Date.now() - pfStartTime,
         changes: result.changes?.length || 0,
         steps: config.functions?.length || 0,
-      });
+      };
+      if (result.success) {
+        const summary = (result.logs || []).slice(-1)[0] || "completed";
+        logEntry.reason = `${result.stepResults?.filter((s) => s.status === "success").length || 0}/${config.functions?.length || 0} steps OK: ${summary}`;
+      } else {
+        logEntry.reason = result.failedStep
+          ? `Failed at "${result.failedStep}": ${result.stepResults?.find((s) => s.error)?.error || "unknown"}`
+          : `Error: ${(result.logs || []).filter((l) => l.includes("ERROR")).join("; ") || "unknown"}`;
+      }
+      if (result.logs) logEntry.trace = result.logs;
+      if (result.recommendation) logEntry.recommendation = result.recommendation;
+      if (result.stepResults) logEntry.stepResults = result.stepResults;
+      await storeLog(logEntry);
     } else {
       console.log("Unknown post-function type:", type);
     }
   } catch (error) {
-    // Fail open — never block the transition
     console.error("Post-function execution error:", error);
     await storeLog({
       type: "postfunction-error",
@@ -3473,6 +3617,7 @@ export const executePostFunction = async (args) => {
       fieldId: config.type || "unknown",
       isValid: false,
       reason: `Post-function error: ${error.message}`,
+      recommendation: "An unexpected error occurred. Check the error message and ensure your configuration is correct. Try Test Run from the Edit view to debug.",
       executionTimeMs: Date.now() - pfStartTime,
     });
   }
