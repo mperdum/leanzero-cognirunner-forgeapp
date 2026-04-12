@@ -647,7 +647,15 @@ function App() {
     </>
   );
 
-  if (!config || (!config.fieldId && !config.prompt)) {
+  // Check if config has any meaningful data (validator/condition OR post-function)
+  const hasConfig = config && (
+    config.fieldId || config.prompt ||
+    config.conditionPrompt || config.actionPrompt ||
+    config.type?.includes("postfunction") ||
+    (config.functions && config.functions.length > 0)
+  );
+
+  if (!hasConfig) {
     return (
       <div className="container">
         {licenseBanner}
@@ -746,29 +754,89 @@ function App() {
       {licenseBanner}
       {statusBanner}
       {toggleAlerts}
-      <div className="config-item">
-        <span className="label">Field:</span>
-        <code className="value">{config.fieldId}</code>
-      </div>
-      <div className="config-item">
-        <span className="label">Prompt:</span>
-        <span className="prompt-value">
-          {config.prompt.length > 100
-            ? config.prompt.substring(0, 100) + "..."
-            : config.prompt}
-        </span>
-      </div>
-      {config.enableTools === true && (
-        <div className="config-item">
-          <span className="label">Tools:</span>
-          <span className="prompt-value">JQL Search (always enabled)</span>
-        </div>
+
+      {/* Post-function: Semantic */}
+      {config.type === "postfunction-semantic" && (
+        <>
+          <div className="config-item">
+            <span className="label">Type:</span>
+            <span className="prompt-value">Semantic Post Function</span>
+          </div>
+          {config.conditionPrompt && (
+            <div className="config-item">
+              <span className="label">Condition:</span>
+              <span className="prompt-value">{config.conditionPrompt}</span>
+            </div>
+          )}
+          {config.actionPrompt && (
+            <div className="config-item">
+              <span className="label">Action:</span>
+              <span className="prompt-value">{config.actionPrompt}</span>
+            </div>
+          )}
+          {config.actionFieldId && (
+            <div className="config-item">
+              <span className="label">Target:</span>
+              <code className="value">{config.actionFieldId}</code>
+            </div>
+          )}
+        </>
       )}
-      {config.enableTools === false && (
-        <div className="config-item">
-          <span className="label">Tools:</span>
-          <span className="prompt-value">Disabled</span>
-        </div>
+
+      {/* Post-function: Static */}
+      {config.type === "postfunction-static" && (
+        <>
+          <div className="config-item">
+            <span className="label">Type:</span>
+            <span className="prompt-value">Static Post Function</span>
+          </div>
+          <div className="config-item">
+            <span className="label">Steps:</span>
+            <span className="prompt-value">{config.functions?.length || 0} function block{(config.functions?.length || 0) !== 1 ? "s" : ""}</span>
+          </div>
+          {config.functions?.map((fn, i) => (
+            <div key={i} className="config-item" style={{ paddingLeft: "12px" }}>
+              <span className="label">#{i + 1}:</span>
+              <span className="prompt-value">
+                {fn.name || fn.operationPrompt?.substring(0, 80) || "(no description)"}
+              </span>
+            </div>
+          ))}
+        </>
+      )}
+
+      {/* Validator / Condition (original) */}
+      {!config.type?.includes("postfunction") && (
+        <>
+          {config.fieldId && (
+            <div className="config-item">
+              <span className="label">Field:</span>
+              <code className="value">{config.fieldId}</code>
+            </div>
+          )}
+          {config.prompt && (
+            <div className="config-item">
+              <span className="label">Prompt:</span>
+              <span className="prompt-value">
+                {config.prompt.length > 100
+                  ? config.prompt.substring(0, 100) + "..."
+                  : config.prompt}
+              </span>
+            </div>
+          )}
+          {config.enableTools === true && (
+            <div className="config-item">
+              <span className="label">Tools:</span>
+              <span className="prompt-value">JQL Search (always enabled)</span>
+            </div>
+          )}
+          {config.enableTools === false && (
+            <div className="config-item">
+              <span className="label">Tools:</span>
+              <span className="prompt-value">Disabled</span>
+            </div>
+          )}
+        </>
       )}
 
       {/* Logs section */}
