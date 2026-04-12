@@ -37,21 +37,34 @@ const APP_ADMINS_KEY = "app_admins";
  */
 const requireAdmin = async (accountId) => {
   if (!accountId) return false;
-  // Check Jira admin group membership
-  try {
-    const resp = await api.asApp().requestJira(
-      route`/rest/api/3/group/member?groupname=jira-administrators&maxResults=200`,
-    );
-    if (resp.ok) {
-      const data = await resp.json();
-      if ((data.values || []).some((u) => u.accountId === accountId)) return true;
-    }
-  } catch (e) { /* fall through to app admins */ }
-  // Check app admins list in KVS
+
+  // 1. Check app admins list in KVS first (fastest, most reliable)
   try {
     const appAdmins = (await storage.get(APP_ADMINS_KEY)) || [];
     if (appAdmins.some((a) => (typeof a === "string" ? a : a.accountId) === accountId)) return true;
-  } catch (e) { /* not admin */ }
+
+    // Bootstrap: if no app admins exist at all, the first user becomes admin
+    if (appAdmins.length === 0) {
+      console.log(`No app admins configured — bootstrapping ${accountId} as first admin`);
+      await storage.set(APP_ADMINS_KEY, [{ accountId, displayName: "Auto (first user)" }]);
+      return true;
+    }
+  } catch (e) { /* fall through */ }
+
+  // 2. Check Jira admin group membership (try multiple common group names)
+  const adminGroups = ["jira-administrators", "site-admins", "system-administrators"];
+  for (const groupName of adminGroups) {
+    try {
+      const resp = await api.asApp().requestJira(
+        route`/rest/api/3/group/member?groupname=${groupName}&maxResults=200`,
+      );
+      if (resp.ok) {
+        const data = await resp.json();
+        if ((data.values || []).some((u) => u.accountId === accountId)) return true;
+      }
+    } catch (e) { /* try next group */ }
+  }
+
   return false;
 };
 
@@ -928,7 +941,9 @@ resolver.define("getFields", async () => {
  */
 resolver.define("checkIsAdmin", async ({ context }) => {
   const accountId = context.accountId;
+  console.log(`checkIsAdmin called for accountId: ${accountId}`);
   const isAdmin = await requireAdmin(accountId);
+  console.log(`checkIsAdmin result: ${isAdmin} for ${accountId}`);
   return { success: true, isAdmin, accountId };
 });
 

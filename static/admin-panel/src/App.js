@@ -609,7 +609,7 @@ let router;
 const TABS = [
   { key: "rules", label: "Rules" },
   { key: "docs", label: "Documentation" },
-  { key: "settings", label: "Settings", adminOnly: true },
+  { key: "settings", label: "Permissions", adminOnly: true },
 ];
 
 function App() {
