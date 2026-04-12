@@ -1643,7 +1643,7 @@ IMPORTANT: Use these variables in your code. For example, if a prior step stored
       body: JSON.stringify({
         model,
         temperature: 0.15,
-        max_tokens: 4000,
+        max_completion_tokens: 4000,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: `Generate JavaScript code for this post-function step:\n\n${prompt}${contextDocs ? `\n\n## Additional Context / Reference Documentation\n\n${contextDocs.substring(0, 30000)}` : ""}` },
@@ -1832,7 +1832,7 @@ Rules for verdict:
       body: JSON.stringify({
         model,
         temperature: 0.2,
-        max_tokens: 1500,
+        max_completion_tokens: 1500,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: `Review this configuration:\n\n${configDescription}` },
@@ -2028,7 +2028,7 @@ You MUST respond with ONLY a valid JSON object (no markdown, no explanation):
       body: JSON.stringify({
         model,
         temperature: 0.1,
-        max_tokens: 1000,
+        max_completion_tokens: 1000,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userContent },
@@ -2037,9 +2037,10 @@ You MUST respond with ONLY a valid JSON object (no markdown, no explanation):
     });
 
     if (!response.ok) {
-      const errText = await response.text();
-      logs.push(`AI error: ${response.status}`);
-      return { success: false, error: `AI error (${response.status})`, logs };
+      const errText = await response.text().catch(() => "");
+      console.error("testSemanticPF AI error:", response.status, errText);
+      logs.push(`AI error: ${response.status} — ${errText.substring(0, 200)}`);
+      return { success: false, error: `AI error (${response.status}): ${errText.substring(0, 150)}`, logs };
     }
 
     const data = await response.json();
@@ -2796,7 +2797,7 @@ Respond with JSON only.`;
           { role: "system", content: systemPrompt },
           { role: "user", content: userContent },
         ],
-        max_tokens: 1000,
+        max_completion_tokens: 1000,
       }),
     });
 
@@ -2940,7 +2941,7 @@ RESPONSE FORMAT:
       const requestBody = {
         model,
         messages,
-        max_tokens: 1000,
+        max_completion_tokens: 1000,
       };
 
       // Offer tools only if we haven't exhausted tool-call rounds
@@ -3386,7 +3387,7 @@ You MUST respond with ONLY a valid JSON object (no markdown, no explanation):
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, temperature: 0.1, max_tokens: 1000,
+      body: JSON.stringify({ model, temperature: 0.1, max_completion_tokens: 1000,
         messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }],
       }),
     });
@@ -3394,14 +3395,18 @@ You MUST respond with ONLY a valid JSON object (no markdown, no explanation):
 
     if (!response.ok) {
       const status = response.status;
-      trace.push(`ERROR: OpenAI returned HTTP ${status} (${aiTimeMs}ms)`);
+      const errBody = await response.text().catch(() => "");
+      console.error("Semantic PF AI error:", status, errBody);
+      trace.push(`ERROR: OpenAI returned HTTP ${status} (${aiTimeMs}ms) — ${errBody.substring(0, 200)}`);
       const rec = status === 401 || status === 403
         ? "Your API key is invalid or expired. Check it in CogniRunner Settings or regenerate it on the OpenAI dashboard."
         : status === 429
           ? "OpenAI rate limit reached. Wait a few minutes or upgrade your OpenAI plan for higher limits."
           : status === 404
-            ? `Model "${model}" not found. Change the model in CogniRunner Settings to gpt-4o-mini or another available model.`
-            : "Check your OpenAI API key and account status at platform.openai.com.";
+            ? `Model "${model}" not found. Change the model in CogniRunner Settings to another available model.`
+            : status === 400
+              ? `Bad request to OpenAI. The model "${model}" may not support the current parameters. Error: ${errBody.substring(0, 100)}`
+              : "Check your OpenAI API key and account status at platform.openai.com.";
       return { success: false, decision: "SKIP", reason: `OpenAI error: ${status}`, trace, recommendation: rec, aiTimeMs };
     }
 
