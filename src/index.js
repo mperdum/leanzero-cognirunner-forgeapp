@@ -77,17 +77,10 @@ const MAX_TOOL_ROUNDS = 3;
  * GPT-5 uses max_output_tokens instead of max_tokens/max_completion_tokens.
  * GPT-4 family and older use temperature + max_tokens.
  */
-const buildModelParams = (model, maxTokens) => {
-  const isGpt5 = model && (model.startsWith("gpt-5") || model.startsWith("gpt-5."));
-  const params = {};
-  if (!isGpt5) {
-    params.temperature = 0.1;
-    params.max_tokens = maxTokens || 1000;
-  } else {
-    params.max_output_tokens = maxTokens || 1000;
-  }
-  return params;
-};
+// No extra params — let every model use its own defaults.
+// temperature, max_tokens, max_output_tokens all have compatibility
+// issues across model families. Omitting them works universally.
+const buildModelParams = () => ({});
 const MAX_JQL_RESULTS = 10;
 const AGENTIC_TIMEOUT_MS = 22000; // 22s budget within Forge's 25s validator limit
 
@@ -1493,7 +1486,7 @@ Respond with ONLY a valid JSON object:
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
         model,
-        ...buildModelParams(model, 1500),
+        ...buildModelParams(),
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: prompt },
@@ -1756,7 +1749,7 @@ IMPORTANT: Use these variables in your code. For example, if a prior step stored
       },
       body: JSON.stringify({
         model,
-        ...buildModelParams(model, 4000),
+        ...buildModelParams(),
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: `Generate JavaScript code for this post-function step:\n\n${prompt}${contextDocs ? `\n\n## Additional Context / Reference Documentation\n\n${contextDocs.substring(0, 30000)}` : ""}` },
@@ -1944,7 +1937,7 @@ Rules for verdict:
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
         model,
-        ...buildModelParams(model, 1500),
+        ...buildModelParams(),
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: `Review this configuration:\n\n${configDescription}` },
@@ -2139,7 +2132,7 @@ You MUST respond with ONLY a valid JSON object (no markdown, no explanation):
       },
       body: JSON.stringify({
         model,
-        ...buildModelParams(model, 1000),
+        ...buildModelParams(),
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userContent },
@@ -2956,7 +2949,7 @@ Respond with JSON only.`;
       },
       body: JSON.stringify({
         model: model,
-        ...buildModelParams(model, 1000),
+        ...buildModelParams(),
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userContent },
@@ -3104,7 +3097,7 @@ RESPONSE FORMAT:
       const requestBody = {
         model,
         messages,
-        ...buildModelParams(model, 1000),
+        ...buildModelParams(),
       };
 
       // Offer tools only if we haven't exhausted tool-call rounds
@@ -3550,7 +3543,7 @@ You MUST respond with ONLY a valid JSON object (no markdown, no explanation):
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, ...buildModelParams(model, 1000),
+      body: JSON.stringify({ model, ...buildModelParams(),
         messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }],
       }),
     });
