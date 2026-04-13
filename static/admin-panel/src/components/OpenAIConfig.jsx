@@ -25,6 +25,7 @@ const PROVIDER_HELP = {
 
 export default function OpenAIConfig({ invoke }) {
   const [provider, setProvider] = useState("openai");
+  const [savedProvider, setSavedProvider] = useState("openai"); // what's actually saved in KVS
   const [baseUrl, setBaseUrl] = useState("");
   const [isByok, setIsByok] = useState(false);
   const [hasKey, setHasKey] = useState(false);
@@ -55,7 +56,9 @@ export default function OpenAIConfig({ invoke }) {
       ]);
 
       if (providerResult.success) {
-        setProvider(providerResult.provider || "openai");
+        const p = providerResult.provider || "openai";
+        setProvider(p);
+        setSavedProvider(p);
         setBaseUrl(providerResult.baseUrl || "");
         setEndpointInput(providerResult.provider === "azure" ? (providerResult.baseUrl || "") : "");
       }
@@ -88,27 +91,21 @@ export default function OpenAIConfig({ invoke }) {
     loadStatus();
   }, []);
 
-  const handleSaveProvider = async (newProvider) => {
+  const handleSaveProvider = async () => {
     setSavingProvider(true);
     setError(null);
     setSuccess(null);
     try {
-      const payload = { provider: newProvider };
-      if (newProvider === "azure" && endpointInput.trim()) {
+      const payload = { provider };
+      if (provider === "azure" && endpointInput.trim()) {
         payload.baseUrl = endpointInput.trim();
       }
       const result = await invoke("saveProvider", payload);
       if (result.success) {
-        setProvider(newProvider);
-        setSuccess(`Switched to ${PROVIDER_OPTIONS.find((p) => p.value === newProvider)?.label || newProvider}`);
-        // Clear key state since provider changed
-        setIsByok(false);
-        setHasKey(false);
-        setModels([]);
-        setCurrentModel(null);
-        setSelectedModel("");
+        setSavedProvider(provider);
+        setSuccess(`Switched to ${PROVIDER_OPTIONS.find((p) => p.value === provider)?.label || provider}`);
         setKeyInput("");
-        await loadStatus();
+        await loadStatus(); // reloads key/model state for the new provider
       } else {
         setError(result.error || "Failed to save provider");
       }
@@ -242,16 +239,26 @@ export default function OpenAIConfig({ invoke }) {
             <label style={{ display: "block", fontSize: "12px", fontWeight: "600", color: "var(--text-secondary)", marginBottom: "6px" }}>
               Provider
             </label>
-            <div style={{ maxWidth: "280px" }}>
-              <CustomSelect
-                value={provider}
-                onChange={(val) => {
-                  if (val !== provider) handleSaveProvider(val);
-                }}
-                options={PROVIDER_OPTIONS}
-                disabled={savingProvider}
-              />
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div style={{ maxWidth: "280px", flex: "0 0 280px" }}>
+                <CustomSelect
+                  value={provider}
+                  onChange={setProvider}
+                  options={PROVIDER_OPTIONS}
+                  disabled={savingProvider}
+                />
+              </div>
+              {provider !== savedProvider && (
+                <button className="btn-small btn-edit" onClick={handleSaveProvider} disabled={savingProvider}>
+                  {savingProvider ? "Switching..." : "Switch Provider"}
+                </button>
+              )}
             </div>
+            {provider !== savedProvider && (
+              <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--primary-color)" }}>
+                Your keys are saved per provider. Switching back will restore your previous key.
+              </p>
+            )}
             <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
               All providers support chat completions, tool calling, and vision capabilities.
             </p>

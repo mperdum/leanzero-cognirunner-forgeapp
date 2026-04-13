@@ -486,9 +486,11 @@ resolver.define("getConfigs", async ({ payload, context }) => {
 
     // Apply ownership filter
     const filter = payload?.filter;
+    const accountId = context?.accountId;
+    console.log(`getConfigs filter="${filter}", accountId="${accountId}", total=${surviving.length}, createdBys=${JSON.stringify(surviving.map((c) => c.createdBy))}`);
     let filtered = surviving;
-    if (filter === "mine" && context?.accountId) {
-      filtered = surviving.filter((c) => c.createdBy === context.accountId);
+    if (filter === "mine" && accountId) {
+      filtered = surviving.filter((c) => !c.createdBy || c.createdBy === accountId);
     }
 
     return { success: true, configs: filtered, removedCount: removed.length };
@@ -1059,16 +1061,15 @@ resolver.define("saveOpenAIKey", async ({ payload, context }) => {
     if (!key || typeof key !== "string" || key.trim().length < 8) {
       return { success: false, error: "Invalid API key format" };
     }
-    // Validate sk- prefix only for OpenAI provider
     const provider = (await storage.get("COGNIRUNNER_AI_PROVIDER")) || "openai";
     if (provider === "openai" && !key.startsWith("sk-")) {
       return { success: false, error: "OpenAI API keys must start with sk-" };
     }
-    await storage.set("COGNIRUNNER_OPENAI_API_KEY", key);
-    _cachedKey = key; _cachedKeyChecked = true; // update cache
+    await storage.set(providerKeySlot(provider), key);
+    _cachedKey = key; _cachedKeyChecked = true;
     return { success: true };
   } catch (error) {
-    console.error("Failed to save OpenAI key:", error);
+    console.error("Failed to save API key:", error);
     return { success: false, error: error.message };
   }
 });
@@ -1078,14 +1079,15 @@ resolver.define("saveOpenAIKey", async ({ payload, context }) => {
  */
 resolver.define("getOpenAIKey", async () => {
   try {
-    const byokKey = await storage.get("COGNIRUNNER_OPENAI_API_KEY");
+    const provider = (await storage.get("COGNIRUNNER_AI_PROVIDER")) || "openai";
+    const byokKey = await storage.get(providerKeySlot(provider));
     return {
       success: true,
       hasKey: !!byokKey || !!process.env.OPENAI_API_KEY,
       isByok: !!byokKey,
     };
   } catch (error) {
-    console.error("Failed to check OpenAI key:", error);
+    console.error("Failed to check API key:", error);
     return { success: false, hasKey: !!process.env.OPENAI_API_KEY, isByok: false };
   }
 });
@@ -1099,19 +1101,20 @@ resolver.define("removeOpenAIKey", async ({ context }) => {
     return { success: false, error: "Admin access required" };
   }
   try {
-    await storage.delete("COGNIRUNNER_OPENAI_API_KEY");
-    await storage.delete("COGNIRUNNER_OPENAI_MODEL");
-    _cachedKey = null; _cachedKeyChecked = false; _cachedModel = null; // invalidate caches
+    const provider = (await storage.get("COGNIRUNNER_AI_PROVIDER")) || "openai";
+    await storage.delete(providerKeySlot(provider));
+    await storage.delete(providerModelSlot(provider));
+    _cachedKey = null; _cachedKeyChecked = false; _cachedModel = null;
     return { success: true };
   } catch (error) {
-    console.error("Failed to remove OpenAI key:", error);
+    console.error("Failed to remove API key:", error);
     return { success: false, error: error.message };
   }
 });
 
 /**
  * Save the AI provider and optional custom base URL.
- * Clears key + model when switching providers (keys aren't cross-compatible).
+ * Keys are stored per-provider — switching never deletes another provider's key.
  */
 resolver.define("saveProvider", async ({ payload, context }) => {
   if (!(await requireAdmin(context.accountId))) {
@@ -1122,29 +1125,20 @@ resolver.define("saveProvider", async ({ payload, context }) => {
     if (!provider || !PROVIDERS[provider]) {
       return { success: false, error: "Invalid provider. Choose: openai, azure, openrouter, anthropic" };
     }
-    // Azure: validate base URL format if provided, but allow saving without one initially
     if (provider === "azure" && baseUrl && !baseUrl.includes(".openai.azure.com")) {
       return { success: false, error: "Azure endpoint must contain .openai.azure.com (e.g. https://myresource.openai.azure.com/openai/v1)" };
     }
 
-    const currentProvider = await storage.get("COGNIRUNNER_AI_PROVIDER");
     await storage.set("COGNIRUNNER_AI_PROVIDER", provider);
 
     if (baseUrl) {
-      // Normalize: remove trailing slash
       await storage.set("COGNIRUNNER_AI_BASE_URL", baseUrl.replace(/\/+$/, ""));
     } else if (PROVIDERS[provider].baseUrl) {
       await storage.set("COGNIRUNNER_AI_BASE_URL", PROVIDERS[provider].baseUrl);
     }
 
-    // If switching providers, clear key + model (they're provider-specific)
-    if (currentProvider && currentProvider !== provider) {
-      await storage.delete("COGNIRUNNER_OPENAI_API_KEY");
-      await storage.delete("COGNIRUNNER_OPENAI_MODEL");
-      _cachedKey = null; _cachedKeyChecked = false; _cachedModel = null;
-    }
-
-    // Invalidate provider cache
+    // Invalidate all caches — new provider may have different key/model
+    _cachedKey = null; _cachedKeyChecked = false; _cachedModel = null;
     _cachedProviderChecked = false; _cachedProvider = null; _cachedBaseUrl = null;
 
     return { success: true };
@@ -1180,7 +1174,8 @@ resolver.define("getProvider", async () => {
  */
 resolver.define("getOpenAIModels", async () => {
   try {
-    const byokKey = await storage.get("COGNIRUNNER_OPENAI_API_KEY");
+    const activeProvider = (await storage.get("COGNIRUNNER_AI_PROVIDER")) || "openai";
+    const byokKey = await storage.get(providerKeySlot(activeProvider));
     if (!byokKey) {
       const factoryModel = await getOpenAIModel();
       return { success: true, models: [], isByok: false, currentModel: factoryModel };
@@ -1239,14 +1234,16 @@ resolver.define("saveOpenAIModel", async ({ payload, context }) => {
     if (!model || typeof model !== "string") {
       return { success: false, error: "Invalid model selection" };
     }
-    const byokKey = await storage.get("COGNIRUNNER_OPENAI_API_KEY");
+    const provider = (await storage.get("COGNIRUNNER_AI_PROVIDER")) || "openai";
+    const byokKey = await storage.get(providerKeySlot(provider));
     if (!byokKey) {
-      return { success: false, error: "Model selection requires a BYOK API key" };
+      return { success: false, error: "Model selection requires an API key" };
     }
-    await storage.set("COGNIRUNNER_OPENAI_MODEL", model);
+    await storage.set(providerModelSlot(provider), model);
+    _cachedModel = null; // invalidate cache
     return { success: true };
   } catch (error) {
-    console.error("Failed to save OpenAI model:", error);
+    console.error("Failed to save model:", error);
     return { success: false, error: error.message };
   }
 });
@@ -1256,12 +1253,13 @@ resolver.define("saveOpenAIModel", async ({ payload, context }) => {
  */
 resolver.define("getOpenAIModelFromKVS", async () => {
   try {
-    const byokKey = await storage.get("COGNIRUNNER_OPENAI_API_KEY");
+    const provider = (await storage.get("COGNIRUNNER_AI_PROVIDER")) || "openai";
+    const byokKey = await storage.get(providerKeySlot(provider));
     if (!byokKey) {
       const factoryModel = await getOpenAIModel();
       return { success: true, model: factoryModel, isByok: false };
     }
-    const savedModel = await storage.get("COGNIRUNNER_OPENAI_MODEL");
+    const savedModel = await storage.get(providerModelSlot(provider));
     return { success: true, model: savedModel || null, isByok: true };
   } catch (error) {
     console.error("Failed to get model from KVS:", error);
@@ -2746,58 +2744,70 @@ const getProviderConfig = async () => {
   }
 };
 
+// Per-provider KVS key helpers
+const providerKeySlot = (provider) => `COGNIRUNNER_KEY_${provider}`;
+const providerModelSlot = (provider) => `COGNIRUNNER_MODEL_${provider}`;
+
 // In-memory key cache — avoids KVS read on every invocation
 let _cachedKey = null;
 let _cachedKeyChecked = false;
 
 /**
- * Get the OpenAI API key — checks BYOK (user-provided) key first, falls back to factory key.
+ * Get the active provider's API key. Checks per-provider KVS slot first,
+ * falls back to legacy key, then factory env var.
  */
 const getOpenAIKey = async () => {
   if (_cachedKeyChecked) return _cachedKey || process.env.OPENAI_API_KEY;
   try {
-    const byokKey = await storage.get("COGNIRUNNER_OPENAI_API_KEY");
+    const { provider } = await getProviderConfig();
+    // Try per-provider slot
+    let byokKey = await storage.get(providerKeySlot(provider));
+    // Migrate: if no per-provider key, check legacy slot (one-time migration)
+    if (!byokKey) {
+      const legacyKey = await storage.get("COGNIRUNNER_OPENAI_API_KEY");
+      if (legacyKey) {
+        // Migrate legacy key to the current provider's slot
+        await storage.set(providerKeySlot(provider), legacyKey);
+        byokKey = legacyKey;
+        console.log(`Migrated legacy API key to ${providerKeySlot(provider)}`);
+      }
+    }
     _cachedKeyChecked = true;
     if (byokKey) { _cachedKey = byokKey; return byokKey; }
   } catch (error) {
-    console.error("Error reading BYOK API key from storage:", error);
+    console.error("Error reading API key from storage:", error);
   }
   return process.env.OPENAI_API_KEY;
-};
-
-/**
- * Check if a BYOK key is configured (does not return the key itself).
- */
-const isByokActive = async () => {
-  try {
-    const byokKey = await storage.get("COGNIRUNNER_OPENAI_API_KEY");
-    return !!byokKey;
-  } catch (error) {
-    return false;
-  }
 };
 
 // In-memory model cache — avoids KVS + /v1/models calls on every invocation
 let _cachedModel = null;
 
 /**
- * Get the OpenAI model. Fast path: in-memory cache or env var.
- * No /v1/models call — that's too slow for the 25s Forge resolver timeout.
- * Model detection happens lazily in the BYOK settings UI, not at runtime.
+ * Get the active provider's model. Checks per-provider KVS slot first,
+ * falls back to legacy slot, then env var, then provider default.
  */
 const getOpenAIModel = async () => {
-  // Fast: in-memory cache
   if (_cachedModel) return _cachedModel;
 
   try {
-    // Check BYOK saved model
-    const byokKey = await storage.get("COGNIRUNNER_OPENAI_API_KEY");
+    const { provider } = await getProviderConfig();
+    // Try per-provider slot
+    const byokKey = await storage.get(providerKeySlot(provider));
     if (byokKey) {
-      const savedModel = await storage.get("COGNIRUNNER_OPENAI_MODEL");
+      let savedModel = await storage.get(providerModelSlot(provider));
+      // Migrate: check legacy model slot
+      if (!savedModel) {
+        savedModel = await storage.get("COGNIRUNNER_OPENAI_MODEL");
+        if (savedModel) {
+          await storage.set(providerModelSlot(provider), savedModel);
+          console.log(`Migrated legacy model to ${providerModelSlot(provider)}`);
+        }
+      }
       if (savedModel) { _cachedModel = savedModel; return savedModel; }
     }
   } catch (error) {
-    console.error("Error reading OpenAI model from storage:", error);
+    console.error("Error reading model from storage:", error);
   }
 
   // Use env var, or provider-specific default

@@ -22,14 +22,23 @@ import api, { route, fetch } from "@forge/api";
 const TASK_PREFIX = "async_task:";
 const TASK_TTL_HOURS = 1; // Results expire after 1 hour
 
-// In-memory model cache (same as index.js)
+// Per-provider KVS key helpers (same scheme as index.js)
+const providerKeySlot = (provider) => `COGNIRUNNER_KEY_${provider}`;
+const providerModelSlot = (provider) => `COGNIRUNNER_MODEL_${provider}`;
+
 let _cachedKey = null;
 let _cachedKeyChecked = false;
 
 const getOpenAIKey = async () => {
   if (_cachedKeyChecked) return _cachedKey || process.env.OPENAI_API_KEY;
   try {
-    const byokKey = await storage.get("COGNIRUNNER_OPENAI_API_KEY");
+    const { provider } = await getProviderConfig();
+    let byokKey = await storage.get(providerKeySlot(provider));
+    // Legacy migration fallback
+    if (!byokKey) {
+      const legacy = await storage.get("COGNIRUNNER_OPENAI_API_KEY");
+      if (legacy) { byokKey = legacy; }
+    }
     _cachedKeyChecked = true;
     if (byokKey) { _cachedKey = byokKey; return byokKey; }
   } catch (e) { /* fall through */ }
@@ -39,9 +48,10 @@ const getOpenAIKey = async () => {
 
 const getOpenAIModel = async () => {
   try {
-    const byokKey = await storage.get("COGNIRUNNER_OPENAI_API_KEY");
+    const { provider } = await getProviderConfig();
+    const byokKey = await storage.get(providerKeySlot(provider));
     if (byokKey) {
-      const savedModel = await storage.get("COGNIRUNNER_OPENAI_MODEL");
+      const savedModel = await storage.get(providerModelSlot(provider));
       if (savedModel) return savedModel;
     }
   } catch (e) { /* fall through */ }
