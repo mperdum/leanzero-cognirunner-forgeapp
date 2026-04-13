@@ -1156,7 +1156,7 @@ resolver.define("getWorkflowTransitions", async ({ payload, context }) => {
 
   try {
     const response = await api.asApp().requestJira(
-      route`/rest/api/3/workflows/search?queryString=${workflowName}&expand=values.transitions`,
+      route`/rest/api/3/workflows/search?queryString=${workflowName}&expand=values.transitions,values.statuses`,
       { headers: { Accept: "application/json" } },
     );
     if (!response.ok) return { success: false, error: `Failed to fetch workflow: ${response.status}` };
@@ -1165,23 +1165,48 @@ resolver.define("getWorkflowTransitions", async ({ payload, context }) => {
     const workflow = (data.values || []).find((w) => w.name === workflowName);
     if (!workflow) return { success: false, error: "Workflow not found" };
 
+    // Build status lookup map from all available status data
+    const statuses = workflow.statuses || [];
+    const statusMap = new Map();
+    for (const s of statuses) {
+      if (s.statusReference) statusMap.set(s.statusReference, s.name || s.statusReference);
+      if (s.id) statusMap.set(String(s.id), s.name || String(s.id));
+    }
+    console.log(`getWorkflowTransitions: ${statuses.length} statuses, ${(workflow.transitions || []).length} transitions, statusMap keys: ${[...statusMap.keys()].join(", ")}`);
+
     const transitions = (workflow.transitions || []).map((t) => {
       const rules = t.rules || {};
       const validators = rules.validators || [];
       const conditions = rules.conditions || [];
       const postFunctions = rules.postFunctions || rules.actions || [];
 
-      // Check which CogniRunner rules already exist on this transition
       const hasCogniValidator = validators.some((r) => r.parameters?.key?.includes(APP_ID));
       const hasCogniCondition = conditions.some((r) => r.parameters?.key?.includes(APP_ID));
       const hasCogniPostFunction = postFunctions.some((r) => r.parameters?.key?.includes(APP_ID));
 
+      // Extract from/to status references — handle all API response formats
+      let fromRefs = [];
+      if (Array.isArray(t.from)) {
+        fromRefs = t.from.map((f) => typeof f === "string" ? f : (f.statusReference || f.id || ""));
+      }
+
+      let toRef = "";
+      if (t.to) {
+        toRef = typeof t.to === "string" ? t.to : (t.to.statusReference || t.to.id || "");
+      }
+
+      // Resolve to names
+      const fromNames = fromRefs.length > 0
+        ? fromRefs.map((ref) => statusMap.get(ref) || ref).filter(Boolean)
+        : [];
+      const toName = toRef ? (statusMap.get(toRef) || toRef) : "";
+
       return {
         id: String(t.id),
         name: t.name,
-        type: t.type,
-        fromName: t.from?.[0]?.statusReference || t.from?.[0] || "Any",
-        toName: t.to?.statusReference || t.to || "",
+        type: t.type || "",
+        fromName: fromNames.length > 0 ? fromNames.join(", ") : "Any",
+        toName: toName || "?",
         validatorCount: validators.length,
         conditionCount: conditions.length,
         postFunctionCount: postFunctions.length,
@@ -1190,18 +1215,6 @@ resolver.define("getWorkflowTransitions", async ({ payload, context }) => {
         hasCogniPostFunction,
       };
     });
-
-    // Resolve status names
-    const statuses = workflow.statuses || [];
-    const statusMap = new Map();
-    for (const s of statuses) {
-      if (s.statusReference) statusMap.set(s.statusReference, s.name);
-      if (s.id) statusMap.set(String(s.id), s.name);
-    }
-    for (const t of transitions) {
-      t.fromName = statusMap.get(t.fromName) || t.fromName;
-      t.toName = statusMap.get(t.toName) || t.toName;
-    }
 
     return { success: true, transitions, workflowId: workflow.id };
   } catch (error) {
