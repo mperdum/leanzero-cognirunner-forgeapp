@@ -181,7 +181,6 @@ const injectStyles = () => {
       border: 1px solid var(--border-color);
       border-radius: 8px;
       background-color: var(--card-bg);
-      overflow: hidden;
     }
 
     .table {
