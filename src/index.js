@@ -1165,48 +1165,78 @@ resolver.define("getWorkflowTransitions", async ({ payload, context }) => {
     const workflow = (data.values || []).find((w) => w.name === workflowName);
     if (!workflow) return { success: false, error: "Workflow not found" };
 
-    // Build status lookup map from all available status data
-    const statuses = workflow.statuses || [];
+    // Fetch all statuses for name resolution
+    let allStatuses = [];
+    try {
+      const statusResp = await api.asApp().requestJira(
+        route`/rest/api/3/status`,
+        { headers: { Accept: "application/json" } },
+      );
+      if (statusResp.ok) allStatuses = await statusResp.json();
+    } catch (e) { console.error("Failed to fetch statuses:", e); }
+
+    // Build status lookup map
+    // Top-level statuses array has { id, name, statusReference }
+    // Workflow.statuses only has { statusReference } without names
+    // We need the top-level statuses from the search response for names
     const statusMap = new Map();
-    for (const s of statuses) {
-      if (s.statusReference) statusMap.set(s.statusReference, s.name || s.statusReference);
-      if (s.id) statusMap.set(String(s.id), s.name || String(s.id));
+
+    // First: workflow.statuses (may only have statusReference, no name)
+    for (const s of (workflow.statuses || [])) {
+      if (s.statusReference && s.name) statusMap.set(s.statusReference, s.name);
+      if (s.id && s.name) statusMap.set(String(s.id), s.name);
     }
-    console.log(`getWorkflowTransitions: ${statuses.length} statuses, ${(workflow.transitions || []).length} transitions, statusMap keys: ${[...statusMap.keys()].join(", ")}`);
+
+    // Second: all Jira statuses (GET /rest/api/3/status) — has id + name
+    for (const s of allStatuses) {
+      if (s.id && s.name) statusMap.set(String(s.id), s.name);
+      // statusReference often equals id for global statuses
+      if (s.statusReference) statusMap.set(s.statusReference, s.name);
+    }
+
+    console.log(`getWorkflowTransitions: statusMap has ${statusMap.size} entries, transitions: ${(workflow.transitions || []).length}`);
 
     const transitions = (workflow.transitions || []).map((t) => {
       const rules = t.rules || {};
       const validators = rules.validators || [];
       const conditions = rules.conditions || [];
-      const postFunctions = rules.postFunctions || rules.actions || [];
+      const postFunctions = rules.postFunctions || rules.actions || t.actions || [];
 
       const hasCogniValidator = validators.some((r) => r.parameters?.key?.includes(APP_ID));
       const hasCogniCondition = conditions.some((r) => r.parameters?.key?.includes(APP_ID));
       const hasCogniPostFunction = postFunctions.some((r) => r.parameters?.key?.includes(APP_ID));
 
-      // Extract from/to status references — handle all API response formats
-      let fromRefs = [];
-      if (Array.isArray(t.from)) {
-        fromRefs = t.from.map((f) => typeof f === "string" ? f : (f.statusReference || f.id || ""));
+      // Extract "to" status: field is `toStatusReference` or `to.statusReference` or `to`
+      const toRef = t.toStatusReference || (typeof t.to === "string" ? t.to : t.to?.statusReference) || "";
+      const toName = statusMap.get(toRef) || toRef || "?";
+
+      // Extract "from" statuses: from `links[].fromStatusReference` or `from[]`
+      let fromNames = [];
+      if (t.links && t.links.length > 0) {
+        // New API format: links array with fromStatusReference
+        fromNames = t.links
+          .map((l) => l.fromStatusReference)
+          .filter(Boolean)
+          .map((ref) => statusMap.get(ref) || ref);
+      } else if (Array.isArray(t.from) && t.from.length > 0) {
+        // Old API format: from array
+        fromNames = t.from
+          .map((f) => typeof f === "string" ? f : (f.statusReference || f.id || ""))
+          .filter(Boolean)
+          .map((ref) => statusMap.get(ref) || ref);
       }
 
-      let toRef = "";
-      if (t.to) {
-        toRef = typeof t.to === "string" ? t.to : (t.to.statusReference || t.to.id || "");
-      }
-
-      // Resolve to names
-      const fromNames = fromRefs.length > 0
-        ? fromRefs.map((ref) => statusMap.get(ref) || ref).filter(Boolean)
-        : [];
-      const toName = toRef ? (statusMap.get(toRef) || toRef) : "";
+      // Determine transition type label
+      const type = (t.type || "").toUpperCase();
+      const isGlobal = type === "GLOBAL" || (!t.links?.length && !t.from?.length && type !== "INITIAL");
+      const isInitial = type === "INITIAL";
 
       return {
         id: String(t.id),
         name: t.name,
         type: t.type || "",
-        fromName: fromNames.length > 0 ? fromNames.join(", ") : "Any",
-        toName: toName || "?",
+        fromName: isInitial ? "Create" : isGlobal ? "Any status" : (fromNames.length > 0 ? fromNames.join(", ") : "Any"),
+        toName,
         validatorCount: validators.length,
         conditionCount: conditions.length,
         postFunctionCount: postFunctions.length,
