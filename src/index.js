@@ -1516,49 +1516,78 @@ resolver.define("suggestEndpoint", async ({ payload }) => {
     if (!apiKey) return { success: false, error: "No API key configured" };
     const model = await getOpenAIModel();
 
-    const systemPrompt = `You are a Jira REST API assistant. Given a user's description of what they want to do, suggest the correct Jira REST API v3 endpoint.
+    const systemPrompt = `You are a Jira REST API v3 assistant for Forge apps. Suggest the correct endpoint for the user's task.
 
-Available endpoints (from Forge, using api.asApp().requestJira()):
+Available endpoints (via api.asApp().requestJira()):
 
 ISSUES:
-- GET /rest/api/3/issue/{issueIdOrKey} — Get issue details
-- PUT /rest/api/3/issue/{issueIdOrKey} — Update issue fields
-- POST /rest/api/3/issue — Create a new issue
-- DELETE /rest/api/3/issue/{issueIdOrKey} — Delete an issue
+- GET /rest/api/3/issue/{key} — Get issue (add ?expand=renderedFields,changelog for extra data)
+- PUT /rest/api/3/issue/{key} — Update fields (body: {fields: {summary: "..."}})
+- POST /rest/api/3/issue — Create issue (body: {fields: {project: {key}, summary, issuetype: {name}}})
+- DELETE /rest/api/3/issue/{key} — Delete issue
+- GET /rest/api/3/issue/{key}/editmeta — Get editable fields and their schemas
 
 SEARCH:
-- POST /rest/api/3/search — Search issues by JQL (body: {jql, maxResults, fields})
+- POST /rest/api/3/search — JQL search (body: {jql, maxResults, fields, expand})
 
 TRANSITIONS:
-- GET /rest/api/3/issue/{issueIdOrKey}/transitions — List available transitions
-- POST /rest/api/3/issue/{issueIdOrKey}/transitions — Execute transition (body: {transition: {id}})
+- GET /rest/api/3/issue/{key}/transitions — List available transitions
+- POST /rest/api/3/issue/{key}/transitions — Execute transition (body: {transition: {id}})
 
 COMMENTS:
-- GET /rest/api/3/issue/{issueIdOrKey}/comment — Get comments
-- POST /rest/api/3/issue/{issueIdOrKey}/comment — Add comment (body must use ADF format)
-- PUT /rest/api/3/issue/{issueIdOrKey}/comment/{commentId} — Update comment
-- DELETE /rest/api/3/issue/{issueIdOrKey}/comment/{commentId} — Delete comment
+- GET /rest/api/3/issue/{key}/comment — Get comments
+- POST /rest/api/3/issue/{key}/comment — Add comment (body: ADF format)
+- PUT /rest/api/3/issue/{key}/comment/{id} — Update comment
+- DELETE /rest/api/3/issue/{key}/comment/{id} — Delete comment
 
 LINKS:
-- POST /rest/api/3/issueLink — Link two issues (body: {type, outwardIssue, inwardIssue})
-- POST /rest/api/3/issue/{issueIdOrKey}/remotelink — Add external URL link
+- POST /rest/api/3/issueLink — Link issues (body: {type: {name: "Blocks"}, outwardIssue: {key}, inwardIssue: {key}})
+- GET /rest/api/3/issueLinkType — List available link types
+- POST /rest/api/3/issue/{key}/remotelink — Add external link
 
 WORKLOGS:
-- POST /rest/api/3/issue/{issueIdOrKey}/worklog — Log work (body: {timeSpent, comment})
-- GET /rest/api/3/issue/{issueIdOrKey}/worklog — Get worklogs
+- POST /rest/api/3/issue/{key}/worklog — Log work (body: {timeSpent: "2h", comment: ADF})
+- GET /rest/api/3/issue/{key}/worklog — Get worklogs
 
 WATCHERS:
-- POST /rest/api/3/issue/{issueIdOrKey}/watchers — Add watcher (body: "accountId")
+- POST /rest/api/3/issue/{key}/watchers — Add watcher (body: "accountId")
+- GET /rest/api/3/issue/{key}/watchers — Get watchers
+- DELETE /rest/api/3/issue/{key}/watchers?accountId={id} — Remove watcher
+
+FIELDS & METADATA:
+- GET /rest/api/3/field — List all fields (system + custom)
+- GET /rest/api/3/issue/createmeta?projectKeys={key}&issuetypeNames={type} — Create metadata
+- GET /rest/api/3/priority — List priorities
+- GET /rest/api/3/status — List statuses
+- GET /rest/api/3/issuetype — List issue types
+- GET /rest/api/3/resolution — List resolutions
+
+USERS:
+- GET /rest/api/3/user?accountId={id} — Get user
+- GET /rest/api/3/user/search?query={text} — Search users
+- GET /rest/api/3/myself — Get current user
+
+PROJECTS:
+- GET /rest/api/3/project/{keyOrId} — Get project
+- GET /rest/api/3/project — List projects
+- GET /rest/api/3/project/{keyOrId}/components — List components
+- GET /rest/api/3/project/{keyOrId}/versions — List versions
 
 PROPERTIES:
-- PUT /rest/api/3/issue/{issueIdOrKey}/properties/{key} — Set app property on issue
-- GET /rest/api/3/issue/{issueIdOrKey}/properties — List properties
+- PUT /rest/api/3/issue/{key}/properties/{propKey} — Set issue property
+- GET /rest/api/3/issue/{key}/properties — List properties
+- GET /rest/api/3/issue/{key}/properties/{propKey} — Get property
 
-IMPORTANT: Description and comment fields require ADF (Atlassian Document Format):
-{
-  "type": "doc", "version": 1,
-  "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Your text"}]}]
-}
+SPRINTS (Agile):
+- GET /rest/agile/1.0/board/{boardId}/sprint — List sprints
+- GET /rest/agile/1.0/sprint/{sprintId}/issue — Get sprint issues
+
+IMPORTANT RULES:
+- Description/comment fields require ADF: {type: "doc", version: 1, content: [{type: "paragraph", content: [{type: "text", text: "..."}]}]}
+- User fields use accountId, never username: {assignee: {accountId: "5f..."}}
+- Select fields: {priority: {name: "High"}} or {priority: {id: "1"}}
+- Labels overwrite, not append: {labels: ["all", "labels", "here"]}
+- Dates are ISO strings: {duedate: "2025-12-31"}
 
 Respond with ONLY a valid JSON object:
 {
@@ -3199,13 +3228,13 @@ const TOOL_REGISTRY = {
       type: "function",
       function: {
         name: "search_jira_issues",
-        description: "Search for Jira issues using JQL (Jira Query Language). Use this to find similar issues, check for duplicates, or look up related work. Returns up to 10 issues with their key, summary, status, and the validated field's content (truncated to 500 chars).",
+        description: "Search Jira issues via JQL. Use to find duplicates, similar work, related issues, or check field values across the project. Returns up to 10 issues with key, summary, status, priority, issue type, and the validated field content (500 chars).",
         parameters: {
           type: "object",
           properties: {
             jql: {
               type: "string",
-              description: "A JQL query string. Must include a search restriction (project, text, summary, etc.). Examples: 'project = PROJ AND text ~ \"login error\"', 'summary ~ \"payment\" AND status != Done'",
+              description: "JQL query. Operators: = != ~ !~ IN NOT IN > < IS EMPTY IS NOT EMPTY. Functions: currentUser() startOfDay() endOfDay() startOfWeek(). Fields: summary description status priority issuetype assignee reporter labels components fixVersion created updated duedate resolution project. Examples: 'project = PROJ AND text ~ \"login error\"', 'summary ~ \"payment\" AND status NOT IN (Done, Closed)', 'labels = critical AND created >= -7d', 'assignee = currentUser() AND resolution IS EMPTY'. Always scope to project when possible.",
             },
           },
           required: ["jql"],
