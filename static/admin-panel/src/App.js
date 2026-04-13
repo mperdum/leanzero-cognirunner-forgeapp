@@ -944,6 +944,7 @@ function App() {
   const [showLogs, setShowLogs] = useState(false);
   const [licenseActive, setLicenseActive] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [userRole, setUserRole] = useState(null); // "viewer" | "editor" | "admin" | null
   const [accountId, setAccountId] = useState(null);
   const [activeTab, setActiveTab] = useState("rules");
   const [rulesFilter, setRulesFilter] = useState("all");
@@ -1071,26 +1072,32 @@ function App() {
         console.log("Bridge not available:", e);
       }
 
-      // Check admin status BEFORE fetching configs
+      // Check role BEFORE fetching configs
       let userIsAdmin = false;
+      let detectedRole = null;
 
       try {
         const adminResult = await invoke("checkIsAdmin");
         if (adminResult.success) {
           if (adminResult.isAdmin) userIsAdmin = true;
+          detectedRole = adminResult.role;
           setAccountId(adminResult.accountId);
-          if (!userIsAdmin && !adminResult.isAdmin) {
+          // Viewers and users with no role see only their rules
+          if (!detectedRole || detectedRole === "viewer") {
             setRulesFilter("mine");
           }
         }
       } catch (e) {
-        console.log("Could not check admin status:", e);
+        console.log("Could not check role:", e);
       }
 
+      // jira:adminPage always grants admin
+      if (isAdmin) { userIsAdmin = true; detectedRole = "admin"; }
       setIsAdmin((prev) => prev || userIsAdmin);
+      setUserRole(detectedRole);
 
-      // Fetch configs with the correct filter (state hasn't updated yet)
-      await fetchConfigs(false, userIsAdmin ? "all" : "mine");
+      // Editors and admins see all rules; viewers see their own
+      await fetchConfigs(false, detectedRole === "editor" || detectedRole === "admin" ? "all" : "mine");
       setLoading(false);
     };
     init();
@@ -1335,6 +1342,7 @@ function App() {
                       </td>
                       <td><span className="timestamp">{formatTime(config.updatedAt)}</span></td>
                       <td>
+                        {(userRole === "editor" || userRole === "admin") && (
                         <div className="row-actions">
                           {editUrl && (
                             <button
@@ -1356,6 +1364,7 @@ function App() {
                               : (isDisabled ? "Enable" : "Disable")}
                           </button>
                         </div>
+                        )}
                       </td>
                     </tr>
                   );

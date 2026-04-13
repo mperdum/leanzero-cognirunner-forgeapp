@@ -6,24 +6,39 @@
  */
 
 import React, { useState, useEffect, useRef } from "react";
+import CustomSelect from "./CustomSelect";
+
+const ROLE_OPTIONS = [
+  { value: "viewer", label: "Viewer" },
+  { value: "editor", label: "Editor" },
+  { value: "admin", label: "Admin" },
+];
+
+const ROLE_DESCRIPTIONS = {
+  viewer: "Can view all rules and logs",
+  editor: "Can view, edit, disable, and manage all rules and docs",
+  admin: "Full access including permissions and settings",
+};
 
 export default function PermissionsTab({ invoke }) {
-  const [admins, setAdmins] = useState([]);
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [adding, setAdding] = useState(null);
+  const [addRole, setAddRole] = useState("viewer");
   const [removing, setRemoving] = useState(null);
+  const [changingRole, setChangingRole] = useState(null);
+  const [error, setError] = useState(null);
   const searchTimer = useRef(null);
-  const inputRef = useRef(null);
 
   useEffect(() => {
     const load = async () => {
       try {
         const result = await invoke("getAppAdmins");
-        if (result.success) setAdmins(result.admins || []);
-      } catch (e) { console.error("Failed to load admins:", e); }
+        if (result.success) setUsers(result.admins || []);
+      } catch (e) { console.error("Failed to load users:", e); }
       setLoading(false);
     };
     load();
@@ -48,26 +63,50 @@ export default function PermissionsTab({ invoke }) {
 
   const handleAdd = async (user) => {
     setAdding(user.accountId);
+    setError(null);
     try {
-      const result = await invoke("addAppAdmin", { accountId: user.accountId, displayName: user.displayName });
+      const result = await invoke("addAppAdmin", { accountId: user.accountId, displayName: user.displayName, role: addRole });
       if (result.success) {
-        setAdmins([...admins, { accountId: user.accountId, displayName: user.displayName, avatarUrl: user.avatarUrl }]);
+        setUsers([...users, { accountId: user.accountId, displayName: user.displayName, avatarUrl: user.avatarUrl, role: addRole }]);
         setSearchQuery("");
         setSearchResults([]);
+      } else {
+        setError(result.error);
       }
-    } catch (e) { console.error("Failed to add admin:", e); }
+    } catch (e) { setError("Failed to add user: " + e.message); }
     setAdding(null);
   };
 
   const handleRemove = async (accountId) => {
     setRemoving(accountId);
+    setError(null);
     try {
       const result = await invoke("removeAppAdmin", { accountId });
       if (result.success) {
-        setAdmins(admins.filter((a) => (typeof a === "string" ? a : a.accountId) !== accountId));
+        setUsers(users.filter((a) => (typeof a === "string" ? a : a.accountId) !== accountId));
+      } else {
+        setError(result.error);
       }
-    } catch (e) { console.error("Failed to remove admin:", e); }
+    } catch (e) { setError("Failed to remove user: " + e.message); }
     setRemoving(null);
+  };
+
+  const handleRoleChange = async (accountId, newRole) => {
+    setChangingRole(accountId);
+    setError(null);
+    try {
+      const result = await invoke("updateUserRole", { accountId, role: newRole });
+      if (result.success) {
+        setUsers(users.map((u) => {
+          const uid = typeof u === "string" ? u : u.accountId;
+          if (uid === accountId) return { ...u, role: newRole };
+          return u;
+        }));
+      } else {
+        setError(result.error);
+      }
+    } catch (e) { setError("Failed to update role: " + e.message); }
+    setChangingRole(null);
   };
 
   const getInitials = (name) => {
@@ -78,8 +117,14 @@ export default function PermissionsTab({ invoke }) {
       : name.substring(0, 2).toUpperCase();
   };
 
-  const isAlreadyAdmin = (accountId) =>
-    admins.some((a) => (typeof a === "string" ? a : a.accountId) === accountId);
+  const isAlreadyAdded = (accountId) =>
+    users.some((a) => (typeof a === "string" ? a : a.accountId) === accountId);
+
+  const getRoleBadgeClass = (role) => {
+    if (role === "admin") return "type-condition";
+    if (role === "editor") return "type-postfunction";
+    return "type-validator";
+  };
 
   return (
     <div className="perm-tab">
@@ -93,40 +138,65 @@ export default function PermissionsTab({ invoke }) {
           </svg>
         </div>
         <div>
-          <h3 className="perm-title">App Administrators</h3>
+          <h3 className="perm-title">User Permissions</h3>
           <p className="perm-subtitle">
-            Manage who can configure AI settings, view all rules, and add other admins.
-            Jira site administrators always have access.
+            Manage who can access CogniRunner and what they can do.
+            Jira site administrators always have admin access.
           </p>
         </div>
       </div>
 
+      {error && (
+        <div className="alert alert-error" style={{ marginBottom: "12px" }}>
+          <span>{error}</span>
+          <button className="alert-dismiss" onClick={() => setError(null)}>&times;</button>
+        </div>
+      )}
+
+      {/* Role legend */}
+      <div style={{ display: "flex", gap: "16px", marginBottom: "12px", flexWrap: "wrap" }}>
+        {ROLE_OPTIONS.map((r) => (
+          <div key={r.value} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "var(--text-secondary)" }}>
+            <span className={`type-badge ${getRoleBadgeClass(r.value)}`} style={{ fontSize: "9px" }}>{r.label}</span>
+            <span>{ROLE_DESCRIPTIONS[r.value]}</span>
+          </div>
+        ))}
+      </div>
+
       {/* Search to add */}
       <div className="perm-search-wrap">
-        <div className="perm-search-input-wrap">
-          <svg className="perm-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          <input
-            ref={inputRef}
-            type="text"
-            className="perm-search-input"
-            value={searchQuery}
-            onChange={handleSearchChange}
-            placeholder="Search by name to add an administrator..."
-          />
-          {searching && <span className="perm-search-loading">Searching...</span>}
-          {searchQuery && !searching && (
-            <button className="perm-search-clear" onClick={() => { setSearchQuery(""); setSearchResults([]); }}>&times;</button>
-          )}
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <div className="perm-search-input-wrap" style={{ flex: 1 }}>
+            <svg className="perm-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              type="text"
+              className="perm-search-input"
+              value={searchQuery}
+              onChange={handleSearchChange}
+              placeholder="Search by name to add a user..."
+            />
+            {searching && <span className="perm-search-loading">Searching...</span>}
+            {searchQuery && !searching && (
+              <button className="perm-search-clear" onClick={() => { setSearchQuery(""); setSearchResults([]); }}>&times;</button>
+            )}
+          </div>
+          <div style={{ width: "120px" }}>
+            <CustomSelect
+              value={addRole}
+              onChange={setAddRole}
+              options={ROLE_OPTIONS}
+            />
+          </div>
         </div>
 
-        {/* Search results — click to add */}
+        {/* Search results */}
         {searchResults.length > 0 && (
           <div className="perm-search-results">
             {searchResults.map((user) => {
-              const already = isAlreadyAdmin(user.accountId);
+              const already = isAlreadyAdded(user.accountId);
               const isAdding = adding === user.accountId;
               return (
                 <div
@@ -140,14 +210,10 @@ export default function PermissionsTab({ invoke }) {
                     <span className="perm-avatar-placeholder">{getInitials(user.displayName)}</span>
                   )}
                   <span className="perm-search-name">{user.displayName}</span>
-                  {already && <span className="perm-search-badge">Already admin</span>}
-                  {isAdding && <span className="perm-search-badge">Adding...</span>}
+                  {already && <span className="perm-search-badge">Already added</span>}
+                  {isAdding && <span className="perm-search-badge">Adding as {addRole}...</span>}
                   {!already && !isAdding && (
-                    <svg className="perm-search-add-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <circle cx="12" cy="12" r="10" />
-                      <line x1="12" y1="8" x2="12" y2="16" />
-                      <line x1="8" y1="12" x2="16" y2="12" />
-                    </svg>
+                    <span style={{ marginLeft: "auto", fontSize: "11px", color: "var(--text-muted)" }}>Add as {addRole}</span>
                   )}
                 </div>
               );
@@ -156,24 +222,26 @@ export default function PermissionsTab({ invoke }) {
         )}
       </div>
 
-      {/* Current admins list */}
+      {/* Current users list */}
       <div className="perm-list">
         {loading ? (
-          <div className="perm-empty">Loading administrators...</div>
-        ) : admins.length === 0 ? (
+          <div className="perm-empty">Loading users...</div>
+        ) : users.length === 0 ? (
           <div className="perm-empty">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
               <circle cx="9" cy="7" r="4" />
             </svg>
-            <span>No app admins yet. Search above to add one.</span>
+            <span>No users added yet. Search above to add one.</span>
           </div>
         ) : (
-          admins.map((admin) => {
-            const id = typeof admin === "string" ? admin : admin.accountId;
-            const name = typeof admin === "string" ? admin : admin.displayName;
-            const avatar = typeof admin === "object" ? admin.avatarUrl : null;
+          users.map((user) => {
+            const id = typeof user === "string" ? user : user.accountId;
+            const name = typeof user === "string" ? user : user.displayName;
+            const avatar = typeof user === "object" ? user.avatarUrl : null;
+            const role = typeof user === "object" ? (user.role || "admin") : "admin";
             const isRemoving = removing === id;
+            const isChanging = changingRole === id;
             return (
               <div key={id} className="perm-admin-card">
                 <div className="perm-admin-info">
@@ -184,16 +252,26 @@ export default function PermissionsTab({ invoke }) {
                   )}
                   <div>
                     <div className="perm-admin-name">{name}</div>
-                    <div className="perm-admin-role">App Administrator</div>
+                    <div className="perm-admin-role">{ROLE_DESCRIPTIONS[role] || role}</div>
                   </div>
                 </div>
-                <button
-                  className="perm-remove-btn"
-                  onClick={() => handleRemove(id)}
-                  disabled={isRemoving}
-                >
-                  {isRemoving ? "Removing..." : "Remove"}
-                </button>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <div style={{ width: "110px" }}>
+                    <CustomSelect
+                      value={role}
+                      onChange={(newRole) => handleRoleChange(id, newRole)}
+                      options={ROLE_OPTIONS}
+                      disabled={isChanging}
+                    />
+                  </div>
+                  <button
+                    className="perm-remove-btn"
+                    onClick={() => handleRemove(id)}
+                    disabled={isRemoving}
+                  >
+                    {isRemoving ? "..." : "Remove"}
+                  </button>
+                </div>
               </div>
             );
           })
