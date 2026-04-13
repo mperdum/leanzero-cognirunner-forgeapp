@@ -13,12 +13,14 @@ const PROVIDER_OPTIONS = [
   { value: "openai", label: "OpenAI" },
   { value: "azure", label: "Azure OpenAI" },
   { value: "openrouter", label: "OpenRouter" },
+  { value: "anthropic", label: "Anthropic" },
 ];
 
 const PROVIDER_HELP = {
   openai: { keyPlaceholder: "sk-...", keyLabel: "OpenAI API Key", endpointNeeded: false },
   azure: { keyPlaceholder: "Enter your Azure OpenAI API key...", keyLabel: "Azure API Key", endpointNeeded: true, endpointPlaceholder: "https://myresource.openai.azure.com/openai/v1" },
   openrouter: { keyPlaceholder: "sk-or-...", keyLabel: "OpenRouter API Key", endpointNeeded: false },
+  anthropic: { keyPlaceholder: "sk-ant-...", keyLabel: "Anthropic API Key", endpointNeeded: false },
 };
 
 export default function OpenAIConfig({ invoke }) {
@@ -251,7 +253,7 @@ export default function OpenAIConfig({ invoke }) {
               />
             </div>
             <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
-              All providers use ChatGPT-compatible APIs (OpenAI chat completions format).
+              All providers support chat completions, tool calling, and vision capabilities.
             </p>
           </div>
 
@@ -344,6 +346,16 @@ export default function OpenAIConfig({ invoke }) {
                   "2. Click your profile icon > 'Keys'\n" +
                   "3. Click 'Create Key', give it a name, and copy it\n\n" +
                   "OpenRouter keys start with 'sk-or-'. You'll need credits in your account to make API calls."
+                } />
+              )}
+              {provider === "anthropic" && (
+                <Tooltip text={
+                  "How to get your Anthropic API key:\n\n" +
+                  "1. Go to console.anthropic.com and sign in\n" +
+                  "2. Click 'API Keys' in the left sidebar\n" +
+                  "3. Click 'Create Key', give it a name, and copy it\n\n" +
+                  "Anthropic keys start with 'sk-ant-'. You'll need credits or a billing plan to make API calls.\n\n" +
+                  "Default model: Claude Haiku 4.5 (fastest, most affordable). You can switch to Sonnet or Opus for more capable models."
                 } />
               )}
             </label>

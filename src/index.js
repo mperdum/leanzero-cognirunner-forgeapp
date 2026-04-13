@@ -1120,7 +1120,7 @@ resolver.define("saveProvider", async ({ payload, context }) => {
   try {
     const { provider, baseUrl } = payload;
     if (!provider || !PROVIDERS[provider]) {
-      return { success: false, error: "Invalid provider. Choose: openai, azure, openrouter" };
+      return { success: false, error: "Invalid provider. Choose: openai, azure, openrouter, anthropic" };
     }
     // Azure: validate base URL format if provided, but allow saving without one initially
     if (provider === "azure" && baseUrl && !baseUrl.includes(".openai.azure.com")) {
@@ -1188,10 +1188,20 @@ resolver.define("getOpenAIModels", async () => {
 
     // Fetch models from the configured provider's endpoint
     const { provider, baseUrl } = await getProviderConfig();
-    const response = await fetch(`${baseUrl}/models`, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${byokKey}` },
-    });
+
+    // Provider-specific model listing
+    let response;
+    if (provider === "anthropic") {
+      response = await fetch(`${baseUrl}/v1/models`, {
+        method: "GET",
+        headers: { "x-api-key": byokKey, "anthropic-version": "2023-06-01" },
+      });
+    } else {
+      response = await fetch(`${baseUrl}/models`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${byokKey}` },
+      });
+    }
 
     if (!response.ok) {
       return { success: false, error: "Failed to fetch models. Check your API key and endpoint.", models: [], isByok: true };
@@ -1204,8 +1214,9 @@ resolver.define("getOpenAIModels", async () => {
     if (provider === "openai") {
       chatModels = chatModels.filter((id) => /^(gpt-5|o3-|o4-)/.test(id));
     } else if (provider === "openrouter") {
-      // OpenRouter prefixes models with provider — show GPT models
       chatModels = chatModels.filter((id) => /openai\//.test(id));
+    } else if (provider === "anthropic") {
+      chatModels = chatModels.filter((id) => /^claude-/.test(id));
     }
     // Azure: no filtering — show all available deployments
 
@@ -1558,28 +1569,22 @@ Respond with ONLY a valid JSON object:
   "explanation": "Brief explanation of why this endpoint and how to use it"
 }`;
 
-    const response = await fetch(`${(await getProviderConfig()).baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model,
-        ...buildModelParams(),
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: prompt },
-        ],
-      }),
+    const result = await callAIChat({
+      apiKey, model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: prompt },
+      ],
     });
 
-    if (!response.ok) return { success: false, error: `AI error (${response.status})` };
+    if (!result.ok) return { success: false, error: `AI error (${result.status})` };
 
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    const content = result.data.choices?.[0]?.message?.content;
     if (!content) return { success: false, error: "Empty AI response" };
 
     try {
       const suggestion = JSON.parse(content.replace(/^```json\s*\n?/i, "").replace(/\n?```\s*$/i, ""));
-      return { success: true, suggestion, tokens: data.usage?.total_tokens };
+      return { success: true, suggestion, tokens: result.data.usage?.total_tokens };
     } catch {
       return { success: true, suggestion: { explanation: content.substring(0, 500) } };
     }
@@ -1818,30 +1823,20 @@ ${priorSteps.map((s) => `- \`${s.variable}\` (from step ${s.step}: "${s.name}") 
 
 IMPORTANT: Use these variables in your code. For example, if a prior step stored search results in \`searchResults\`, you can write \`searchResults.issues.forEach(...)\` directly. Do NOT re-fetch data that a prior step already fetched.` : ""}`;
 
-    const response = await fetch(`${(await getProviderConfig()).baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        ...buildModelParams(),
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: `Generate JavaScript code for this post-function step:\n\n${prompt}${contextDocs ? `\n\n## Additional Context / Reference Documentation\n\n${contextDocs.substring(0, 30000)}` : ""}` },
-        ],
-      }),
+    const result = await callAIChat({
+      apiKey, model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: `Generate JavaScript code for this post-function step:\n\n${prompt}${contextDocs ? `\n\n## Additional Context / Reference Documentation\n\n${contextDocs.substring(0, 30000)}` : ""}` },
+      ],
     });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("OpenAI code generation error:", response.status, errText);
-      return { success: false, error: `AI error (${response.status}). Check your API key.` };
+    if (!result.ok) {
+      console.error("Code generation error:", result.status, result.error);
+      return { success: false, error: `AI error (${result.status}). Check your API key.` };
     }
 
-    const data = await response.json();
-    let code = data.choices?.[0]?.message?.content || "";
+    let code = result.data.choices?.[0]?.message?.content || "";
 
     // Strip markdown code fences if present
     code = code.replace(/^```(?:javascript|js)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
@@ -2216,31 +2211,22 @@ You MUST respond with ONLY a valid JSON object (no markdown, no explanation):
     // Step 7: Call AI
     logs.push(`Calling AI (model: ${model})...`);
     const aiStart = Date.now();
-    const response = await fetch(`${(await getProviderConfig()).baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        ...buildModelParams(),
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userContent },
-        ],
-      }),
+    const aiResult = await callAIChat({
+      apiKey, model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent },
+      ],
     });
     const aiTimeMs = Date.now() - aiStart;
 
-    if (!response.ok) {
-      const errText = await response.text().catch(() => "");
-      console.error("testSemanticPF AI error:", response.status, errText);
-      logs.push(`AI error: ${response.status} — ${errText.substring(0, 200)}`);
-      return { success: false, error: `AI error (${response.status}): ${errText.substring(0, 150)}`, logs, executionTimeMs: Date.now() - startTime };
+    if (!aiResult.ok) {
+      console.error("testSemanticPF AI error:", aiResult.status, aiResult.error);
+      logs.push(`AI error: ${aiResult.status} — ${(aiResult.error || "").substring(0, 200)}`);
+      return { success: false, error: `AI error (${aiResult.status}): ${(aiResult.error || "").substring(0, 150)}`, logs, executionTimeMs: Date.now() - startTime };
     }
 
-    const data = await response.json();
+    const data = aiResult.data;
     const content = data.choices?.[0]?.message?.content;
     if (!content) {
       logs.push("AI returned empty response");
@@ -2472,9 +2458,239 @@ export const handler = resolver.getDefinitions();
 
 // === Provider definitions ===
 const PROVIDERS = {
-  openai: { label: "OpenAI", baseUrl: "https://api.openai.com/v1" },
-  azure: { label: "Azure OpenAI", baseUrl: null }, // user must provide
-  openrouter: { label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1" },
+  openai: { label: "OpenAI", baseUrl: "https://api.openai.com/v1", defaultModel: "gpt-5.4-mini" },
+  azure: { label: "Azure OpenAI", baseUrl: null, defaultModel: "gpt-5.4-mini" }, // user must provide URL
+  openrouter: { label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", defaultModel: "openai/gpt-4o-mini" },
+  anthropic: { label: "Anthropic", baseUrl: "https://api.anthropic.com", defaultModel: "claude-haiku-4-5-20251001" },
+};
+
+/**
+ * Unified AI API adapter. Translates between OpenAI format (used internally)
+ * and Anthropic Messages API format when the provider is Anthropic.
+ * For OpenAI/Azure/OpenRouter, it's a pass-through.
+ *
+ * @param {object} opts
+ * @param {string} opts.apiKey - API key
+ * @param {string} opts.model - Model name
+ * @param {Array} opts.messages - Messages array (OpenAI format: {role, content})
+ * @param {Array} [opts.tools] - Tool definitions (OpenAI format)
+ * @param {string} [opts.tool_choice] - Tool choice ("auto", "none", etc.)
+ * @returns {Promise<{ok: boolean, status: number, data: object}>} - Normalized response in OpenAI format
+ */
+const callAIChat = async (opts) => {
+  const { apiKey, model, messages, tools, tool_choice } = opts;
+  const { provider, baseUrl } = await getProviderConfig();
+
+  if (provider === "anthropic") {
+    return callAnthropicChat({ apiKey, model, messages, tools, tool_choice, baseUrl });
+  }
+
+  // OpenAI-compatible providers (OpenAI, Azure, OpenRouter)
+  const requestBody = { model, ...buildModelParams(), messages };
+  if (tools && tools.length > 0) {
+    requestBody.tools = tools;
+    if (tool_choice) requestBody.tool_choice = tool_choice;
+  }
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    return { ok: false, status: response.status, data: null, error: errText };
+  }
+
+  const data = await response.json();
+  return { ok: true, status: 200, data };
+};
+
+/**
+ * Call Anthropic Messages API, translating from/to OpenAI format.
+ */
+const callAnthropicChat = async ({ apiKey, model, messages, tools, tool_choice, baseUrl }) => {
+  // 1. Extract system prompt from messages
+  let systemText = "";
+  const filteredMessages = [];
+  for (const msg of messages) {
+    if (msg.role === "system") {
+      systemText += (systemText ? "\n\n" : "") + (typeof msg.content === "string" ? msg.content : msg.content.map((c) => c.text || "").join("\n"));
+    } else {
+      filteredMessages.push(msg);
+    }
+  }
+
+  // 2. Convert messages content (images, files, tool results)
+  const anthropicMessages = [];
+  for (const msg of filteredMessages) {
+    if (msg.role === "tool") {
+      // OpenAI tool result → Anthropic tool_result inside a user message
+      const lastMsg = anthropicMessages[anthropicMessages.length - 1];
+      const toolResultBlock = {
+        type: "tool_result",
+        tool_use_id: msg.tool_call_id,
+        content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
+      };
+      // Merge into previous user message if it exists, else create new one
+      if (lastMsg && lastMsg.role === "user" && Array.isArray(lastMsg.content)) {
+        lastMsg.content.push(toolResultBlock);
+      } else {
+        anthropicMessages.push({ role: "user", content: [toolResultBlock] });
+      }
+    } else {
+      const converted = { role: msg.role };
+      if (typeof msg.content === "string") {
+        converted.content = msg.content;
+      } else if (Array.isArray(msg.content)) {
+        converted.content = msg.content.map(convertContentBlock);
+      } else {
+        converted.content = msg.content;
+      }
+      // Convert assistant tool_calls to Anthropic tool_use content blocks
+      if (msg.role === "assistant" && msg.tool_calls && msg.tool_calls.length > 0) {
+        const contentBlocks = typeof converted.content === "string"
+          ? (converted.content ? [{ type: "text", text: converted.content }] : [])
+          : (converted.content || []);
+        for (const tc of msg.tool_calls) {
+          contentBlocks.push({
+            type: "tool_use",
+            id: tc.id,
+            name: tc.function.name,
+            input: typeof tc.function.arguments === "string" ? JSON.parse(tc.function.arguments) : tc.function.arguments,
+          });
+        }
+        converted.content = contentBlocks;
+      }
+      anthropicMessages.push(converted);
+    }
+  }
+
+  // 3. Convert tool definitions
+  let anthropicTools;
+  if (tools && tools.length > 0) {
+    anthropicTools = tools.map((t) => ({
+      name: t.function ? t.function.name : t.name,
+      description: t.function ? t.function.description : t.description,
+      input_schema: t.function ? t.function.parameters : t.input_schema,
+    }));
+  }
+
+  // 4. Build Anthropic request
+  const body = {
+    model,
+    max_tokens: 4096,
+    messages: anthropicMessages,
+  };
+  if (systemText) body.system = systemText;
+  if (anthropicTools) {
+    body.tools = anthropicTools;
+    if (tool_choice === "auto") body.tool_choice = { type: "auto" };
+    else if (tool_choice === "none") body.tool_choice = { type: "none" };
+  }
+
+  const response = await fetch(`${baseUrl}/v1/messages`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    return { ok: false, status: response.status, data: null, error: errText };
+  }
+
+  const anthropicData = await response.json();
+
+  // 5. Convert response to OpenAI format
+  const textParts = [];
+  const toolCalls = [];
+  for (const block of (anthropicData.content || [])) {
+    if (block.type === "text") textParts.push(block.text);
+    if (block.type === "tool_use") {
+      toolCalls.push({
+        id: block.id,
+        type: "function",
+        function: {
+          name: block.name,
+          arguments: JSON.stringify(block.input),
+        },
+      });
+    }
+  }
+
+  const finishReason = anthropicData.stop_reason === "tool_use" ? "tool_calls"
+    : anthropicData.stop_reason === "end_turn" ? "stop"
+    : anthropicData.stop_reason === "max_tokens" ? "length"
+    : "stop";
+
+  const inputTokens = anthropicData.usage?.input_tokens || 0;
+  const outputTokens = anthropicData.usage?.output_tokens || 0;
+
+  const openAIData = {
+    choices: [{
+      index: 0,
+      message: {
+        role: "assistant",
+        content: textParts.join("") || null,
+      },
+      finish_reason: finishReason,
+    }],
+    usage: {
+      prompt_tokens: inputTokens,
+      completion_tokens: outputTokens,
+      total_tokens: inputTokens + outputTokens,
+    },
+  };
+
+  if (toolCalls.length > 0) {
+    openAIData.choices[0].message.tool_calls = toolCalls;
+  }
+
+  return { ok: true, status: 200, data: openAIData };
+};
+
+/**
+ * Convert a single OpenAI content block to Anthropic format.
+ */
+const convertContentBlock = (block) => {
+  if (!block || typeof block === "string") return { type: "text", text: block || "" };
+  if (block.type === "text") return block;
+
+  // OpenAI image_url → Anthropic image
+  if (block.type === "image_url" && block.image_url?.url) {
+    const url = block.image_url.url;
+    const dataUriMatch = url.match(/^data:([^;]+);base64,(.+)$/);
+    if (dataUriMatch) {
+      return {
+        type: "image",
+        source: { type: "base64", media_type: dataUriMatch[1], data: dataUriMatch[2] },
+      };
+    }
+    // URL-based image
+    return { type: "image", source: { type: "url", url } };
+  }
+
+  // OpenAI file → Anthropic document
+  if (block.type === "file" && block.file?.file_data) {
+    const dataUriMatch = block.file.file_data.match(/^data:([^;]+);base64,(.+)$/);
+    if (dataUriMatch) {
+      return {
+        type: "document",
+        source: { type: "base64", media_type: dataUriMatch[1], data: dataUriMatch[2] },
+      };
+    }
+  }
+
+  return block; // pass through unknown types
 };
 
 // In-memory provider cache
@@ -2555,8 +2771,13 @@ const getOpenAIModel = async () => {
     console.error("Error reading OpenAI model from storage:", error);
   }
 
-  // Use env var or default
-  const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+  // Use env var, or provider-specific default
+  if (process.env.OPENAI_MODEL) {
+    _cachedModel = process.env.OPENAI_MODEL;
+    return _cachedModel;
+  }
+  const { provider } = await getProviderConfig();
+  const model = (PROVIDERS[provider] && PROVIDERS[provider].defaultModel) || "gpt-5.4-mini";
   _cachedModel = model;
   return model;
 };
@@ -3064,33 +3285,23 @@ Respond with JSON only.`;
   }
 
   try {
-    const response = await fetch(`${(await getProviderConfig()).baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: model,
-        ...buildModelParams(),
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userContent },
-        ],
-      }),
+    const result = await callAIChat({
+      apiKey, model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent },
+      ],
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("OpenAI API error:", response.status, errorText);
+    if (!result.ok) {
+      console.error("AI validation error:", result.status, result.error);
       return {
         isValid: false,
-        reason: `AI service error: ${response.status}`,
+        reason: `AI service error: ${result.status}`,
       };
     }
 
-    const data = await response.json();
-    const content = data.choices[0]?.message?.content?.trim();
+    const content = result.data.choices[0]?.message?.content?.trim();
 
     if (!content) {
       return {
@@ -3100,13 +3311,13 @@ Respond with JSON only.`;
     }
 
     // Parse the JSON response
-    const result = JSON.parse(content);
+    const parsed = JSON.parse(content);
     return {
-      isValid: result.isValid === true,
-      reason: result.reason || "No reason provided",
+      isValid: parsed.isValid === true,
+      reason: parsed.reason || "No reason provided",
     };
   } catch (error) {
-    console.error("Error calling OpenAI:", error);
+    console.error("Error calling AI:", error);
     return {
       isValid: false,
       reason: `AI validation error: ${error.message}`,
@@ -3217,35 +3428,22 @@ RESPONSE FORMAT:
     }
 
     try {
-      const requestBody = {
-        model,
-        messages,
-        ...buildModelParams(),
-      };
-
       // Offer tools only if we haven't exhausted tool-call rounds
-      if (round < MAX_TOOL_ROUNDS) {
-        requestBody.tools = tools;
-        requestBody.tool_choice = "auto";
-      }
+      const callTools = round < MAX_TOOL_ROUNDS ? tools : undefined;
+      const callToolChoice = round < MAX_TOOL_ROUNDS ? "auto" : undefined;
 
-      const response = await fetch(`${(await getProviderConfig()).baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
+      const aiResult = await callAIChat({
+        apiKey, model, messages,
+        tools: callTools,
+        tool_choice: callToolChoice,
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("OpenAI API error (agentic):", response.status, errorText);
-        return { isValid: false, reason: `AI service error: ${response.status}`, toolMeta };
+      if (!aiResult.ok) {
+        console.error("AI error (agentic):", aiResult.status, aiResult.error);
+        return { isValid: false, reason: `AI service error: ${aiResult.status}`, toolMeta };
       }
 
-      const data = await response.json();
-      const choice = data.choices[0];
+      const choice = aiResult.data.choices[0];
       const message = choice.message;
 
       // Append assistant message to conversation history
@@ -3697,21 +3895,21 @@ const executeSemanticPostFunction = async (issueKey, config) => {
     }
     trace.push(`Using model: ${model}`);
 
-    // Step 5: Call OpenAI
+    // Step 5: Call AI
     trace.push("Evaluating condition with AI...");
     const aiStart = Date.now();
-    const response = await fetch(`${(await getProviderConfig()).baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, ...buildModelParams(),
-        messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }],
-      }),
+    const aiResult = await callAIChat({
+      apiKey, model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent },
+      ],
     });
     const aiTimeMs = Date.now() - aiStart;
 
-    if (!response.ok) {
-      const status = response.status;
-      const errBody = await response.text().catch(() => "");
+    if (!aiResult.ok) {
+      const status = aiResult.status;
+      const errBody = aiResult.error || "";
       console.error("Semantic PF AI error:", status, errBody);
       trace.push(`ERROR: AI provider returned HTTP ${status} (${aiTimeMs}ms) — ${errBody.substring(0, 200)}`);
       const rec = status === 401 || status === 403
@@ -3727,7 +3925,7 @@ const executeSemanticPostFunction = async (issueKey, config) => {
     }
 
     // Step 6: Parse response
-    const data = await response.json();
+    const data = aiResult.data;
     const content = data.choices?.[0]?.message?.content;
     const tokens = data.usage?.total_tokens;
     trace.push(`AI responded in ${aiTimeMs}ms${tokens ? ` (${tokens} tokens)` : ""}`);

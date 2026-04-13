@@ -52,6 +52,7 @@ const PROVIDERS = {
   openai: { baseUrl: "https://api.openai.com/v1" },
   azure: { baseUrl: null },
   openrouter: { baseUrl: "https://openrouter.ai/api/v1" },
+  anthropic: { baseUrl: "https://api.anthropic.com" },
 };
 
 const getProviderConfig = async () => {
@@ -63,6 +64,57 @@ const getProviderConfig = async () => {
   } catch (e) {
     return { provider: "openai", baseUrl: PROVIDERS.openai.baseUrl };
   }
+};
+
+/**
+ * Simple AI chat call with Anthropic support (no tools/attachments needed here).
+ */
+const callAIChatSimple = async ({ apiKey, model, systemPrompt, userMessage }) => {
+  const { provider, baseUrl } = await getProviderConfig();
+
+  if (provider === "anthropic") {
+    const response = await fetch(`${baseUrl}/v1/messages`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 4096,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userMessage }],
+      }),
+    });
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => "");
+      return { ok: false, status: response.status, error: errBody };
+    }
+    const data = await response.json();
+    const text = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
+    const tokens = (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0);
+    return { ok: true, content: text, tokens };
+  }
+
+  // OpenAI-compatible
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+    }),
+  });
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => "");
+    return { ok: false, status: response.status, error: errBody };
+  }
+  const data = await response.json();
+  return { ok: true, content: data.choices?.[0]?.message?.content, tokens: data.usage?.total_tokens };
 };
 
 /**
@@ -130,31 +182,20 @@ RULES:
 Respond with ONLY valid JSON:
 {"verdict":"good|needs_attention|has_issues","summary":"One short sentence","items":[{"type":"success|error|warning|tip","message":"Feedback with fix if warning"}]}`;
 
-  const { baseUrl } = await getProviderConfig();
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: `Review this configuration:\n\n${configDescription}` },
-      ],
-    }),
+  const result = await callAIChatSimple({
+    apiKey, model, systemPrompt,
+    userMessage: `Review this configuration:\n\n${configDescription}`,
   });
 
-  if (!response.ok) {
-    const errBody = await response.text().catch(() => "");
-    return { success: false, error: `AI review failed (HTTP ${response.status}). ${errBody.substring(0, 100)}` };
+  if (!result.ok) {
+    return { success: false, error: `AI review failed (HTTP ${result.status}). ${(result.error || "").substring(0, 100)}` };
   }
 
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) return { success: false, error: "Empty response from AI" };
+  if (!result.content) return { success: false, error: "Empty response from AI" };
 
   try {
-    const review = JSON.parse(content.replace(/^```json\s*\n?/i, "").replace(/\n?```\s*$/i, ""));
-    return { success: true, review, tokens: data.usage?.total_tokens };
+    const review = JSON.parse(result.content.replace(/^```json\s*\n?/i, "").replace(/\n?```\s*$/i, ""));
+    return { success: true, review, tokens: result.tokens };
   } catch {
     return { success: true, review: { verdict: "good", summary: content.substring(0, 200), items: [] }, tokens: data.usage?.total_tokens };
   }
