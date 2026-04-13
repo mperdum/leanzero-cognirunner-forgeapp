@@ -364,9 +364,11 @@ async function fetchWorkflowTransitions(workflowName) {
         const conditions = Array.isArray(rawConditions)
           ? rawConditions
           : (rawConditions.conditions || []);
+        const postFunctions = t.actions || t.postFunctions || [];
         transitionRules.set(String(t.id), {
           validators,
           conditions,
+          postFunctions,
         });
       }
     }
@@ -459,9 +461,12 @@ resolver.define("getConfigs", async ({ payload, context }) => {
         removed.push(config);
       } else {
         // Transition exists — check if OUR app's rule is still on it
-        const ruleList = config.type === "condition"
-          ? transitionData.conditions
-          : transitionData.validators;
+        const isPostFunction = config.type && config.type.startsWith("postfunction");
+        const ruleList = isPostFunction
+          ? (transitionData.postFunctions || [])
+          : config.type === "condition"
+            ? transitionData.conditions
+            : transitionData.validators;
         const hasOurRule = ruleList.some((r) =>
           r.parameters?.key && r.parameters.key.includes(APP_ID)
         );

@@ -300,6 +300,15 @@ const injectStyles = () => {
       color: var(--success-color);
     }
 
+    .type-postfunction {
+      background: rgba(168, 85, 247, 0.1);
+      color: #a855f7;
+    }
+    html[data-color-mode="dark"] .type-postfunction {
+      background: rgba(168, 85, 247, 0.15);
+      color: #c084fc;
+    }
+
     .field-id {
       font-family: SFMono-Regular, Consolas, monospace;
       font-size: 12px;
@@ -938,6 +947,7 @@ function App() {
   const [accountId, setAccountId] = useState(null);
   const [activeTab, setActiveTab] = useState("rules");
   const [rulesFilter, setRulesFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
 
   const fetchConfigs = async (showLoading = false, filterOverride) => {
     if (!invoke) return;
@@ -1198,6 +1208,18 @@ function App() {
         <div className="section-header">
           <span className="section-title">Configured Rules</span>
           <div className="section-actions">
+            <div style={{ width: "160px" }}>
+              <CustomSelect
+                value={typeFilter}
+                onChange={(v) => setTypeFilter(v)}
+                options={[
+                  { value: "all", label: "All Types" },
+                  { value: "validator", label: "Validators" },
+                  { value: "condition", label: "Conditions" },
+                  { value: "postfunction", label: "Post Functions" },
+                ]}
+              />
+            </div>
             {isAdmin && (
               <div style={{ width: "140px" }}>
                 <CustomSelect
@@ -1232,9 +1254,15 @@ function App() {
                 </div>
               ))}
             </div>
-          ) : configs.length === 0 ? (
+          ) : (() => {
+            const filtered = typeFilter === "all" ? configs
+              : typeFilter === "postfunction" ? configs.filter((c) => c.type && c.type.startsWith("postfunction"))
+              : configs.filter((c) => c.type === typeFilter);
+            return filtered.length === 0 ? (
             <div className="empty-state">
-              No validators or conditions configured yet. Add one from a workflow transition.
+              {configs.length === 0
+                ? "No rules configured yet. Add one from a workflow transition."
+                : `No ${typeFilter === "postfunction" ? "post functions" : typeFilter + "s"} found.`}
             </div>
           ) : (
             <table className="table">
@@ -1249,7 +1277,7 @@ function App() {
                 </tr>
               </thead>
               <tbody>
-                {configs.map((config) => {
+                {filtered.map((config) => {
                   const wf = config.workflow || {};
                   const hasWorkflow = wf.workflowName || wf.workflowId;
                   const editUrl = wf.workflowId && wf.siteUrl
@@ -1260,8 +1288,10 @@ function App() {
                   return (
                     <tr key={config.id} className={isDisabled ? "row-disabled" : ""}>
                       <td>
-                        <span className={`type-badge type-${config.type}`}>
-                          {config.type}
+                        <span className={`type-badge type-${config.type?.startsWith("postfunction") ? "postfunction" : config.type}`}>
+                          {config.type === "postfunction-semantic" ? "PF: Semantic"
+                            : config.type === "postfunction-static" ? "PF: Static"
+                            : config.type}
                         </span>
                         {isDisabled && (
                           <span className="status-badge status-disabled">Disabled</span>
@@ -1285,12 +1315,22 @@ function App() {
                           </span>
                         )}
                       </td>
-                      <td><code className="field-id">{config.fieldId}</code></td>
+                      <td>
+                        {config.type && config.type.startsWith("postfunction")
+                          ? <code className="field-id">{config.actionFieldId || config.fieldId || "—"}</code>
+                          : <code className="field-id">{config.fieldId}</code>
+                        }
+                      </td>
                       <td>
                         <span className="prompt-text">
-                          {config.prompt && config.prompt.length > 80
-                            ? config.prompt.substring(0, 80) + "..."
-                            : config.prompt}
+                          {config.type && config.type.startsWith("postfunction")
+                            ? (() => {
+                                const text = config.conditionPrompt || config.actionPrompt || config.prompt || "";
+                                return text.length > 80 ? text.substring(0, 80) + "..." : text;
+                              })()
+                            : config.prompt && config.prompt.length > 80
+                              ? config.prompt.substring(0, 80) + "..."
+                              : config.prompt}
                         </span>
                       </td>
                       <td><span className="timestamp">{formatTime(config.updatedAt)}</span></td>
@@ -1322,7 +1362,7 @@ function App() {
                 })}
               </tbody>
             </table>
-          )}
+          ); })()}
         </div>
       </div>
 
