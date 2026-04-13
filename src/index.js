@@ -558,20 +558,40 @@ resolver.define("getConfigs", async ({ payload, context }) => {
  */
 resolver.define("getRuleStatus", async ({ payload }) => {
   try {
-    const { id, fieldId, prompt } = payload;
+    const { id, fieldId, prompt, workflow, conditionPrompt, actionPrompt, type } = payload;
     const configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
 
-    // Strategy 1: match by rule ID
-    if (id) {
+    // Strategy 1: match by rule ID (if it's not "view" or "create" entry points)
+    if (id && id !== "view" && id !== "create" && id !== "edit") {
       const config = configs.find((c) => c.id === id);
       if (config) {
         return { found: true, disabled: config.disabled === true, registryId: config.id };
       }
     }
 
-    // Strategy 2: match by fieldId + prompt content
+    // Strategy 2: match by workflow context (most reliable for view panels)
+    if (workflow?.workflowName && workflow?.transitionId) {
+      const ruleId = `${workflow.workflowName}::${workflow.transitionId}`;
+      const config = configs.find((c) => c.id === ruleId);
+      if (config) {
+        return { found: true, disabled: config.disabled === true, registryId: config.id };
+      }
+    }
+
+    // Strategy 3: match by fieldId + prompt content (validators/conditions)
     if (fieldId && prompt) {
       const config = configs.find((c) => c.fieldId === fieldId && c.prompt === prompt);
+      if (config) {
+        return { found: true, disabled: config.disabled === true, registryId: config.id };
+      }
+    }
+
+    // Strategy 4: match by post-function prompts
+    if (conditionPrompt || actionPrompt) {
+      const config = configs.find((c) =>
+        (conditionPrompt && c.conditionPrompt === conditionPrompt) ||
+        (actionPrompt && c.actionPrompt === actionPrompt)
+      );
       if (config) {
         return { found: true, disabled: config.disabled === true, registryId: config.id };
       }

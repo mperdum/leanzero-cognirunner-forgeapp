@@ -512,7 +512,10 @@ function App() {
     setToggleError(null);
     setToggleWarning(null);
     try {
-      const action = ruleDisabled ? "enableRule" : "disableRule";
+      const isPF = config?.type?.includes("postfunction") || config?.conditionPrompt !== undefined;
+      const action = ruleDisabled
+        ? (isPF ? "enablePostFunction" : "enableRule")
+        : (isPF ? "disablePostFunction" : "disableRule");
       const result = await invoke(action, { id: ruleId });
       if (result.success) {
         setRuleDisabled(result.disabled);
@@ -632,6 +635,9 @@ function App() {
           id: ruleId,
           fieldId: config?.fieldId,
           prompt: config?.prompt,
+          conditionPrompt: config?.conditionPrompt,
+          actionPrompt: config?.actionPrompt,
+          type: config?.type,
           workflow: workflowContext,
         });
         if (result.found) {
