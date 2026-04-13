@@ -16,7 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import api, { route, fetch } from "@forge/api";
+import api, { route, fetch, getAppContext } from "@forge/api";
 import { storage } from "@forge/api";
 import Resolver from "@forge/resolver";
 
@@ -1269,10 +1269,22 @@ resolver.define("injectWorkflowRule", async ({ payload, context }) => {
   if (!ruleInfo) return { success: false, error: `Unknown rule type: ${ruleType}` };
 
   try {
-    // Step 1: Discover the environment ID
-    const envId = await discoverEnvironmentId();
+    // Step 1: Get the environment ID via getAppContext() from @forge/api
+    let envId = null;
+    try {
+      const appCtx = getAppContext();
+      envId = appCtx?.environmentAri?.environmentId || null;
+      if (envId) console.log(`envId from getAppContext: ${envId}`);
+    } catch (e) {
+      console.log("getAppContext not available:", e.message);
+    }
+    // Fallback: discover from existing CogniRunner rules on any workflow
     if (!envId) {
-      return { success: false, error: "Cannot determine the app environment ID. Add at least one CogniRunner rule manually via the Jira workflow editor first, then the wizard can inject rules automatically." };
+      envId = await discoverEnvironmentId();
+      if (envId) console.log(`envId from discovery: ${envId}`);
+    }
+    if (!envId) {
+      return { success: false, error: "Cannot determine the app environment ID. Please contact support." };
     }
 
     // Step 2: GET the full workflow definition
