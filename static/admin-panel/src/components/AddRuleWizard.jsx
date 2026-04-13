@@ -182,8 +182,27 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
 
   const fieldOptions = fields.map((f) => ({ value: f.id, label: `${f.name} (${f.id})` }));
 
+  const goToStep = (targetStep) => {
+    if (targetStep >= step) return; // can only go back
+    if (targetStep <= 0) return;
+    setStep(targetStep);
+    if (targetStep <= 1) { setSelectedProject(null); setSelectedWorkflow(null); setSelectedTransition(null); setRuleType(null); }
+    if (targetStep <= 2) { setSelectedWorkflow(null); setSelectedTransition(null); setRuleType(null); }
+    if (targetStep <= 3) { setSelectedTransition(null); setRuleType(null); }
+    if (targetStep <= 4) { setRuleType(null); }
+  };
+
   const stepLabel = (num, label) => (
-    <span style={{ opacity: step >= num ? 1 : 0.4, fontWeight: step === num ? 700 : 400 }}>
+    <span
+      style={{
+        opacity: step >= num ? 1 : 0.4,
+        fontWeight: step === num ? 700 : 400,
+        cursor: step > num ? "pointer" : "default",
+        textDecoration: step > num ? "underline" : "none",
+        textDecorationColor: step > num ? "var(--primary-color)" : "transparent",
+      }}
+      onClick={() => goToStep(num)}
+    >
       {num}. {label}
     </span>
   );
