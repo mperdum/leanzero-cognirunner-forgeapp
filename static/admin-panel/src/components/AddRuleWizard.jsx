@@ -607,46 +607,179 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
             {/* Semantic PF config */}
             {ruleType === "postfunction-semantic" && (
               <>
-                <div style={{ marginBottom: "12px" }}>
+                {/* How it works */}
+                <div style={{
+                  padding: "10px 14px", marginBottom: "14px", borderRadius: "8px",
+                  border: "1px solid var(--border-color)", background: "var(--input-bg)",
+                }}>
+                  <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px" }}>How it works</div>
+                  <ol style={{ margin: 0, paddingLeft: "18px", fontSize: "12px", color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                    <li><strong style={{ color: "var(--primary-color)" }}>Condition</strong> — AI checks if this rule should fire</li>
+                    <li><strong style={{ color: "var(--success-color)" }}>Action</strong> — If yes, AI generates a new value for the target field</li>
+                    <li>The target field is updated automatically after each transition</li>
+                  </ol>
+                </div>
+
+                {/* Source Field */}
+                <div style={{ marginBottom: "14px" }}>
                   <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px" }}>
                     Source Field
                   </label>
                   {loadingFields ? <div className="sk sk-block" style={{ height: 36 }} /> : (
-                    <CustomSelect value={fieldId} onChange={setFieldId} placeholder="Select source field..." searchable options={fieldOptions} />
+                    <CustomSelect value={fieldId} onChange={setFieldId} placeholder="Select source field..." searchable searchPlaceholder="Search fields..." options={fieldOptions} />
                   )}
+                  <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
+                    The field the AI reads to evaluate the condition. Defaults to Description if not set.
+                  </p>
                 </div>
-                <div style={{ marginBottom: "12px" }}>
+
+                {/* Condition Prompt */}
+                <div style={{ marginBottom: "14px" }}>
                   <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px" }}>
-                    Condition Prompt
+                    Condition <span style={{ color: "var(--error-color)" }}>*</span>
                   </label>
                   <textarea
-                    className="input"
                     value={conditionPrompt}
                     onChange={(e) => setConditionPrompt(e.target.value)}
-                    placeholder="When should this run? E.g. 'Run every time' or 'Only when description mentions a bug'"
-                    rows={3}
-                    style={{ width: "100%", fontSize: "13px", padding: "8px 12px", border: "1px solid var(--border-color)", borderRadius: "4px", background: "var(--input-bg)", color: "var(--text-color)", resize: "vertical" }}
+                    placeholder='E.g. "Run every time" or "Run when the description mentions a bug or defect"'
+                    rows={4}
+                    style={{ width: "100%", fontSize: "13px", padding: "8px 12px", border: "1px solid var(--border-color)", borderRadius: "8px", background: "var(--input-bg)", color: "var(--text-color)", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
                   />
+                  <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
+                    The AI reads the source field and evaluates this condition. If met, the action runs. If not, the post-function is skipped.
+                  </p>
                 </div>
-                <div style={{ marginBottom: "12px" }}>
+
+                {/* Action Prompt */}
+                <div style={{ marginBottom: "14px" }}>
                   <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px" }}>
-                    Action Prompt
+                    Action
                   </label>
                   <textarea
-                    className="input"
                     value={actionPrompt}
                     onChange={(e) => setActionPrompt(e.target.value)}
-                    placeholder="What should the AI do? E.g. 'Summarize the description into the target field'"
-                    rows={3}
-                    style={{ width: "100%", fontSize: "13px", padding: "8px 12px", border: "1px solid var(--border-color)", borderRadius: "4px", background: "var(--input-bg)", color: "var(--text-color)", resize: "vertical" }}
+                    placeholder='E.g. "Summarize the issue into 2-3 bullet points" or "Append a review checklist"'
+                    rows={5}
+                    style={{ width: "100%", fontSize: "13px", padding: "8px 12px", border: "1px solid var(--border-color)", borderRadius: "8px", background: "var(--input-bg)", color: "var(--text-color)", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
                   />
+                  <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
+                    When the condition passes, the AI generates a new value for the target field based on this instruction. Leave empty for generic summarization.
+                  </p>
                 </div>
-                <div style={{ marginBottom: "12px" }}>
+
+                {/* Target Field */}
+                <div style={{ marginBottom: "14px" }}>
                   <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px" }}>
-                    Target Field
+                    Target Field <span style={{ color: "var(--error-color)" }}>*</span>
                   </label>
                   {loadingFields ? <div className="sk sk-block" style={{ height: 36 }} /> : (
-                    <CustomSelect value={actionFieldId} onChange={setActionFieldId} placeholder="Select target field..." searchable options={fieldOptions} />
+                    <CustomSelect value={actionFieldId} onChange={setActionFieldId} placeholder="Select target field..." searchable searchPlaceholder="Search fields..." options={fieldOptions} />
+                  )}
+                  <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
+                    The AI will update this field when the condition is met. Works best with text-based fields.
+                  </p>
+                </div>
+
+                {/* Test Run */}
+                <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: "12px", marginBottom: "14px" }}>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px" }}>
+                    Test Run
+                  </label>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <input
+                      type="text"
+                      value={testIssue}
+                      onChange={(e) => setTestIssue(e.target.value.toUpperCase())}
+                      placeholder="Issue key (e.g. WFH-36)"
+                      style={{ flex: 1, padding: "8px 12px", border: "1px solid var(--border-color)", borderRadius: "8px", background: "var(--input-bg)", color: "var(--text-color)", fontSize: "13px", fontFamily: "SFMono-Regular, Consolas, monospace" }}
+                    />
+                    <button
+                      className="btn-small btn-edit"
+                      disabled={testRunning || !testIssue.trim() || !conditionPrompt.trim()}
+                      onClick={async () => {
+                        setTestRunning(true);
+                        setTestResult(null);
+                        try {
+                          const result = await invoke("testSemanticPostFunction", {
+                            issueKey: testIssue.trim(),
+                            fieldId: fieldId || "description",
+                            conditionPrompt,
+                            actionPrompt,
+                            actionFieldId,
+                          });
+                          setTestResult(result);
+                        } catch (e) {
+                          setTestResult({ success: false, error: e.message });
+                        }
+                        setTestRunning(false);
+                      }}
+                    >
+                      {testRunning ? "Running..." : "Run Test"}
+                    </button>
+                  </div>
+                  <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
+                    Dry run — the field is NOT updated. Tests the AI decision against a real issue.
+                  </p>
+
+                  {testResult && (
+                    <div style={{
+                      marginTop: "8px", padding: "10px 12px", borderRadius: "8px",
+                      border: `1px solid ${testResult.success ? (testResult.decision === "UPDATE" ? "var(--success-color)" : "var(--primary-color)") : "var(--error-color)"}`,
+                      background: testResult.success ? (testResult.decision === "UPDATE" ? "rgba(22,163,106,0.06)" : "rgba(37,99,235,0.06)") : "rgba(220,38,38,0.06)",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                        <span className={`type-badge ${testResult.success ? (testResult.decision === "UPDATE" ? "type-condition" : "type-validator") : "type-validator"}`} style={{ fontSize: "9px" }}>
+                          {testResult.success ? testResult.decision : "ERROR"}
+                        </span>
+                        {testResult.issueKey && <span style={{ fontSize: "12px", fontWeight: 600 }}>{testResult.issueKey}</span>}
+                        {testResult.executionTimeMs && <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{testResult.executionTimeMs}ms</span>}
+                        {testResult.tokensUsed && <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{testResult.tokensUsed} tokens</span>}
+                        <button style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "16px" }} onClick={() => setTestResult(null)}>&times;</button>
+                      </div>
+
+                      {testResult.error && !testResult.success && (
+                        <div style={{ fontSize: "12px", color: "var(--error-color)", marginBottom: "4px" }}>{testResult.error}</div>
+                      )}
+
+                      {testResult.reason && (
+                        <div style={{ fontSize: "12px", color: "var(--text-color)", marginBottom: "6px" }}>
+                          <span style={{ fontWeight: 600, fontSize: "10px", color: "var(--text-muted)", textTransform: "uppercase" }}>AI Reasoning</span>
+                          <div style={{ marginTop: "2px" }}>{testResult.reason}</div>
+                        </div>
+                      )}
+
+                      {testResult.sourceValue && (
+                        <div style={{ marginBottom: "6px" }}>
+                          <span style={{ fontWeight: 600, fontSize: "10px", color: "var(--text-muted)", textTransform: "uppercase" }}>Source Field ({testResult.sourceField})</span>
+                          <pre style={{ margin: "2px 0 0 0", fontSize: "11px", padding: "6px 8px", background: "var(--code-bg)", borderRadius: "4px", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: "80px", overflow: "auto" }}>{testResult.sourceValue}</pre>
+                        </div>
+                      )}
+
+                      {testResult.decision === "UPDATE" && testResult.proposedValue !== undefined && (
+                        <div style={{ marginBottom: "6px" }}>
+                          <span style={{ fontWeight: 600, fontSize: "10px", color: "var(--text-muted)", textTransform: "uppercase" }}>Proposed Value for {testResult.targetField}</span>
+                          <pre style={{ margin: "2px 0 0 0", fontSize: "11px", padding: "6px 8px", background: "var(--code-bg)", borderRadius: "4px", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: "100px", overflow: "auto" }}>{typeof testResult.proposedValue === "string" ? testResult.proposedValue : JSON.stringify(testResult.proposedValue, null, 2)}</pre>
+                          <p style={{ margin: "2px 0 0 0", fontSize: "10px", color: "var(--text-muted)", fontStyle: "italic" }}>Dry run — field was NOT updated</p>
+                        </div>
+                      )}
+
+                      {testResult.logs && testResult.logs.length > 0 && (
+                        <details style={{ marginTop: "4px" }}>
+                          <summary style={{ fontSize: "10px", color: "var(--text-muted)", cursor: "pointer" }}>Execution log ({testResult.logs.length} entries)</summary>
+                          <div style={{ marginTop: "4px", maxHeight: "120px", overflow: "auto" }}>
+                            {testResult.logs.map((log, i) => (
+                              <div key={i} style={{ fontSize: "10px", fontFamily: "SFMono-Regular, Consolas, monospace", color: "var(--text-secondary)", padding: "1px 0" }}>{log}</div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+
+                      {testResult.recommendation && (
+                        <div style={{ marginTop: "6px", padding: "6px 8px", borderRadius: "4px", borderLeft: "3px solid var(--primary-color)", background: "rgba(37,99,235,0.06)", fontSize: "11px", whiteSpace: "pre-line" }}>
+                          {testResult.recommendation}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               </>
