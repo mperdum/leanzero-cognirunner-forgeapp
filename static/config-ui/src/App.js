@@ -1632,9 +1632,9 @@ const injectStyles = () => {
       font-size: 12px;
     }
 
-    /* Skeleton loading */
+    /* Skeleton loading — hardcoded colors to avoid CSS variable timing issues */
     .sk {
-      background: linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%);
+      background: linear-gradient(90deg, #cbd5e1 25%, #f1f5f9 50%, #cbd5e1 75%);
       background-size: 200% 100%;
       animation: skShimmer 1.5s ease-in-out infinite;
       border-radius: 4px;

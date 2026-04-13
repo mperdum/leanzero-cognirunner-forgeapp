@@ -432,6 +432,16 @@ const injectStyles = () => {
 
     .alert-dismiss:hover { opacity: 1; }
 
+    .sk {
+      background: linear-gradient(90deg, #cbd5e1 25%, #f1f5f9 50%, #cbd5e1 75%);
+      background-size: 200% 100%;
+      animation: skShimmer 1.5s ease-in-out infinite;
+      border-radius: 6px;
+    }
+    html[data-color-mode="dark"] .sk {
+      background: linear-gradient(90deg, #1e1e2e 25%, #2a2a3a 50%, #1e1e2e 75%);
+      background-size: 200% 100%;
+    }
     @keyframes skShimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
   `;
   document.head.appendChild(style);
@@ -642,7 +652,7 @@ function App() {
     return (
       <div className="container">
         <div style={{ padding: "4px 0" }}>
-          <div style={{ width: "50%", height: 12, borderRadius: 6, background: "linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%)", backgroundSize: "200% 100%", animation: "skShimmer 1.5s ease-in-out infinite" }} />
+          <div className="sk" style={{ width: "50%", height: 12 }} />
         </div>
       </div>
     );
@@ -790,19 +800,19 @@ function App() {
               {logsLoading ? (
                 <div style={{ padding: "12px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-                    <div style={{ width: "40px", height: "14px", borderRadius: "6px", background: "linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%)", backgroundSize: "200% 100%", animation: "skShimmer 1.5s ease-in-out infinite" }} />
-                    <div style={{ width: "60px", height: "14px", borderRadius: "6px", background: "linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%)", backgroundSize: "200% 100%", animation: "skShimmer 1.5s ease-in-out infinite" }} />
-                    <div style={{ width: "120px", height: "12px", borderRadius: "6px", background: "linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%)", backgroundSize: "200% 100%", animation: "skShimmer 1.5s ease-in-out infinite" }} />
+                    <div className="sk" style={{ width: "40px", height: "14px" }} />
+                    <div className="sk" style={{ width: "60px", height: "14px" }} />
+                    <div className="sk" style={{ width: "120px", height: "12px" }} />
                   </div>
-                  <div style={{ width: "80%", height: "12px", borderRadius: "6px", marginBottom: "8px", background: "linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%)", backgroundSize: "200% 100%", animation: "skShimmer 1.5s ease-in-out infinite" }} />
-                  <div style={{ width: "95%", height: "32px", borderRadius: "6px", marginBottom: "16px", background: "linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%)", backgroundSize: "200% 100%", animation: "skShimmer 1.5s ease-in-out infinite" }} />
+                  <div className="sk" style={{ width: "80%", height: "12px", marginBottom: "8px" }} />
+                  <div className="sk" style={{ width: "95%", height: "32px", marginBottom: "16px" }} />
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-                    <div style={{ width: "40px", height: "14px", borderRadius: "6px", background: "linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%)", backgroundSize: "200% 100%", animation: "skShimmer 1.5s ease-in-out infinite" }} />
-                    <div style={{ width: "60px", height: "14px", borderRadius: "6px", background: "linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%)", backgroundSize: "200% 100%", animation: "skShimmer 1.5s ease-in-out infinite" }} />
-                    <div style={{ width: "100px", height: "12px", borderRadius: "6px", background: "linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%)", backgroundSize: "200% 100%", animation: "skShimmer 1.5s ease-in-out infinite" }} />
+                    <div className="sk" style={{ width: "40px", height: "14px" }} />
+                    <div className="sk" style={{ width: "60px", height: "14px" }} />
+                    <div className="sk" style={{ width: "100px", height: "12px" }} />
                   </div>
-                  <div style={{ width: "70%", height: "12px", borderRadius: "6px", marginBottom: "8px", background: "linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%)", backgroundSize: "200% 100%", animation: "skShimmer 1.5s ease-in-out infinite" }} />
-                  <div style={{ width: "85%", height: "32px", borderRadius: "6px", background: "linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%)", backgroundSize: "200% 100%", animation: "skShimmer 1.5s ease-in-out infinite" }} />
+                  <div className="sk" style={{ width: "70%", height: "12px", marginBottom: "8px" }} />
+                  <div className="sk" style={{ width: "85%", height: "32px" }} />
                 </div>
               ) : logs.length === 0 ? (
                 <div className="no-logs">No validation logs yet</div>
