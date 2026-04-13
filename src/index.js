@@ -4273,8 +4273,11 @@ export const validate = async (args) => {
 
   // Store the validation log with full context
   const executionTimeMs = Date.now() - validateStartTime;
+  // Determine rule type from module context
+  const moduleType = args?.context?.extension?.type || "";
+  const ruleType = moduleType.includes("Condition") ? "condition" : "validator";
   const logEntry = {
-    type: "validation",
+    type: ruleType,
     issueKey: issue.key || "(new issue)",
     fieldId,
     fieldValue: String(logFieldValue || "").substring(0, 300),
@@ -4283,11 +4286,14 @@ export const validate = async (args) => {
     reason: validationResult.reason,
     executionTimeMs,
     mode: useTools ? "agentic" : "standard",
-    // Workflow context (available from Forge transition args)
-    workflowName: args?.transition?.from_status
-      ? `${args.transition.from_status} → ${args.transition.to_status}`
-      : undefined,
-    transitionName: args?.transition?.transitionName || undefined,
+    // Rule identity
+    ruleId: configuration?.ruleId || configuration?.id || null,
+    ruleName: configuration?.workflow?.workflowName
+      ? `${configuration.workflow.workflowName} / ${configuration.workflow.transitionFromName || "Any"} → ${configuration.workflow.transitionToName || "?"}`
+      : (args?.transition?.from_status
+        ? `${args.transition.from_status} → ${args.transition.to_status}`
+        : null),
+    ruleWorkflow: configuration?.workflow || null,
   };
   if (validationResult.toolMeta) {
     logEntry.toolMeta = {
@@ -4768,6 +4774,12 @@ export const executePostFunction = async (args) => {
         tokens: result.tokens,
         sourceFieldId: result.sourceFieldId,
         docCount: result.docCount,
+        // Rule identity
+        ruleId: config.ruleId || config.id || null,
+        ruleName: config.workflow?.workflowName
+          ? `${config.workflow.workflowName} / ${config.workflow.transitionFromName || "Any"} → ${config.workflow.transitionToName || "?"}`
+          : null,
+        ruleWorkflow: config.workflow || null,
       };
       if (result.decision === "UPDATE" && result.success) {
         logEntry.reason = `Updated "${config.actionFieldId}": ${result.reason}`;
@@ -4790,6 +4802,12 @@ export const executePostFunction = async (args) => {
         executionTimeMs: Date.now() - pfStartTime,
         changes: result.changes?.length || 0,
         steps: config.functions?.length || 0,
+        // Rule identity
+        ruleId: config.ruleId || config.id || null,
+        ruleName: config.workflow?.workflowName
+          ? `${config.workflow.workflowName} / ${config.workflow.transitionFromName || "Any"} → ${config.workflow.transitionToName || "?"}`
+          : null,
+        ruleWorkflow: config.workflow || null,
       };
       if (result.success) {
         const summary = (result.logs || []).slice(-1)[0] || "completed";
@@ -4816,6 +4834,11 @@ export const executePostFunction = async (args) => {
       reason: `Post-function error: ${error.message}`,
       recommendation: "An unexpected error occurred. Check the error message and ensure your configuration is correct. Try Test Run from the Edit view to debug.",
       executionTimeMs: Date.now() - pfStartTime,
+      ruleId: config.ruleId || config.id || null,
+      ruleName: config.workflow?.workflowName
+        ? `${config.workflow.workflowName} / ${config.workflow.transitionFromName || "Any"} → ${config.workflow.transitionToName || "?"}`
+        : null,
+      ruleWorkflow: config.workflow || null,
     });
   }
 

@@ -1393,10 +1393,10 @@ function App() {
         </div>
       </div>
 
-      {/* Validation Logs Section */}
+      {/* Execution Logs Section */}
       <div className="section">
         <div className="section-header">
-          <span className="section-title">Validation Logs</span>
+          <span className="section-title">Execution Logs</span>
           <div className="section-actions">
             <button
               className="btn-small"
@@ -1431,33 +1431,66 @@ function App() {
                 </div>
                 <div className="sk sk-text" style={{ width: "90%", height: 12, marginBottom: 8 }} />
                 <div className="sk sk-block" style={{ width: "95%", height: 28, marginBottom: 16 }} />
-                <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
-                  <div className="sk sk-text" style={{ width: 40, height: 14 }} />
-                  <div className="sk sk-text" style={{ width: 60, height: 14 }} />
-                  <div className="sk sk-text" style={{ width: 100, height: 12 }} />
-                </div>
-                <div className="sk sk-text" style={{ width: "75%", height: 12, marginBottom: 8 }} />
-                <div className="sk sk-block" style={{ width: "85%", height: 28 }} />
               </div>
             ) : logs.length === 0 ? (
-              <div className="empty-state">No validation logs yet</div>
+              <div className="empty-state">No execution logs yet</div>
             ) : (
               <div className="logs-list">
-                {logs.map((log) => (
-                  <div key={log.id} className="log-entry">
-                    <div className="log-header">
-                      <span className={`log-status ${log.isValid ? "valid" : "invalid"}`}>
-                        {log.isValid ? "PASS" : "FAIL"}
-                      </span>
-                      <span className="log-issue">{log.issueKey}</span>
-                      <span className="log-time">{formatTime(log.timestamp)}</span>
+                {logs.map((log) => {
+                  const logType = log.type || "validation";
+                  const typeBadge = logType.includes("postfunction-semantic") ? "PF: Semantic"
+                    : logType.includes("postfunction-static") ? "PF: Static"
+                    : logType.includes("postfunction") ? "Post Function"
+                    : logType === "condition" ? "Condition"
+                    : "Validator";
+                  const typeBadgeClass = logType.includes("postfunction") ? "type-postfunction"
+                    : logType === "condition" ? "type-condition"
+                    : "type-validator";
+                  const editUrl = log.ruleWorkflow?.workflowId && log.ruleWorkflow?.siteUrl
+                    ? `${log.ruleWorkflow.siteUrl}/jira/settings/issues/workflows/${log.ruleWorkflow.workflowId}`
+                    : null;
+
+                  return (
+                    <div key={log.id} className="log-entry">
+                      <div className="log-header">
+                        <span className={`log-status ${log.isValid ? "valid" : "invalid"}`}>
+                          {log.isValid ? "PASS" : (log.decision === "SKIP" ? "SKIP" : "ERR")}
+                        </span>
+                        <span className={`type-badge ${typeBadgeClass}`} style={{ fontSize: "9px" }}>{typeBadge}</span>
+                        <span className="log-issue">{log.issueKey}</span>
+                        <span className="log-time">
+                          {formatTime(log.timestamp)}
+                          {log.executionTimeMs ? ` · ${log.executionTimeMs}ms` : ""}
+                        </span>
+                        {(userRole === "editor" || userRole === "admin") && editUrl && (
+                          <button
+                            className="btn-small btn-edit"
+                            style={{ fontSize: "10px", padding: "2px 6px", marginLeft: "auto" }}
+                            onClick={() => router && router.open(editUrl)}
+                            title="Edit this rule in workflow editor"
+                          >
+                            Edit Rule
+                          </button>
+                        )}
+                      </div>
+                      {log.ruleName && (
+                        <div style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "2px" }}>
+                          Rule: {log.ruleName}
+                        </div>
+                      )}
+                      <div className="log-details">
+                        Field: <code className="field-id">{log.fieldId}</code>
+                        {log.decision && <span style={{ marginLeft: "8px" }}>Decision: <strong>{log.decision}</strong></span>}
+                      </div>
+                      <div className="log-reason">{log.reason}</div>
+                      {log.tokens && (
+                        <div style={{ fontSize: "10px", color: "var(--text-muted)", marginTop: "2px" }}>
+                          AI: {log.aiTimeMs || log.executionTimeMs}ms · {log.tokens} tokens
+                        </div>
+                      )}
                     </div>
-                    <div className="log-details">
-                      Field: <code className="field-id">{log.fieldId}</code>
-                    </div>
-                    <div className="log-reason">{log.reason}</div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
