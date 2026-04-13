@@ -1993,6 +1993,7 @@ function App() {
 
   // BYOK state — used to show cost notice when user's own key is active
   const [isByok, setIsByok] = useState(false);
+  const [providerLabel, setProviderLabel] = useState("AI");
 
   // Post-function state
   const [isPostFunction, setIsPostFunction] = useState(false);
@@ -2339,12 +2340,19 @@ function App() {
         }
       }
 
-      // Check BYOK status for cost notice
+      // Check BYOK status and provider for cost notice
       try {
-        const keyStatus = await invoke("getOpenAIKey");
+        const [keyStatus, providerResult] = await Promise.all([
+          invoke("getOpenAIKey"),
+          invoke("getProvider"),
+        ]);
         if (keyStatus?.isByok) setIsByok(true);
+        if (providerResult?.success) {
+          const labels = { openai: "OpenAI", azure: "Azure OpenAI", openrouter: "OpenRouter", anthropic: "Anthropic" };
+          setProviderLabel(labels[providerResult.provider] || providerResult.provider || "AI");
+        }
       } catch (e) {
-        // Ignore — default is false (no cost notice)
+        // Ignore — defaults are fine
       }
 
       setLoading(false);
@@ -2469,7 +2477,7 @@ function App() {
                 <line x1="12" y1="8" x2="12" y2="12" />
                 <line x1="12" y1="16" x2="12.01" y2="16" />
               </svg>
-              <span>Uses your OpenAI API key. Each transition consumes tokens from your account.</span>
+              <span>Uses your {providerLabel} API key. Each transition consumes tokens from your account.</span>
             </div>
           )}
           <SemanticConfig
@@ -2499,7 +2507,7 @@ function App() {
               <line x1="12" y1="8" x2="12" y2="12" />
               <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
-            <span>Uses your OpenAI API key. Each validation consumes tokens from your account.</span>
+            <span>Uses your {providerLabel} API key. Each validation consumes tokens from your account.</span>
           </div>
         )}
         <div className="form-group">
