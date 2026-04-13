@@ -108,9 +108,14 @@ const callAIChatSimple = async ({ apiKey, model, systemPrompt, userMessage }) =>
   }
 
   // OpenAI-compatible
+  const openaiHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
+  if (provider === "openrouter") {
+    openaiHeaders["HTTP-Referer"] = "https://leanzero.atlascrafted.com";
+    openaiHeaders["X-OpenRouter-Title"] = "CogniRunner";
+  }
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    headers: openaiHeaders,
     body: JSON.stringify({
       model,
       messages: [

@@ -1758,9 +1758,14 @@ resolver.define("getOpenAIModels", async () => {
         headers: { "x-api-key": byokKey, "anthropic-version": "2023-06-01" },
       });
     } else {
+      const modelHeaders = { Authorization: `Bearer ${byokKey}` };
+      if (provider === "openrouter") {
+        modelHeaders["HTTP-Referer"] = "https://leanzero.atlascrafted.com";
+        modelHeaders["X-OpenRouter-Title"] = "CogniRunner";
+      }
       response = await fetch(`${baseUrl}/models`, {
         method: "GET",
-        headers: { Authorization: `Bearer ${byokKey}` },
+        headers: modelHeaders,
       });
     }
 
@@ -1775,7 +1780,8 @@ resolver.define("getOpenAIModels", async () => {
     if (provider === "openai") {
       chatModels = chatModels.filter((id) => /^(gpt-5|o3-|o4-)/.test(id));
     } else if (provider === "openrouter") {
-      chatModels = chatModels.filter((id) => /openai\//.test(id));
+      // Show popular providers — OpenAI, Anthropic, Google, Meta
+      chatModels = chatModels.filter((id) => /^(openai\/|anthropic\/|google\/|meta-llama\/)/.test(id));
     } else if (provider === "anthropic") {
       chatModels = chatModels.filter((id) => /^claude-/.test(id));
     }
@@ -3094,12 +3100,19 @@ const callAIChat = async (opts) => {
     if (tool_choice) requestBody.tool_choice = tool_choice;
   }
 
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${apiKey}`,
+  };
+  // OpenRouter requires attribution headers
+  if (provider === "openrouter") {
+    headers["HTTP-Referer"] = "https://leanzero.atlascrafted.com";
+    headers["X-OpenRouter-Title"] = "CogniRunner";
+  }
+
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
+    headers,
     body: JSON.stringify(requestBody),
   });
 
