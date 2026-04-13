@@ -46,6 +46,9 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
   const [actionPrompt, setActionPrompt] = useState("");
   const [actionFieldId, setActionFieldId] = useState("");
   const [enableTools, setEnableTools] = useState(null); // null = auto, true = on, false = off
+  // Static PF state
+  const [functions, setFunctions] = useState([{ id: Date.now().toString(), name: "", prompt: "", code: "", variableName: "result1", operationType: "work_item_query", includeBackoff: false }]);
+  const [generatingCode, setGeneratingCode] = useState(null); // step id being generated
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [testIssue, setTestIssue] = useState("");
@@ -137,7 +140,9 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
       // Step A: Register config in CogniRunner KVS
       let result;
       const configPayload = isPostFunction
-        ? { fieldId: fieldId || "description", prompt: prompt || conditionPrompt, conditionPrompt, actionPrompt, actionFieldId }
+        ? ruleType === "postfunction-static"
+          ? { fieldId: "static-code", prompt: functions[0]?.prompt || "" }
+          : { fieldId: fieldId || "description", prompt: prompt || conditionPrompt, conditionPrompt, actionPrompt, actionFieldId }
         : { fieldId: fieldId || "description", prompt, enableTools };
 
       if (isPostFunction) {
@@ -145,7 +150,7 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
           id: ruleId,
           type: ruleType,
           ...configPayload,
-          functions: [],
+          functions: ruleType === "postfunction-static" ? functions : [],
           workflow: workflowData,
         });
       } else {
@@ -785,12 +790,278 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
               </>
             )}
 
-            {/* Static PF — simplified, just a name for now */}
+            {/* Static PF — function builder */}
             {ruleType === "postfunction-static" && (
-              <div style={{ padding: "12px", background: "var(--code-bg)", borderRadius: "4px", fontSize: "12px", color: "var(--text-secondary)" }}>
-                Static post-functions are best configured in the workflow editor where the full code editor is available.
-                This will create a placeholder rule. Edit it from the workflow to add function steps.
-              </div>
+              <>
+                {/* How it works */}
+                <div style={{
+                  padding: "10px 14px", marginBottom: "14px", borderRadius: "8px",
+                  border: "1px solid var(--border-color)", background: "var(--input-bg)",
+                }}>
+                  <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px" }}>How it works</div>
+                  <ol style={{ margin: 0, paddingLeft: "18px", fontSize: "12px", color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                    <li>Describe what each step should do in plain English</li>
+                    <li>AI generates the JavaScript code for each step</li>
+                    <li>Code runs on every transition — <strong>no AI cost at runtime</strong></li>
+                  </ol>
+                </div>
+
+                {/* Function steps */}
+                {functions.map((fn, idx) => {
+                  const priorSteps = functions.slice(0, idx).filter((f) => f.variableName).map((f, i) => ({
+                    step: i + 1, variable: f.variableName, name: f.name || `Step ${i + 1}`, description: f.prompt || "",
+                  }));
+                  return (
+                    <div key={fn.id} style={{
+                      marginBottom: "12px", border: "1px solid var(--border-color)", borderRadius: "8px",
+                      background: "var(--card-bg)", overflow: "visible",
+                    }}>
+                      {/* Step header */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px", borderBottom: "1px solid var(--border-color)" }}>
+                        <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--primary-color)", background: "rgba(37,99,235,0.1)", padding: "2px 8px", borderRadius: "4px" }}>#{idx + 1}</span>
+                        <input
+                          type="text"
+                          value={fn.name}
+                          onChange={(e) => { const u = [...functions]; u[idx] = { ...fn, name: e.target.value }; setFunctions(u); }}
+                          placeholder={`Step ${idx + 1} name (optional)`}
+                          style={{ flex: 1, padding: "4px 8px", border: "1px solid transparent", borderRadius: "4px", background: "transparent", color: "var(--text-color)", fontSize: "13px", fontWeight: 600 }}
+                          onFocus={(e) => { e.target.style.borderColor = "var(--border-color)"; e.target.style.background = "var(--input-bg)"; }}
+                          onBlur={(e) => { e.target.style.borderColor = "transparent"; e.target.style.background = "transparent"; }}
+                        />
+                        {functions.length > 1 && (
+                          <button
+                            style={{ background: "none", border: "none", color: "var(--error-color)", cursor: "pointer", fontSize: "16px", padding: "2px 6px" }}
+                            onClick={() => setFunctions(functions.filter((_, i) => i !== idx))}
+                            title="Remove step"
+                          >&times;</button>
+                        )}
+                      </div>
+
+                      <div style={{ padding: "12px 14px" }}>
+                        {/* Prior variables */}
+                        {priorSteps.length > 0 && (
+                          <div style={{ marginBottom: "10px", padding: "6px 10px", borderRadius: "6px", background: "rgba(37,99,235,0.04)", border: "1px solid rgba(37,99,235,0.1)" }}>
+                            <span style={{ fontSize: "10px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" }}>Available from prior steps</span>
+                            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "4px" }}>
+                              {priorSteps.map((ps) => (
+                                <code key={ps.variable} style={{ fontSize: "11px", padding: "2px 6px", borderRadius: "3px", background: "var(--code-bg)", color: "var(--primary-color)" }}>
+                                  {"${" + ps.variable + "}"}
+                                </code>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Description */}
+                        <div style={{ marginBottom: "10px" }}>
+                          <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "4px" }}>
+                            What should this step do?
+                          </label>
+                          <textarea
+                            value={fn.prompt}
+                            onChange={(e) => { const u = [...functions]; u[idx] = { ...fn, prompt: e.target.value }; setFunctions(u); }}
+                            placeholder="E.g. 'Find all issues in this project with the same summary and add a comment linking to them'"
+                            rows={3}
+                            style={{ width: "100%", fontSize: "12px", padding: "8px 10px", border: "1px solid var(--border-color)", borderRadius: "6px", background: "var(--input-bg)", color: "var(--text-color)", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
+                          />
+                        </div>
+
+                        {/* Operation type */}
+                        <div style={{ marginBottom: "10px" }}>
+                          <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "4px" }}>
+                            Operation Type
+                          </label>
+                          <div style={{ maxWidth: "240px" }}>
+                            <CustomSelect
+                              value={fn.operationType}
+                              onChange={(v) => { const u = [...functions]; u[idx] = { ...fn, operationType: v }; setFunctions(u); }}
+                              options={[
+                                { value: "work_item_query", label: "JQL Search" },
+                                { value: "rest_api_internal", label: "Jira REST API" },
+                                { value: "rest_api_external", label: "External API" },
+                                { value: "confluence_api", label: "Confluence API" },
+                                { value: "log_function", label: "Debug Log" },
+                              ]}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Variable name (hidden for log_function) */}
+                        {fn.operationType !== "log_function" && (
+                          <div style={{ marginBottom: "10px" }}>
+                            <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "4px" }}>
+                              Result Variable
+                            </label>
+                            <input
+                              type="text"
+                              value={fn.variableName}
+                              onChange={(e) => { const u = [...functions]; u[idx] = { ...fn, variableName: e.target.value.replace(/[^a-zA-Z0-9_]/g, "") }; setFunctions(u); }}
+                              placeholder={`result${idx + 1}`}
+                              style={{ width: "160px", padding: "6px 10px", border: "1px solid var(--border-color)", borderRadius: "6px", background: "var(--input-bg)", color: "var(--text-color)", fontSize: "12px", fontFamily: "SFMono-Regular, Consolas, monospace" }}
+                            />
+                            <span style={{ fontSize: "10px", color: "var(--text-muted)", marginLeft: "8px" }}>
+                              Next steps can use {"${" + (fn.variableName || `result${idx + 1}`) + "}"}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Backoff toggle */}
+                        <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--text-secondary)", cursor: "pointer", marginBottom: "10px" }}>
+                          <input
+                            type="checkbox"
+                            checked={fn.includeBackoff}
+                            onChange={(e) => { const u = [...functions]; u[idx] = { ...fn, includeBackoff: e.target.checked }; setFunctions(u); }}
+                          />
+                          Exponential backoff with jitter (up to 3 retries)
+                        </label>
+
+                        {/* Generate code button */}
+                        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                          <button
+                            className="btn-small btn-edit"
+                            disabled={!fn.prompt.trim() || generatingCode === fn.id}
+                            onClick={async () => {
+                              setGeneratingCode(fn.id);
+                              try {
+                                const result = await invoke("generatePostFunctionCode", {
+                                  prompt: fn.prompt,
+                                  operationType: fn.operationType,
+                                  includeBackoff: fn.includeBackoff,
+                                  priorSteps,
+                                });
+                                if (result.success && result.code) {
+                                  const u = [...functions]; u[idx] = { ...fn, code: result.code }; setFunctions(u);
+                                } else {
+                                  setError(result.error || "Code generation failed");
+                                }
+                              } catch (e) {
+                                setError("Code generation failed: " + e.message);
+                              }
+                              setGeneratingCode(null);
+                            }}
+                          >
+                            {generatingCode === fn.id ? "Generating..." : fn.code ? "Regenerate Code" : "Generate Code"}
+                          </button>
+                          {!fn.prompt.trim() && (
+                            <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>Describe what this step does first</span>
+                          )}
+                        </div>
+
+                        {/* Generated code display */}
+                        {fn.code && (
+                          <div style={{ marginTop: "10px" }}>
+                            <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "4px" }}>
+                              Generated Code
+                            </label>
+                            <textarea
+                              value={fn.code}
+                              onChange={(e) => { const u = [...functions]; u[idx] = { ...fn, code: e.target.value }; setFunctions(u); }}
+                              rows={12}
+                              style={{
+                                width: "100%", padding: "10px 12px", border: "1px solid var(--border-color)", borderRadius: "6px",
+                                background: "var(--code-bg)", color: "var(--text-color)", fontSize: "12px", lineHeight: 1.5,
+                                fontFamily: "SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace", resize: "vertical", tabSize: 2,
+                              }}
+                              spellCheck={false}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Add step button */}
+                <button
+                  className="btn-small"
+                  disabled={functions.length >= 50}
+                  onClick={() => {
+                    const nextNum = functions.length + 1;
+                    setFunctions([...functions, {
+                      id: `${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                      name: "", prompt: "", code: "", variableName: `result${nextNum}`,
+                      operationType: "work_item_query", includeBackoff: false,
+                    }]);
+                  }}
+                  style={{ width: "100%", padding: "8px", marginBottom: "14px" }}
+                >
+                  + Add Another Step {functions.length >= 50 && "(max 50)"}
+                </button>
+
+                {/* Test Run */}
+                <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: "12px", marginBottom: "14px" }}>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px" }}>
+                    Test Run
+                  </label>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <input
+                      type="text"
+                      value={testIssue}
+                      onChange={(e) => setTestIssue(e.target.value.toUpperCase())}
+                      placeholder="Issue key (optional for static PF)"
+                      style={{ flex: 1, padding: "8px 12px", border: "1px solid var(--border-color)", borderRadius: "8px", background: "var(--input-bg)", color: "var(--text-color)", fontSize: "13px", fontFamily: "SFMono-Regular, Consolas, monospace" }}
+                    />
+                    <button
+                      className="btn-small btn-edit"
+                      disabled={testRunning || !functions.some((f) => f.code)}
+                      onClick={async () => {
+                        setTestRunning(true);
+                        setTestResult(null);
+                        try {
+                          // Combine all function code blocks
+                          const allCode = functions.filter((f) => f.code).map((f) => f.code).join("\n\n// --- Next Step ---\n\n");
+                          const result = await invoke("testPostFunction", {
+                            code: allCode,
+                            issueKey: testIssue.trim() || undefined,
+                          });
+                          setTestResult(result);
+                        } catch (e) {
+                          setTestResult({ success: false, logs: [`Error: ${e.message}`] });
+                        }
+                        setTestRunning(false);
+                      }}
+                    >
+                      {testRunning ? "Running..." : "Run Test"}
+                    </button>
+                  </div>
+                  <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
+                    Dry run — reads are real, writes are simulated. Generate code first.
+                  </p>
+
+                  {testResult && (
+                    <div style={{
+                      marginTop: "8px", padding: "10px 12px", borderRadius: "8px",
+                      border: `1px solid ${testResult.success ? "var(--success-color)" : "var(--error-color)"}`,
+                      background: testResult.success ? "rgba(22,163,106,0.06)" : "rgba(220,38,38,0.06)",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                        <span className={`type-badge ${testResult.success ? "type-condition" : "type-validator"}`} style={{ fontSize: "9px" }}>
+                          {testResult.success ? "PASS" : "ERROR"}
+                        </span>
+                        {testResult.executionTimeMs && <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{testResult.executionTimeMs}ms</span>}
+                        <button style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "16px" }} onClick={() => setTestResult(null)}>&times;</button>
+                      </div>
+                      {testResult.logs && testResult.logs.length > 0 && (
+                        <div style={{ maxHeight: "200px", overflow: "auto" }}>
+                          {testResult.logs.map((log, i) => (
+                            <div key={i} style={{ fontSize: "11px", fontFamily: "SFMono-Regular, Consolas, monospace", color: "var(--text-secondary)", padding: "1px 0" }}>{log}</div>
+                          ))}
+                        </div>
+                      )}
+                      {testResult.changes && testResult.changes.length > 0 && (
+                        <div style={{ marginTop: "6px" }}>
+                          <span style={{ fontWeight: 600, fontSize: "10px", color: "var(--text-muted)", textTransform: "uppercase" }}>Simulated Changes (not applied)</span>
+                          {testResult.changes.map((c, i) => (
+                            <div key={i} style={{ fontSize: "11px", fontFamily: "SFMono-Regular, Consolas, monospace", color: "var(--text-secondary)", padding: "1px 0" }}>
+                              {c.action}({c.key}{c.fields ? `, ${JSON.stringify(c.fields)}` : ""})
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
             )}
 
             {/* Save */}
