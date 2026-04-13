@@ -103,10 +103,7 @@ export default function SemanticConfig({
           <Tooltip text="The field that will be updated with the AI-generated value. Works best with text fields (Summary, Description, custom text fields)." />
         </label>
         {loadingFields ? (
-          <div className="fields-loading">
-            <div className="spinner-small"></div>
-            <span>Loading fields...</span>
-          </div>
+          <div className="sk sk-block" style={{ height: 42 }} />
         ) : errorFields ? (
           <>
             <input

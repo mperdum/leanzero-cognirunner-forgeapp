@@ -431,6 +431,8 @@ const injectStyles = () => {
     }
 
     .alert-dismiss:hover { opacity: 1; }
+
+    @keyframes skShimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
   `;
   document.head.appendChild(style);
 };
@@ -638,7 +640,9 @@ function App() {
   if (loading) {
     return (
       <div className="container">
-        <span className="loading-text">Loading...</span>
+        <div style={{ padding: "4px 0" }}>
+          <div style={{ width: "50%", height: 12, borderRadius: 6, background: "linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%)", backgroundSize: "200% 100%", animation: "skShimmer 1.5s ease-in-out infinite" }} />
+        </div>
       </div>
     );
   }

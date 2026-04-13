@@ -250,7 +250,10 @@ export default function DocRepository({ selectedDocs, onSelectionChange }) {
 
       {/* Document list */}
       {loading ? (
-        <div className="doc-empty">Loading documents...</div>
+        <div style={{ padding: "12px" }}>
+          <div className="sk sk-text" style={{ width: "60%", height: 12, marginBottom: 8 }} />
+          <div className="sk sk-text" style={{ width: "40%", height: 12 }} />
+        </div>
       ) : docs.length === 0 ? (
         <div className="doc-empty">
           No documents yet. Add API docs, schemas, or field mappings to help AI generate better code.

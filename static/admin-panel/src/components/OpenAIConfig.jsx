@@ -132,7 +132,11 @@ export default function OpenAIConfig({ invoke }) {
           <span className="section-title">OpenAI Configuration</span>
         </div>
         <div className="card">
-          <div className="empty-state">Loading configuration...</div>
+          <div style={{ padding: "16px" }}>
+            <div className="sk sk-text" style={{ width: "40%", height: 12, marginBottom: 12 }} />
+            <div className="sk sk-block" style={{ height: 40, marginBottom: 12 }} />
+            <div className="sk sk-text" style={{ width: "60%", height: 10 }} />
+          </div>
         </div>
       </div>
     );

@@ -24,6 +24,7 @@ import CustomSelect from "./components/CustomSelect";
 import IssuePicker from "./components/IssuePicker";
 import DocRepository from "./components/DocRepository";
 import ReviewPanel from "./components/ReviewPanel";
+import { ConfigSkeleton } from "./components/Skeleton";
 
 // Inject styles directly - more reliable in Forge iframe
 const injectStyles = () => {
@@ -1631,6 +1632,57 @@ const injectStyles = () => {
       font-size: 12px;
     }
 
+    /* Skeleton loading */
+    .sk {
+      background: linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%);
+      background-size: 200% 100%;
+      animation: skShimmer 1.5s ease-in-out infinite;
+      border-radius: 4px;
+    }
+
+    html[data-color-mode="dark"] .sk {
+      background: linear-gradient(90deg, #1e1e2e 25%, #2a2a3a 50%, #1e1e2e 75%);
+      background-size: 200% 100%;
+    }
+
+    @keyframes skShimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    .sk-circle { border-radius: 50%; }
+    .sk-text { border-radius: 6px; }
+    .sk-block { border-radius: 8px; }
+
+    .sk-form { margin-bottom: 0; }
+
+    .sk-table { display: flex; flex-direction: column; gap: 12px; padding: 12px; }
+    .sk-table-row { display: flex; gap: 16px; align-items: center; }
+
+    .sk-card {
+      padding: 16px;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      background: var(--card-bg);
+    }
+
+    .sk-card-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+
+    .sk-config { padding: 20px; }
+    .sk-config-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+    .sk-config-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+    .sk-config-form {
+      padding: 20px;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      background: var(--card-bg);
+    }
+
     /* AI Loading State */
     .ai-loading {
       display: flex;
@@ -2297,14 +2349,7 @@ function App() {
   }, []);
 
   if (loading) {
-    return (
-      <div className="container">
-        <div className="loading-spinner">
-          <div className="spinner"></div>
-          <p className="loading-text">Loading configuration...</p>
-        </div>
-      </div>
-    );
+    return <ConfigSkeleton />;
   }
 
   return (
@@ -2459,10 +2504,7 @@ function App() {
             Field to Validate <span className="required">*</span>
           </label>
           {fieldsLoading ? (
-            <div className="fields-loading">
-              <div className="spinner-small"></div>
-              <span>Loading available fields...</span>
-            </div>
+            <div className="sk sk-block" style={{ height: 42 }} />
           ) : fieldsError ? (
             <>
               <input

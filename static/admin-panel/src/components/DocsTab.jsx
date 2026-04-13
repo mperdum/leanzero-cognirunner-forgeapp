@@ -142,7 +142,11 @@ export default function DocsTab({ invoke, isAdmin, accountId }) {
 
       <div className="card">
         {loading ? (
-          <div className="empty-state">Loading documents...</div>
+          <div style={{ padding: "14px" }}>
+            <div className="sk sk-text" style={{ width: "50%", height: 12, marginBottom: 10 }} />
+            <div className="sk sk-text" style={{ width: "70%", height: 12, marginBottom: 10 }} />
+            <div className="sk sk-text" style={{ width: "35%", height: 12 }} />
+          </div>
         ) : docs.length === 0 ? (
           <div className="empty-state">
             {filter === "mine" ? "You haven't added any documents yet." : "No documents in the library yet."}

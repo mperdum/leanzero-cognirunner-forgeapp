@@ -459,6 +459,21 @@ const injectStyles = () => {
 
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* Skeleton shimmer */
+    .sk {
+      background: linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%);
+      background-size: 200% 100%;
+      animation: skShimmer 1.5s ease-in-out infinite;
+      border-radius: 4px;
+    }
+    html[data-color-mode="dark"] .sk {
+      background: linear-gradient(90deg, #1e1e2e 25%, #2a2a3a 50%, #1e1e2e 75%);
+      background-size: 200% 100%;
+    }
+    @keyframes skShimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    .sk-text { border-radius: 6px; }
+    .sk-block { border-radius: 8px; }
+
     /* Permissions tab */
     .perm-tab { }
 
@@ -1007,11 +1022,20 @@ function App() {
 
   if (loading) {
     return (
-      <div className="container">
-        <div className="loading-spinner">
-          <div className="spinner"></div>
-          <p className="loading-text">Loading admin panel...</p>
+      <div className="container" style={{ padding: "24px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "24px" }}>
+          <div className="sk" style={{ width: 40, height: 40, borderRadius: "50%" }} />
+          <div style={{ flex: 1 }}>
+            <div className="sk sk-text" style={{ width: "40%", height: 16, marginBottom: 6 }} />
+            <div className="sk sk-text" style={{ width: "65%", height: 12 }} />
+          </div>
         </div>
+        <div style={{ display: "flex", gap: "0", marginBottom: "20px", borderBottom: "2px solid var(--border-color)", paddingBottom: "0" }}>
+          <div className="sk sk-text" style={{ width: 60, height: 14, margin: "10px 20px 12px 0" }} />
+          <div className="sk sk-text" style={{ width: 100, height: 14, margin: "10px 20px 12px 0" }} />
+          <div className="sk sk-text" style={{ width: 80, height: 14, margin: "10px 20px 12px 0" }} />
+        </div>
+        <div className="sk sk-block" style={{ height: 200, borderRadius: 12 }} />
       </div>
     );
   }
