@@ -1128,7 +1128,7 @@ resolver.define("getOpenAIModels", async () => {
 
     const data = await response.json();
     const chatModels = (data.data || [])
-      .filter((m) => /^(gpt-|o1-|o3-|o4-)/.test(m.id))
+      .filter((m) => /^(gpt-5|o3-|o4-)/.test(m.id))
       .map((m) => m.id)
       .sort();
 
