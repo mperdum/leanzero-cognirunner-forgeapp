@@ -3,8 +3,7 @@ modules:
   jira:workflowValidator:
     - key: ai-text-field-validator
       name: CogniRunner Field Validator
-      description:
-        Validates a text field value against a custom AI prompt on workflow
+      description: Validates a text field value against a custom AI prompt on workflow
         transition.
       function: validate
       resolver:
@@ -42,8 +41,7 @@ modules:
   jira:workflowPostFunction:
     - key: ai-semantic-post-function
       name: CogniRunner Semantic Post Function
-      description:
-        AI evaluates a condition and modifies a target field after workflow
+      description: AI evaluates a condition and modifies a target field after workflow
         transition.
       function: executePostFunction
       resolver:
@@ -60,8 +58,7 @@ modules:
 
     - key: ai-static-post-function
       name: CogniRunner Static Post Function
-      description:
-        Chains multiple operations with AI-generated code after workflow
+      description: Chains multiple operations with AI-generated code after workflow
         transition.
       function: executePostFunction
       resolver:
@@ -123,7 +120,7 @@ resources:
 permissions:
   content:
     styles:
-      - "unsafe-inline"
+      - unsafe-inline
   scopes:
     - read:jira-work
     - write:jira-work
@@ -138,6 +135,8 @@ permissions:
     - manage:jira-configuration
     - read:screenable-field:jira
   external:
+    images:
+      - address: "*.atlassian.net"
     fetch:
       client:
         - address: https://api.openai.com

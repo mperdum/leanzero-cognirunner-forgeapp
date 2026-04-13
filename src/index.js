@@ -1032,40 +1032,12 @@ resolver.define("listProjects", async ({ context }) => {
     );
     if (!response.ok) return { success: false, error: `Failed to fetch projects: ${response.status}` };
     const data = await response.json();
-    // Fetch avatar images as base64 since Forge Custom UI can't load external URLs directly
-    const projects = await Promise.all((data.values || []).map(async (p) => {
-      let avatarDataUrl = null;
-      const avatarUrl = p.avatarUrls?.["32x32"] || p.avatarUrls?.["24x24"];
-      if (avatarUrl) {
-        try {
-          // Strip the host to make it a relative path for requestJira
-          const path = avatarUrl.replace(/^https?:\/\/[^/]+/, "");
-          const avatarResp = await api.asApp().requestJira(path);
-          if (avatarResp.ok) {
-            const contentType = avatarResp.headers.get("content-type") || "image/png";
-            // Only convert if it's actually an image
-            if (contentType.startsWith("image/")) {
-              const buf = await avatarResp.arrayBuffer();
-              const bytes = new Uint8Array(buf);
-              // Build base64 in chunks to avoid call stack issues with large arrays
-              let binary = "";
-              for (let i = 0; i < bytes.length; i++) {
-                binary += String.fromCharCode(bytes[i]);
-              }
-              avatarDataUrl = `data:${contentType};base64,${btoa(binary)}`;
-            }
-          }
-        } catch (e) {
-          console.log(`Avatar fetch failed for ${p.key}:`, e.message);
-        }
-      }
-      return {
-        id: p.id,
-        key: p.key,
-        name: p.name,
-        projectTypeKey: p.projectTypeKey,
-        avatarUrl: avatarDataUrl,
-      };
+    const projects = (data.values || []).map((p) => ({
+      id: p.id,
+      key: p.key,
+      name: p.name,
+      projectTypeKey: p.projectTypeKey,
+      avatarUrl: p.avatarUrls?.["32x32"] || p.avatarUrls?.["24x24"] || null,
     }));
     return { success: true, projects };
   } catch (error) {
