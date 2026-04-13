@@ -78,6 +78,7 @@ modules:
     - key: cognirunner-global-page
       resource: admin-panel-resource
       title: CogniRunner
+      icon: resource:icon-resource;icon.svg
       resolver:
         function: resolver
 
@@ -86,6 +87,7 @@ modules:
     - key: cognirunner-admin-settings
       resource: admin-panel-resource
       title: CogniRunner Settings
+      icon: resource:icon-resource;icon.svg
       resolver:
         function: resolver
 
@@ -116,6 +118,9 @@ resources:
 
   - key: admin-panel-resource
     path: static/admin-panel/build
+
+  - key: icon-resource
+    path: static/icons
 
 permissions:
   content:
