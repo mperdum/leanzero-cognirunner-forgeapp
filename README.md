@@ -1,14 +1,12 @@
 # CogniRunner
 
-**AI-powered semantic workflow validation for Jira.**
+**AI-powered workflow automation for Jira -- validators, conditions, and post-functions.**
 
 Part of the [LeanZero](https://leanzero.atlascrafted.com) ecosystem.
 
 **[Live on the Atlassian Marketplace](https://marketplace.atlassian.com/apps/298437877/cognirunner?hosting=cloud&tab=overview)** -- install it directly into your Jira Cloud instance.
 
 CogniRunner is the **first open-source Atlassian Forge app**, licensed under [AGPL-3.0](LICENSE). It brings semantic intelligence to Jira workflows -- what was previously impossible to assess (the actual meaning of a text field, the content of an attached document, the quality of a description) is now child's play. Write a plain-English prompt, pick a field, and CogniRunner handles the rest.
-
-> **Status: Early / Raw.** This codebase was built in one week. It works, it's deployed on the Atlassian Marketplace, and it does its job -- but it needs a refactor. The backend is a single monolithic file, there are no tests, and the frontend CSS is triple-defined due to Forge iframe quirks. There's a massive appetite from the author to improve and maintain this project. Contributions are welcome. Expect rough edges, and expect them to get smoothed out.
 
 ---
 
@@ -28,7 +26,7 @@ None of this was possible before. CogniRunner makes it trivial.
 
 ### Ease of Use
 
-Configuration takes 30 seconds: pick a field from a dropdown, write what "valid" means in plain English, done. No regex, no scripting, no ScriptRunner. The field selector is context-aware -- it resolves the project's screen scheme and shows only the fields that are actually on the relevant screen for that transition, so you're not scrolling through hundreds of irrelevant fields.
+Configuration takes 30 seconds: pick a field from a dropdown, write what "valid" means in plain English, done. No regex, no scripting, no ScriptRunner. The field selector is context-aware -- it resolves the project's screen scheme and shows only the fields that are actually on the relevant screen for that transition.
 
 ---
 
@@ -38,8 +36,23 @@ Configuration takes 30 seconds: pick a field from a dropdown, write what "valid"
 
 - **Workflow Validators** -- Block a transition if a field's content doesn't pass AI validation. The user sees a clear error message with the AI's reasoning.
 - **Workflow Conditions** -- Hide a transition entirely if the field doesn't meet criteria.
-- **Attachment Validation** -- Downloads and sends images, PDFs, Word docs, Excel files, and presentations directly to OpenAI for content-aware validation. Validates what's *in* the file, not just that a file exists.
-- **Smart Field Selector** -- Resolves the project's issue type screen scheme to show only the fields present on the relevant screen (create vs. edit/view). Falls back to all fields when screen resolution isn't possible.
+- **Attachment Validation** -- Downloads and sends images, PDFs, Word docs, Excel files, and presentations directly to the AI for content-aware validation. Validates what's *in* the file, not just that a file exists.
+- **Smart Field Selector** -- Resolves the project's issue type screen scheme to show only the fields present on the relevant screen.
+
+### Post-Functions
+
+CogniRunner adds two types of workflow post-functions that execute **after** a transition completes:
+
+- **Semantic Post-Functions** -- AI evaluates a condition on one field and modifies a target field based on natural-language instructions. Example: "After transition to Done, summarize the description into the 'Release Notes' field."
+- **Static Post-Functions** -- Chain multiple operations with AI-generated JavaScript code. Build multi-step automations: search for issues via JQL, update fields, call REST APIs, log results -- all without AI cost at runtime (code is generated once, runs directly).
+
+**Function Builder features:**
+- Chain up to 50 operation steps with variable passing between them
+- Operation types: JQL Search, Jira REST API, External API, Confluence API, Debug Log
+- AI-powered code generation with full Jira API reference
+- CodeMirror editor with syntax highlighting and api.* autocompletion
+- Test Run with real Jira data (dry-run mode -- no writes)
+- AI Review for configuration analysis
 
 ### Agentic Validation
 
@@ -54,38 +67,63 @@ CogniRunner doesn't just evaluate text in isolation -- it can **autonomously sea
 
 **Use cases:**
 
-- **Duplicate detection** -- "Check if a similar issue already exists in this project." The AI searches by key phrases, compares descriptions, and only flags true duplicates (not merely related issues).
-- **Cross-referencing** -- "Verify this bug hasn't already been reported or resolved." The AI checks open and closed issues for matches.
-- **Consistency checks** -- "Ensure this task doesn't overlap with existing work in the current sprint." The AI queries sprint-scoped issues and compares scope.
-
-**Activation:**
-
-The agentic flow activates in one of two ways:
-- **Auto-detect (default)** -- CogniRunner analyzes your prompt for keywords like "duplicate", "similar issues", "already exists", "cross-reference", etc. If detected, tools are enabled automatically.
-- **Manual toggle** -- In the config UI, set the Jira Search (JQL) option to "Always enabled" or "Always disabled" to override auto-detection.
+- **Duplicate detection** -- "Check if a similar issue already exists in this project."
+- **Cross-referencing** -- "Verify this bug hasn't already been reported or resolved."
+- **Consistency checks** -- "Ensure this task doesn't overlap with existing work in the current sprint."
 
 **Safety:**
 
 - The agentic loop operates within a 22-second timeout budget (Forge validators have a 25-second limit). If time runs out, the transition is allowed (fail-open).
 - Maximum 3 tool-call rounds per validation to bound latency.
 - JQL searches are automatically scoped to the current project.
-- The judgment is calibrated to minimize false rejections: partial topic overlap is not grounds for blocking a transition.
+- The judgment is calibrated to minimize false rejections.
+
+### Multi-Provider BYOK
+
+CogniRunner supports **multiple AI providers** via Bring Your Own Key:
+
+| Provider | Default Model | Notes |
+|----------|--------------|-------|
+| **OpenAI** | `gpt-5.4-mini` | Native support, full model listing |
+| **Azure OpenAI** | `gpt-5.4-mini` | Custom endpoint URL required |
+| **OpenRouter** | `openai/gpt-4o-mini` | Aggregator with access to many models |
+| **Anthropic** | `claude-haiku-4-5` | Full adapter layer for Messages API |
+
+**Key features:**
+- **Per-provider key storage** -- Keys are stored separately per provider. Switching providers never deletes your existing keys.
+- **Factory key fallback** -- Without a BYOK key, the app uses the factory key set via `forge variables`. No model selection available with factory key.
+- **Model selection** -- With a BYOK key, fetch available models from the provider and select one from a dropdown.
+- **Provider switching** -- Change providers with a single click. Your previous provider's key is preserved for when you switch back.
 
 ### Administration
 
-- **Admin Panel** -- Global overview of all configured rules across all workflows, with enable/disable toggles and automatic orphan cleanup for rules whose transitions have been deleted.
-- **Enable/Disable Rules** -- Toggle individual rules on and off from the admin panel or config-view without removing them from the workflow. Disabled rules are skipped during validation (fail-open).
-- **Validation Logs** -- Stores the last 50 validation results (pass/fail, AI reasoning, issue key, timestamp) in Forge Storage. When agentic mode was used, logs include the JQL queries executed, number of tool-call rounds, and total results returned.
-- **License-Aware** -- When the Marketplace license is inactive, validation is skipped entirely (fail-open). Transitions are never blocked due to licensing issues.
+- **Admin Panel** -- Global overview of all configured rules (validators, conditions, and post-functions) across all workflows, with type filtering, enable/disable toggles, and automatic orphan cleanup.
+- **Role-Based Permissions** -- Three roles (Viewer, Editor, Admin) with scope control (Own Rules / All Rules).
+- **Validation Logs** -- Stores the last 50 validation results with AI reasoning, agentic metadata (JQL queries, tool rounds), and execution traces.
+- **Documentation Library** -- Shared context documents that can be attached to any rule for AI reference.
+- **AI Review** -- Async configuration review with actionable feedback (runs via @forge/events Queue for 120s timeout).
+- **License-Aware** -- When the Marketplace license is inactive, validation is skipped entirely (fail-open).
+
+### Permission Model
+
+| Role | Scope | Can See Rules | Can Edit Rules | Permissions Tab | Settings Tab |
+|------|-------|--------------|----------------|----------------|-------------|
+| **Viewer** | Own | Own rules only | No | No | No |
+| **Viewer** | All | All rules | No | No | No |
+| **Editor** | Own | All rules | Own rules only | No | No |
+| **Editor** | All | All rules | All rules | No | No |
+| **Admin** | (always all) | All rules | All rules | Yes | Yes |
+
+Jira site administrators always have Admin access. The first user is automatically bootstrapped as Admin.
 
 ### Supported Field Types
 
-CogniRunner can validate virtually any Jira field type. The field extraction engine handles:
+CogniRunner can validate virtually any Jira field type:
 
 | Category | Field Types |
 |----------|-------------|
 | **Text** | Summary, single-line text, multi-line text |
-| **Rich Text** | Description, Environment, any ADF field (full Atlassian Document Format parsing including mentions, dates, status lozenges, inline cards, emojis, and nested block structures) |
+| **Rich Text** | Description, Environment, any ADF field (full Atlassian Document Format parsing) |
 | **Select** | Single select, radio buttons, priority, status, resolution, issue type |
 | **Multi-Select** | Multi-select, checkboxes, labels, components, fix versions, affected versions |
 | **Users** | Assignee, reporter, single/multi user picker, single/multi group picker |
@@ -93,10 +131,8 @@ CogniRunner can validate virtually any Jira field type. The field extraction eng
 | **Numeric** | Number fields, time tracking (original/remaining/spent) |
 | **Links** | URL fields, issue links (with summary), parent issue |
 | **Complex** | Cascading select, sprint, project picker, security level |
-| **Attachments** | Images (PNG, JPEG, GIF, WebP), PDFs, Word docs (DOCX/DOC/RTF/ODT), Excel (XLSX/XLS/CSV/TSV), PowerPoint (PPTX/PPT) -- downloaded and sent as multimodal content |
-| **Third-Party** | Checklist for Jira (Okapya), Xray Manual Test Steps, Jira Assets/Insight objects, ScriptRunner fields, Tempo accounts, Elements Connect |
-
-Any field type not explicitly handled gets a best-effort extraction (readable key-value pairs or JSON fallback).
+| **Attachments** | Images (PNG, JPEG, GIF, WebP), PDFs, Word docs, Excel, PowerPoint |
+| **Third-Party** | Checklist for Jira, Xray, Jira Assets/Insight, ScriptRunner, Tempo, Elements Connect |
 
 ---
 
@@ -104,13 +140,16 @@ Any field type not explicitly handled gets a best-effort extraction (readable ke
 
 ```
 CogniRunner/
-├── manifest.yml                  # Forge app definition
+├── manifest.yml                  # Forge app definition (modules, permissions, resources)
 ├── src/
-│   └── index.js                  # ALL backend logic (single file)
+│   ├── index.js                  # Main backend (resolvers, validation, post-functions)
+│   └── async-handler.js          # Async event consumer (AI review, 120s timeout)
 ├── static/
-│   ├── config-ui/src/            # React app: configure validator/condition
-│   ├── config-view/src/          # React app: read-only view + logs
-│   └── admin-panel/src/          # React app: global admin dashboard
+│   ├── config-ui/src/            # React app: configure validators/conditions/post-functions
+│   │   └── components/           # CustomSelect, CodeEditor, FunctionBuilder, IssuePicker, etc.
+│   ├── config-view/src/          # React app: read-only summary + execution logs
+│   └── admin-panel/src/          # React app: admin dashboard (rules, docs, permissions, settings)
+│       └── components/           # TabBar, OpenAIConfig, PermissionsTab, DocsTab, etc.
 ├── LICENSE                       # AGPL-3.0
 ├── NOTICE                        # Trademark + attribution
 └── README.md
@@ -119,85 +158,72 @@ CogniRunner/
 ### Backend (`src/index.js`)
 
 Single file containing all server-side logic:
-- **Validator/Condition handler** (`validate`) -- Receives issue data + configuration on each workflow transition, extracts the target field value, routes to standard or agentic AI validation, returns pass/fail.
-- **Standard validation** (`callOpenAI`) -- Single-turn: sends field content + prompt, gets `{ isValid, reason }` back.
-- **Agentic validation** (`callOpenAIWithTools`) -- Multi-turn tool-calling loop. The AI can request JQL searches via the `search_jira_issues` tool, receive results, refine queries, and iterate up to 3 rounds before rendering a final verdict.
-- **Tool registry** -- Extensible registry mapping tool names to OpenAI function definitions and executors. Currently includes `search_jira_issues`; designed for easy addition of new tools.
-- **Forge Resolvers** -- Bridge functions called by the frontend Custom UIs (`getFields`, `getScreenFields`, `getLogs`, `clearLogs`, `getConfigs`, `registerConfig`, `enableRule`, `disableRule`, `getRuleStatus`, `checkLicense`, etc.)
-- **Field extraction** -- Converts any Jira field type (ADF rich text, select lists, user pickers, cascading selects, attachments, etc.) to plain text for AI consumption.
-- **Screen-aware field resolution** -- Walks the Jira screen scheme chain (project -> issue type screen scheme -> screen scheme -> screen -> tabs -> fields) to determine exactly which fields are available on a given transition.
+- **Validator/Condition handler** (`validate`) -- Extracts field value, routes to standard or agentic AI validation, returns pass/fail.
+- **Post-Function handler** (`executePostFunction`) -- Routes to semantic or static execution based on config type.
+- **AI adapter** (`callAIChat`) -- Unified function supporting OpenAI-compatible providers and Anthropic (with full request/response translation).
+- **Standard validation** (`callOpenAI`) -- Single-turn: field content + prompt -> `{ isValid, reason }`.
+- **Agentic validation** (`callOpenAIWithTools`) -- Multi-turn tool-calling loop with JQL search capability.
+- **Semantic post-function** (`executeSemanticPostFunction`) -- AI condition evaluation + field update with editmeta pre-flight check and auto-formatting.
+- **Static post-function** (`executeStaticPostFunction`) -- Sandboxed JavaScript execution with API surface (getIssue, updateIssue, searchJql, transitionIssue, log).
+- **Tool registry** -- Extensible registry mapping tool names to function definitions and executors.
+- **Field extraction** -- Converts any Jira field type to plain text for AI consumption.
+- **Screen-aware field resolution** -- Walks the Jira screen scheme chain to show relevant fields.
+- **Role-based permissions** -- getUserPermissions, requireRole, canActOnConfig with scope-aware checks.
+- **Per-provider BYOK** -- Provider config, per-provider key/model storage with in-memory caching.
+
+### Backend (`src/async-handler.js`)
+
+Async event consumer for long-running AI tasks (120s timeout vs 25s resolver limit):
+- Receives tasks via @forge/events Queue
+- Stores results in KVS keyed by taskId
+- Frontend polls for completion
 
 ### Frontend (3 React Apps)
 
-Each is a separate React 18 app bundled with Webpack + Babel, running as Forge Custom UI inside Jira's sandboxed iframe:
+Each is a React 18 app bundled with Webpack + Babel, running as Forge Custom UI inside Jira's sandboxed iframe:
 
 | App | Purpose |
 |-----|---------|
-| `config-ui` | Field selector + prompt editor + JQL toggle (auto/on/off). Context-aware: resolves screen fields for the workflow's project. |
-| `config-view` | Read-only config summary + validation logs (with agentic metadata) + enable/disable toggle. |
-| `admin-panel` | Jira admin page listing all rules across all workflows, with orphan cleanup. |
+| `config-ui` | Configuration form for validators, conditions, and post-functions. Field selector, prompt editor, function builder, code editor, test run, AI review. |
+| `config-view` | Read-only config summary + execution logs with traces, recommendations, and AI metadata. |
+| `admin-panel` | Dashboard with tabs: Rules (type filter + ownership filter), Documentation, Permissions (role + scope management), Settings (AI provider config). |
 
-All three support Jira's light and dark themes via CSS custom properties and `view.theme.enable()`.
+All three support Jira's light and dark themes via LeanZero design system with CSS custom properties.
 
 ### Data Flow
 
 **Standard validation:**
 ```
 User configures rule in Jira Workflow Editor
-  -> config-ui saves { fieldId, prompt, enableTools } as JSON string
-  -> Forge stores config in the workflow rule
-  -> On each transition, Forge calls validate()
-  -> validate() extracts field value from issue
-  -> Calls AI model with the value + prompt
+  -> config-ui saves config as JSON string via onConfigure callback
+  -> On transition, Forge calls validate()
+  -> validate() extracts field value, calls AI provider
   -> Returns { result: true/false, errorMessage }
-  -> Jira blocks or allows the transition accordingly
+  -> Jira blocks or allows the transition
 ```
 
-**Agentic validation (when tools are enabled):**
+**Semantic post-function:**
 ```
-validate() extracts field value from issue
-  -> Calls callOpenAIWithTools() with field value, prompt, and issue context
-  -> AI analyzes the prompt and decides whether to search Jira
-  -> AI calls search_jira_issues tool with a JQL query
-  -> CogniRunner executes JQL against Jira REST API, returns results
-  -> AI analyzes results, may issue additional searches (up to 3 rounds)
+Transition completes
+  -> Forge calls executePostFunction()
+  -> Reads source field, fetches context docs
+  -> Checks target field editability via editmeta API
+  -> Calls AI with condition + action prompts
+  -> Auto-formats value for field schema (select, number, etc.)
+  -> PUTs updated value to Jira REST API
+  -> Logs execution trace
+```
+
+**Agentic validation:**
+```
+validate() calls callOpenAIWithTools()
+  -> AI analyzes prompt, decides to search Jira
+  -> AI calls search_jira_issues tool with JQL
+  -> CogniRunner executes JQL, returns results
+  -> AI may issue up to 3 search rounds
   -> AI renders final { isValid, reason } verdict
-  -> Tool metadata (queries, rounds, results) stored in validation log
-  -> Jira blocks or allows the transition accordingly
+  -> Tool metadata stored in validation log
 ```
-
----
-
-## Roadmap
-
-### BYOK (Bring Your Own Key)
-
-CogniRunner currently uses OpenAI via a Forge environment variable. The architecture already supports BYOK -- you set your own API key. Future work will add a UI for key management and per-project key configuration.
-
-### Additional AI Connectors
-
-The AI integration is cleanly separated into `callOpenAI` (standard) and `callOpenAIWithTools` (agentic). Planned connectors:
-
-- **Anthropic (Claude)** -- For teams that prefer Anthropic's models
-- **Google (Gemini)** -- For Google Cloud-oriented organizations
-- **Local inference engines** -- Inferencer, LM Studio, vLLM, Ollama -- for teams that need to keep data on-premises or want zero API costs
-
-The goal is a connector dropdown in the config UI where you pick your provider.
-
-### Additional Agentic Tools
-
-The tool registry is designed for extensibility. Planned additions:
-
-- **Confluence search** -- Cross-reference field content against documentation
-- **Component/label lookup** -- Validate that referenced components or labels exist
-- **Custom field lookups** -- Query specific custom field values across issues
-
-### Code Quality
-
-- Split `src/index.js` into modules
-- Add a test framework
-- Consolidate the CSS triple-definition pattern
-- Add i18n support
 
 ---
 
@@ -206,7 +232,7 @@ The tool registry is designed for extensibility. Planned additions:
 - **Node.js 22+** (Forge runtime is `nodejs22.x`)
 - **Atlassian Forge CLI** (`npm install -g @forge/cli`)
 - **An Atlassian Cloud developer site** ([get one free](https://developer.atlassian.com/platform/forge/getting-started/))
-- **An OpenAI API key**
+- **An AI API key** (OpenAI, Azure OpenAI, OpenRouter, or Anthropic)
 
 ---
 
@@ -234,8 +260,8 @@ This will update the `app.id` in `manifest.yml` with your own app ID.
 ### 3. Set environment variables
 
 ```bash
-forge variables set OPENAI_API_KEY your-openai-api-key
-forge variables set OPENAI_MODEL gpt-5-mini    # optional, this is the default
+forge variables set OPENAI_API_KEY your-api-key
+forge variables set OPENAI_MODEL gpt-5.4-mini    # optional, this is the default
 ```
 
 ### 4. Build the frontends
@@ -257,10 +283,10 @@ forge install    # Select your Jira site when prompted
 
 1. Go to **Project Settings > Workflows** in Jira
 2. Edit a workflow transition
-3. Add a **Validator** or **Condition** and select "CogniRunner Field Validator" / "CogniRunner Field Condition"
-4. Pick the field to validate and write your prompt
-5. Optionally configure the Jira Search (JQL) toggle for agentic features
-6. Publish the workflow
+3. Add a **Validator**, **Condition**, or **Post Function** and select a CogniRunner module
+4. Configure the rule: pick fields, write prompts, build functions
+5. Publish the workflow
+6. Optionally, visit **Apps > CogniRunner Admin** for the admin dashboard
 
 ---
 
@@ -287,10 +313,10 @@ npm run lint
 
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
-| `OPENAI_API_KEY` | Yes | -- | OpenAI API authentication |
-| `OPENAI_MODEL` | No | `gpt-5-mini` | OpenAI model to use |
-| `VALIDATE_FIELD_ID` | No | `description` | Fallback field ID if not configured |
-| `VALIDATION_PROMPT` | No | *(generic quality check)* | Fallback prompt if not configured |
+| `OPENAI_API_KEY` | Yes* | -- | Factory AI API key (not needed if all users provide BYOK keys) |
+| `OPENAI_MODEL` | No | `gpt-5.4-mini` | Factory model (used when no BYOK key is configured) |
+| `VALIDATE_FIELD_ID` | No | `description` | Fallback field ID if not configured in UI |
+| `VALIDATION_PROMPT` | No | *(generic quality check)* | Fallback prompt if not configured in UI |
 
 Set via `forge variables set KEY value`.
 
@@ -298,16 +324,13 @@ Set via `forge variables set KEY value`.
 
 ## Known Limitations
 
-Some rough edges are expected:
-
-- **No tests.** Testing is done manually via `forge tunnel` and `forge deploy`. A test framework is planned.
-- **Single-file backend.** All backend logic lives in `src/index.js` (~1900 lines). Module split is planned.
-- **CSS triple-definition.** Due to Forge Custom UI iframe quirks, styles are defined in three places per UI app (CSS file, HTML `<style>` block, and `injectStyles()` in JS). This is intentional but ugly.
+- **CSS triple-definition.** Due to Forge Custom UI iframe quirks, styles are defined in three places per UI app (CSS file, HTML `<style>` block, and `injectStyles()` in JS). This is intentional.
 - **No i18n.** All strings are hardcoded in English.
-- **Attachment validation on CREATE.** Jira doesn't expose attachments in `modifiedFields` during issue creation, so attachment validation is skipped on create transitions.
+- **Attachment validation on CREATE.** Jira doesn't expose attachments in `modifiedFields` during issue creation.
 - **50-log limit.** Validation logs are capped at 50 entries in Forge Storage (FIFO).
-- **OpenAI only.** Additional AI providers are on the roadmap but not yet implemented.
 - **Agentic latency.** When the agentic flow is active, validation takes longer (multiple AI round-trips + JQL searches). The 22-second timeout ensures transitions aren't blocked indefinitely.
+- **Post-function fail-open.** Post-functions always return `{ result: true }` -- they cannot block transitions. Errors are logged but don't prevent the transition.
+- **Anthropic file attachments.** Document types (PDF, DOCX) use Anthropic's `document` format; compatibility depends on model capabilities.
 
 ---
 
@@ -318,15 +341,25 @@ The app requests the following Forge permissions:
 | Scope | Purpose |
 |-------|---------|
 | `read:jira-work` | Read issue fields, data, and execute JQL searches |
+| `write:jira-work` | Update issue fields (post-functions) |
+| `read:jira-user` | Resolve user information for field extraction |
+| `manage:jira-configuration` | Admin group membership checks, field metadata |
 | `read:workflow:jira` | Read workflow definitions for orphan cleanup |
 | `read:project:jira` | Resolve project context for screen-based field filtering |
-| `storage:app` | Persist validation logs and config registry |
+| `storage:app` | Persist validation logs, config registry, BYOK keys, permissions |
 | `read:issue-type-screen-scheme:jira` | Screen-based field resolution |
 | `read:screen-scheme:jira` | Screen-based field resolution |
 | `read:screen-tab:jira` | Screen-based field resolution |
 | `read:screenable-field:jira` | Screen-based field resolution |
 
-External fetch: `https://api.openai.com` (for AI validation calls).
+**External fetch whitelist:**
+
+| Domain | Purpose |
+|--------|---------|
+| `api.openai.com` | OpenAI API |
+| `*.openai.azure.com` | Azure OpenAI Service |
+| `openrouter.ai` | OpenRouter API |
+| `api.anthropic.com` | Anthropic API |
 
 ---
 
