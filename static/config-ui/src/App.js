@@ -1984,6 +1984,7 @@ function App() {
   const [validatorTestIssue, setValidatorTestIssue] = useState("");
   const [validatorTestRunning, setValidatorTestRunning] = useState(false);
   const [validatorTestResult, setValidatorTestResult] = useState(null);
+  const [validatorIssueValid, setValidatorIssueValid] = useState(null);
 
   // Doc library for validators — persisted as selectedDocIds in config
   const [validatorDocIds, setValidatorDocIds] = useState([]);
@@ -2695,7 +2696,7 @@ function App() {
                   Test against issue
                 </label>
                 <div className="test-target-row">
-                  <IssuePicker value={validatorTestIssue} onChange={setValidatorTestIssue} />
+                  <IssuePicker value={validatorTestIssue} onChange={setValidatorTestIssue} onValidationChange={setValidatorIssueValid} />
                   <button
                     className="btn-run-test"
                     onClick={async () => {
@@ -2715,7 +2716,7 @@ function App() {
                       }
                       setValidatorTestRunning(false);
                     }}
-                    disabled={validatorTestRunning || !validatorTestIssue.trim() || !fieldId.trim() || !prompt.trim()}
+                    disabled={validatorTestRunning || !validatorTestIssue.trim() || !fieldId.trim() || !prompt.trim() || !validatorIssueValid?.valid}
                   >
                     {validatorTestRunning ? "Running..." : "Run Test"}
                   </button>

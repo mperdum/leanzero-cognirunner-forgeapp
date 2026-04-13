@@ -30,6 +30,7 @@ export default function SemanticConfig({
   const [showTest, setShowTest] = useState(false);
   const [testIssue, setTestIssue] = useState("");
   const [testRunning, setTestRunning] = useState(false);
+  const [issueValid, setIssueValid] = useState(null); // null | { valid: true } | { valid: false }
   const [testResult, setTestResult] = useState(null);
 
   const handleTest = async () => {
@@ -176,11 +177,11 @@ export default function SemanticConfig({
                 Test against issue
               </label>
               <div className="test-target-row">
-                <IssuePicker value={testIssue} onChange={setTestIssue} />
+                <IssuePicker value={testIssue} onChange={setTestIssue} onValidationChange={setIssueValid} />
                 <button
                   className="btn-run-test"
                   onClick={handleTest}
-                  disabled={testRunning || !testIssue.trim() || !conditionPrompt.trim()}
+                  disabled={testRunning || !testIssue.trim() || !conditionPrompt.trim() || !issueValid?.valid}
                 >
                   {testRunning ? "Running..." : "Run Test"}
                 </button>

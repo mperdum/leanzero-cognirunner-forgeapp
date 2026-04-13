@@ -8,7 +8,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { invoke } from "@forge/bridge";
 
-export default function IssuePicker({ value, onChange, projectKey }) {
+export default function IssuePicker({ value, onChange, projectKey, onValidationChange }) {
   const [query, setQuery] = useState(value || "");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -42,26 +42,27 @@ export default function IssuePicker({ value, onChange, projectKey }) {
     setLoading(false);
   }, [projectKey]);
 
-  // Validate issue key after typing stops
+  // Validate issue key by fetching directly — not via JQL search
   const validateKey = useCallback(async (key) => {
     if (!key || !/^[A-Z]+-\d+$/i.test(key.trim())) {
       setValidated(null);
       return;
     }
     try {
-      const result = await invoke("searchIssues", { query: key.trim() });
-      if (result.success && result.issues?.length > 0) {
-        const issue = result.issues[0];
-        if (issue.key.toUpperCase() === key.trim().toUpperCase()) {
-          setValidated({ valid: true, summary: issue.summary, status: issue.status, type: issue.type });
-        } else {
-          setValidated({ valid: false, error: `Issue ${key} not found` });
-        }
+      const result = await invoke("validateIssue", { issueKey: key.trim().toUpperCase() });
+      if (result.success && result.valid) {
+        const v = { valid: true, summary: result.summary, status: result.status, type: result.type };
+        setValidated(v);
+        if (onValidationChange) onValidationChange(v);
       } else {
-        setValidated({ valid: false, error: `Issue ${key} not found` });
+        const v = { valid: false, error: `Issue ${key.trim().toUpperCase()} not found` };
+        setValidated(v);
+        if (onValidationChange) onValidationChange(v);
       }
     } catch {
-      setValidated({ valid: false, error: "Could not verify issue" });
+      const v = { valid: false, error: "Could not verify issue" };
+      setValidated(v);
+      if (onValidationChange) onValidationChange(v);
     }
   }, []);
 
@@ -70,6 +71,7 @@ export default function IssuePicker({ value, onChange, projectKey }) {
     setQuery(val);
     onChange(val);
     setValidated(null);
+    if (onValidationChange) onValidationChange(null);
 
     if (searchTimer.current) clearTimeout(searchTimer.current);
     if (validateTimer.current) clearTimeout(validateTimer.current);
@@ -83,7 +85,9 @@ export default function IssuePicker({ value, onChange, projectKey }) {
     onChange(issue.key);
     setOpen(false);
     setResults([]);
-    setValidated({ valid: true, summary: issue.summary, status: issue.status, type: issue.type });
+    const v = { valid: true, summary: issue.summary, status: issue.status, type: issue.type };
+    setValidated(v);
+    if (onValidationChange) onValidationChange(v);
   };
 
   const handleKeyDown = (e) => {

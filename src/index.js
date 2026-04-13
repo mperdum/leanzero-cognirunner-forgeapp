@@ -1796,6 +1796,31 @@ IMPORTANT: Use these variables in your code. For example, if a prior step stored
 /**
  * Search issues for the issue picker — type-ahead search by key or summary text.
  */
+/**
+ * Validate a single issue key — fetches directly by key, not via JQL.
+ */
+resolver.define("validateIssue", async ({ payload }) => {
+  try {
+    const { issueKey } = payload;
+    if (!issueKey) return { success: false };
+    const response = await api.asApp().requestJira(
+      route`/rest/api/3/issue/${issueKey}?fields=summary,status,issuetype,priority`,
+    );
+    if (!response.ok) return { success: true, valid: false };
+    const issue = await response.json();
+    return {
+      success: true,
+      valid: true,
+      key: issue.key,
+      summary: issue.fields?.summary,
+      status: issue.fields?.status?.name,
+      type: issue.fields?.issuetype?.name,
+    };
+  } catch (e) {
+    return { success: true, valid: false };
+  }
+});
+
 resolver.define("searchIssues", async ({ payload }) => {
   try {
     const { query, projectKey } = payload;
