@@ -92,12 +92,21 @@ modules:
       resolver:
         function: resolver
 
+  # Async event consumer for long-running AI tasks
+  consumer:
+    - key: async-ai-consumer
+      queue: async-ai-queue
+      function: async-ai-handler
+
   # Lambda function for validation logic
   function:
     - key: validate
       handler: index.validate
     - key: executePostFunction
       handler: index.executePostFunction
+    - key: async-ai-handler
+      handler: async-handler.handler
+      timeoutSeconds: 120
     - key: resolver
       handler: index.handler
 

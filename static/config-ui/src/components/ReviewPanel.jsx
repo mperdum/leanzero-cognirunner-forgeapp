@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import React, { useState } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import { invoke } from "@forge/bridge";
 
 const VERDICT_STYLES = {
@@ -19,17 +19,80 @@ const ITEM_ICONS = { success: "\u2705", warning: "\u26A0\uFE0F", error: "\u274C"
 export default function ReviewPanel({ configType, config }) {
   const [reviewing, setReviewing] = useState(false);
   const [result, setResult] = useState(null);
+  const [statusText, setStatusText] = useState("");
+  const pollRef = useRef(null);
+
+  const pollForResult = useCallback((taskId) => {
+    let attempts = 0;
+    const maxAttempts = 40; // 40 * 3s = 120s max
+
+    const poll = async () => {
+      attempts++;
+      try {
+        const res = await invoke("getAsyncTaskResult", { taskId });
+        if (res.success) {
+          if (res.status === "done") {
+            setResult(res.result);
+            setReviewing(false);
+            setStatusText("");
+            return;
+          }
+          if (res.status === "error") {
+            setResult({ success: false, error: res.error });
+            setReviewing(false);
+            setStatusText("");
+            return;
+          }
+          // Still processing
+          setStatusText(res.status === "processing" ? "AI is reviewing..." : "Queued...");
+          if (attempts < maxAttempts) {
+            pollRef.current = setTimeout(poll, 3000);
+          } else {
+            setResult({ success: false, error: "Review timed out. Try again." });
+            setReviewing(false);
+            setStatusText("");
+          }
+        }
+      } catch (e) {
+        setResult({ success: false, error: e.message });
+        setReviewing(false);
+        setStatusText("");
+      }
+    };
+
+    poll();
+  }, []);
 
   const handleReview = async () => {
     setReviewing(true);
     setResult(null);
+    setStatusText("Submitting...");
+
+    // Clear any existing poll
+    if (pollRef.current) clearTimeout(pollRef.current);
+
     try {
       const res = await invoke("reviewConfig", { configType, config });
-      setResult(res);
+
+      if (res.async && res.taskId) {
+        // Async mode — start polling
+        setStatusText("Queued...");
+        pollForResult(res.taskId);
+      } else if (res.success) {
+        // Sync fallback (shouldn't happen but handle gracefully)
+        setResult(res);
+        setReviewing(false);
+        setStatusText("");
+      } else {
+        setResult(res);
+        setReviewing(false);
+        setStatusText("");
+      }
     } catch (e) {
       setResult({ success: false, error: e.message });
+      setReviewing(false);
+      setStatusText("");
     }
-    setReviewing(false);
   };
 
   return (
@@ -43,7 +106,7 @@ export default function ReviewPanel({ configType, config }) {
           <path d="M9 11l3 3L22 4" />
           <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
         </svg>
-        <span>{reviewing ? "Reviewing..." : "AI Review"}</span>
+        <span>{reviewing ? (statusText || "Reviewing...") : "AI Review"}</span>
       </button>
 
       {result && (

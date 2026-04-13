@@ -1849,11 +1849,62 @@ resolver.define("searchIssues", async ({ payload }) => {
  * The AI reviews the config for correctness, efficiency, and potential issues.
  * It is user-friendly: if the config is functional, it says so without nitpicking.
  */
+/**
+ * Submit an async AI review task. Returns immediately with a taskId.
+ * Frontend polls getAsyncTaskResult to get the result.
+ */
 resolver.define("reviewConfig", async ({ payload }) => {
   const { configType, config } = payload;
   if (!configType || !config) {
     return { success: false, error: "No configuration to review" };
   }
+
+  try {
+    const { Queue } = await import("@forge/events");
+    const queue = new Queue({ key: "async-ai-queue" });
+    const taskId = `review_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+    await queue.push({
+      body: { taskType: "review", taskId, params: { configType, config } },
+    });
+
+    return { success: true, taskId, async: true };
+  } catch (error) {
+    console.error("Failed to submit review task:", error);
+    return { success: false, error: "Failed to start review: " + error.message };
+  }
+});
+
+/**
+ * Poll for the result of an async task by taskId.
+ */
+resolver.define("getAsyncTaskResult", async ({ payload }) => {
+  const { taskId } = payload;
+  if (!taskId) return { success: false, error: "No taskId" };
+
+  try {
+    const result = await storage.get(`async_task:${taskId}`);
+    if (!result) return { success: true, status: "pending" };
+    if (result.status === "processing") return { success: true, status: "processing" };
+    if (result.status === "done") {
+      // Clean up after reading
+      try { await storage.delete(`async_task:${taskId}`); } catch (e) { /* ignore */ }
+      return { success: true, status: "done", result: result.result };
+    }
+    if (result.status === "error") {
+      try { await storage.delete(`async_task:${taskId}`); } catch (e) { /* ignore */ }
+      return { success: true, status: "error", error: result.error };
+    }
+    return { success: true, status: "unknown" };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Old synchronous reviewConfig removed — now handled by async-handler.js
+// via the Queue/Consumer pattern with 120s timeout.
+
+const _unused_reviewConfig_placeholder = () => {
 
   try {
     const apiKey = await getOpenAIKey();
