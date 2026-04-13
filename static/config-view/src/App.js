@@ -543,8 +543,9 @@ function App() {
         const context = await bridge.view.getContext();
         console.log("config-view context:", JSON.stringify(context, null, 2));
 
-        // Try multiple possible locations for the config
+        // Try all possible locations for the config per module type
         const possibleConfig =
+          context?.extension?.postFunctionConfig ||
           context?.extension?.validatorConfig ||
           context?.extension?.conditionConfig ||
           context?.extension?.configuration ||

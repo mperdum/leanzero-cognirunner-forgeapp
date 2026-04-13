@@ -2124,8 +2124,9 @@ function App() {
           const context = await view.getContext();
           currentContext = context;
 
-          // Try multiple possible locations for the config
+          // Try all possible locations for the config per module type
           let config =
+            context?.extension?.postFunctionConfig ||
             context?.extension?.validatorConfig ||
             context?.extension?.conditionConfig ||
             context?.extension?.configuration ||
