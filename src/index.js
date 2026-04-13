@@ -1758,7 +1758,12 @@ resolver.define("getOpenAIModels", async () => {
         headers: { "x-api-key": byokKey, "anthropic-version": "2023-06-01" },
       });
     } else {
-      const modelHeaders = { Authorization: `Bearer ${byokKey}` };
+      const modelHeaders = {};
+      if (provider === "azure") {
+        modelHeaders["api-key"] = byokKey;
+      } else {
+        modelHeaders["Authorization"] = `Bearer ${byokKey}`;
+      }
       if (provider === "openrouter") {
         modelHeaders["HTTP-Referer"] = "https://leanzero.atlascrafted.com";
         modelHeaders["X-OpenRouter-Title"] = "CogniRunner";
@@ -3100,10 +3105,13 @@ const callAIChat = async (opts) => {
     if (tool_choice) requestBody.tool_choice = tool_choice;
   }
 
-  const headers = {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${apiKey}`,
-  };
+  const headers = { "Content-Type": "application/json" };
+  // Provider-specific auth headers
+  if (provider === "azure") {
+    headers["api-key"] = apiKey;
+  } else {
+    headers["Authorization"] = `Bearer ${apiKey}`;
+  }
   // OpenRouter requires attribution headers
   if (provider === "openrouter") {
     headers["HTTP-Referer"] = "https://leanzero.atlascrafted.com";
