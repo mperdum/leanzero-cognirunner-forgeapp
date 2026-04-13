@@ -70,7 +70,7 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
     setLoadingWorkflows(true);
     setError(null);
     try {
-      const result = await invoke("getProjectWorkflows", { projectKey: project.key });
+      const result = await invoke("getProjectWorkflows", { projectKey: project.key, projectId: project.id });
       if (result.success) setWorkflows(result.workflows || []);
       else setError(result.error);
     } catch (e) { setError("Failed to load workflows"); }

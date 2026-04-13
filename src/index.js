@@ -1046,54 +1046,96 @@ resolver.define("listProjects", async ({ context }) => {
 });
 
 /**
- * Get workflows for a specific project.
- * Uses the project statuses API to discover issue types, then fetches workflows.
- * Falls back to listing all active workflows if project-specific resolution fails.
+ * Get workflows for a specific project by resolving its workflow scheme.
+ * 1. GET /rest/api/3/workflowscheme/project?projectId={id} → scheme ID
+ * 2. GET /rest/api/3/workflowscheme/{schemeId} → defaultWorkflow + issueTypeMappings
+ * 3. Search those specific workflow names
  */
 resolver.define("getProjectWorkflows", async ({ payload, context }) => {
   if (!(await requireRole(context.accountId, "editor"))) {
     return { success: false, error: "Editor access required" };
   }
-  const { projectKey } = payload;
-  if (!projectKey) return { success: false, error: "Project key required" };
+  const { projectKey, projectId } = payload;
+  if (!projectKey && !projectId) return { success: false, error: "Project key or ID required" };
 
   try {
-    // Approach: Search all workflows and return active ones.
-    // Most Jira Cloud instances have <20 workflows, so this is practical.
-    const allWorkflows = [];
-    let startAt = 0;
-    const maxPages = 3; // cap at 150 workflows
-
-    for (let page = 0; page < maxPages; page++) {
-      const resp = await api.asApp().requestJira(
-        route`/rest/api/3/workflows/search?startAt=${startAt}&maxResults=50&isActive=true&expand=values.transitions`,
+    // Step 1: Resolve project ID if only key provided
+    let resolvedProjectId = projectId;
+    if (!resolvedProjectId && projectKey) {
+      const projResp = await api.asApp().requestJira(
+        route`/rest/api/3/project/${projectKey}`,
         { headers: { Accept: "application/json" } },
       );
-      if (!resp.ok) {
-        const errBody = await resp.text().catch(() => "");
-        console.error("Workflow search failed:", resp.status, errBody);
-        return { success: false, error: `Failed to fetch workflows: ${resp.status}` };
-      }
-      const data = await resp.json();
-      const values = data.values || [];
-      for (const wf of values) {
-        allWorkflows.push({
-          id: wf.id,
-          name: wf.name,
-          transitionCount: (wf.transitions || []).length,
-          scope: wf.scope?.type || "GLOBAL",
-          projectKey: wf.scope?.project?.projectId || null,
-        });
-      }
-      if (values.length < 50) break;
-      startAt += 50;
+      if (!projResp.ok) return { success: false, error: `Project "${projectKey}" not found` };
+      const projData = await projResp.json();
+      resolvedProjectId = projData.id;
     }
 
-    // For team-managed projects, filter to project-scoped workflows + global ones
-    // For company-managed, show all global workflows
-    const workflows = allWorkflows.filter((wf) =>
-      wf.scope === "GLOBAL" || wf.projectKey === projectKey
+    // Step 2: Get workflow scheme for this project
+    const schemeResp = await api.asApp().requestJira(
+      route`/rest/api/3/workflowscheme/project?projectId=${resolvedProjectId}`,
+      { headers: { Accept: "application/json" } },
     );
+    if (!schemeResp.ok) {
+      console.error("Workflow scheme lookup failed:", schemeResp.status);
+      return { success: false, error: `Failed to get workflow scheme: ${schemeResp.status}` };
+    }
+    const schemeData = await schemeResp.json();
+    const associations = schemeData.values || [];
+    if (associations.length === 0) {
+      return { success: false, error: "No workflow scheme found for this project" };
+    }
+
+    // Step 3: Get the full scheme to find workflow names
+    const schemeId = associations[0].workflowScheme?.id;
+    if (!schemeId) {
+      return { success: false, error: "Could not determine workflow scheme ID" };
+    }
+
+    const schemeDetailResp = await api.asApp().requestJira(
+      route`/rest/api/3/workflowscheme/${schemeId}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!schemeDetailResp.ok) {
+      return { success: false, error: `Failed to get scheme details: ${schemeDetailResp.status}` };
+    }
+    const schemeDetail = await schemeDetailResp.json();
+
+    // Collect unique workflow names from default + issue type mappings
+    const workflowNames = new Set();
+    if (schemeDetail.defaultWorkflow) workflowNames.add(schemeDetail.defaultWorkflow);
+    const mappings = schemeDetail.issueTypeMappings || {};
+    for (const wfName of Object.values(mappings)) {
+      if (wfName) workflowNames.add(wfName);
+    }
+
+    if (workflowNames.size === 0) {
+      return { success: true, workflows: [] };
+    }
+
+    // Step 4: Fetch workflow details for each name
+    const workflows = [];
+    for (const name of workflowNames) {
+      try {
+        const wfResp = await api.asApp().requestJira(
+          route`/rest/api/3/workflows/search?queryString=${name}&expand=values.transitions`,
+          { headers: { Accept: "application/json" } },
+        );
+        if (wfResp.ok) {
+          const wfData = await wfResp.json();
+          const match = (wfData.values || []).find((w) => w.name === name);
+          if (match) {
+            workflows.push({
+              id: match.id,
+              name: match.name,
+              transitionCount: (match.transitions || []).length,
+            });
+          }
+        }
+      } catch (e) {
+        console.error(`Failed to fetch workflow "${name}":`, e);
+      }
+    }
 
     return { success: true, workflows };
   } catch (error) {
