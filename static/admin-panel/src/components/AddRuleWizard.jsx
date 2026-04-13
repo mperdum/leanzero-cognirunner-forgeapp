@@ -227,17 +227,25 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
               loadingProjects ? (
                 <div className="sk sk-block" style={{ height: 36 }} />
               ) : (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "6px" }}>
                   {projects.map((p) => (
                     <button
                       key={p.id}
-                      className="btn-small"
-                      style={{ display: "flex", alignItems: "center", gap: "6px" }}
                       onClick={() => handleProjectSelect(p)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: "10px",
+                        padding: "10px 14px", border: "1px solid var(--border-color)",
+                        borderRadius: "8px", background: "var(--input-bg)", color: "var(--text-color)",
+                        cursor: "pointer", transition: "all 0.15s ease", fontSize: "13px", textAlign: "left",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary-color)"; e.currentTarget.style.background = "var(--hover-bg)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border-color)"; e.currentTarget.style.background = "var(--input-bg)"; }}
                     >
-                      {p.avatarUrl && <img src={p.avatarUrl} alt="" style={{ width: 16, height: 16, borderRadius: 3 }} />}
-                      <span>{p.name}</span>
-                      <code style={{ fontSize: "10px", opacity: 0.6 }}>{p.key}</code>
+                      {p.avatarUrl && <img src={p.avatarUrl} alt="" style={{ width: 20, height: 20, borderRadius: 4 }} />}
+                      <div style={{ display: "flex", flexDirection: "column" }}>
+                        <span style={{ fontWeight: 600, lineHeight: 1.2 }}>{p.name}</span>
+                        <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{p.key}</span>
+                      </div>
                     </button>
                   ))}
                   {projects.length === 0 && <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>No projects found</span>}
@@ -263,16 +271,27 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
               loadingWorkflows ? (
                 <div className="sk sk-block" style={{ height: 36 }} />
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                   {workflows.map((w) => (
                     <button
                       key={w.id}
-                      className="btn-small"
-                      style={{ textAlign: "left", justifyContent: "flex-start" }}
                       onClick={() => handleWorkflowSelect(w)}
+                      style={{
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        width: "100%", padding: "10px 14px", border: "1px solid var(--border-color)",
+                        borderRadius: "8px", background: "var(--input-bg)", color: "var(--text-color)",
+                        cursor: "pointer", transition: "all 0.15s ease", fontSize: "13px",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary-color)"; e.currentTarget.style.background = "var(--hover-bg)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border-color)"; e.currentTarget.style.background = "var(--input-bg)"; }}
                     >
-                      {w.name}
-                      <span style={{ fontSize: "10px", opacity: 0.5, marginLeft: 8 }}>{w.transitionCount} transitions</span>
+                      <span style={{ fontWeight: 600 }}>{w.name}</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{w.transitionCount} transitions</span>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" style={{ opacity: 0.5 }}>
+                          <path d="M9 18l6-6-6-6" />
+                        </svg>
+                      </div>
                     </button>
                   ))}
                   {workflows.length === 0 && <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>No workflows found for this project</span>}
@@ -297,23 +316,52 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
               loadingTransitions ? (
                 <div className="sk sk-block" style={{ height: 36 }} />
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                   {transitions.map((t) => (
                     <button
                       key={t.id}
-                      className="btn-small"
-                      style={{ textAlign: "left", justifyContent: "flex-start", gap: "8px" }}
                       onClick={() => handleTransitionSelect(t)}
+                      style={{
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        width: "100%", padding: "10px 14px", border: "1px solid var(--border-color)",
+                        borderRadius: "8px", background: "var(--input-bg)", color: "var(--text-color)",
+                        cursor: "pointer", transition: "all 0.15s ease", fontSize: "13px",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary-color)"; e.currentTarget.style.background = "var(--hover-bg)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border-color)"; e.currentTarget.style.background = "var(--input-bg)"; }}
                     >
-                      <span>{t.name}</span>
-                      <span style={{ fontSize: "10px", opacity: 0.5 }}>
-                        {t.fromName || "Any"} &rarr; {t.toName || "?"}
-                      </span>
-                      {(t.hasCogniValidator || t.hasCogniCondition || t.hasCogniPostFunction) && (
-                        <span style={{ fontSize: "9px", padding: "1px 4px", borderRadius: 3, background: "rgba(37,99,235,0.1)", color: "var(--primary-color)" }}>
-                          CogniRunner
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <span style={{ fontWeight: 600 }}>{t.name}</span>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "var(--text-muted)" }}>
+                          <span style={{
+                            padding: "2px 6px", borderRadius: "4px", fontSize: "10px", fontWeight: 500,
+                            background: t.type === "initial" ? "rgba(22,163,106,0.1)" : "rgba(100,116,139,0.1)",
+                            color: t.type === "initial" ? "var(--success-color)" : "var(--text-secondary)",
+                          }}>
+                            {t.fromName || "Any"}
+                          </span>
+                          <span style={{ color: "var(--text-muted)" }}>&rarr;</span>
+                          <span style={{
+                            padding: "2px 6px", borderRadius: "4px", fontSize: "10px", fontWeight: 500,
+                            background: "rgba(37,99,235,0.1)", color: "var(--primary-color)",
+                          }}>
+                            {t.toName || "?"}
+                          </span>
                         </span>
-                      )}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        {(t.hasCogniValidator || t.hasCogniCondition || t.hasCogniPostFunction) && (
+                          <span style={{
+                            fontSize: "9px", padding: "2px 6px", borderRadius: "4px", fontWeight: 600,
+                            background: "rgba(37,99,235,0.12)", color: "var(--primary-color)", letterSpacing: "0.3px",
+                          }}>
+                            COGNIRUNNER
+                          </span>
+                        )}
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" style={{ opacity: 0.5 }}>
+                          <path d="M9 18l6-6-6-6" />
+                        </svg>
+                      </div>
                     </button>
                   ))}
                   {transitions.length === 0 && <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>No transitions found</span>}
@@ -337,17 +385,27 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
             </label>
             {step === 4 ? (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-                {RULE_TYPE_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    className="btn-small"
-                    style={{ textAlign: "left", padding: "10px 12px", flexDirection: "column", alignItems: "flex-start", gap: "2px" }}
-                    onClick={() => handleTypeSelect(opt.value)}
-                  >
-                    <span style={{ fontWeight: 600 }}>{opt.label}</span>
-                    <span style={{ fontSize: "10px", opacity: 0.6, fontWeight: 400 }}>{opt.desc}</span>
-                  </button>
-                ))}
+                {RULE_TYPE_OPTIONS.map((opt) => {
+                  const badgeClass = opt.value.startsWith("postfunction") ? "type-postfunction"
+                    : opt.value === "condition" ? "type-condition" : "type-validator";
+                  return (
+                    <button
+                      key={opt.value}
+                      onClick={() => handleTypeSelect(opt.value)}
+                      style={{
+                        display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "6px",
+                        padding: "14px 16px", border: "1px solid var(--border-color)",
+                        borderRadius: "8px", background: "var(--input-bg)", color: "var(--text-color)",
+                        cursor: "pointer", transition: "all 0.15s ease", textAlign: "left",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary-color)"; e.currentTarget.style.background = "var(--hover-bg)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border-color)"; e.currentTarget.style.background = "var(--input-bg)"; }}
+                    >
+                      <span className={`type-badge ${badgeClass}`} style={{ fontSize: "9px" }}>{opt.label}</span>
+                      <span style={{ fontSize: "12px", color: "var(--text-secondary)", lineHeight: 1.3 }}>{opt.desc}</span>
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
