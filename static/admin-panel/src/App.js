@@ -1142,6 +1142,183 @@ const injectStyles = () => {
     .wiz-add-step-btn:hover { border-color: var(--primary-color); color: var(--primary-color); background: rgba(37,99,235,0.04); }
     .wiz-add-step-btn:disabled { opacity: 0.4; cursor: default; }
     .wiz-divider { border-top: 1px solid var(--border-color); padding-top: 12px; margin-bottom: 14px; }
+
+    /* === Global Animations & Transitions === */
+
+    /* Section entrance — staggered fade-in + slide up */
+    .section { animation: sectionFadeIn 0.3s ease both; }
+    @keyframes sectionFadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Card hover — subtle lift + deeper shadow */
+    .card {
+      transition: box-shadow 0.25s ease, transform 0.25s ease, border-color 0.25s ease;
+    }
+    .card:hover {
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    }
+    html[data-color-mode="dark"] .card:hover {
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Alert slide-in */
+    .alert { animation: alertSlideIn 0.25s ease both; }
+    @keyframes alertSlideIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Button press feedback */
+    .btn-small {
+      transition: all 0.15s ease;
+    }
+    .btn-small:active:not(:disabled) {
+      transform: scale(0.96);
+    }
+
+    /* Table row hover */
+    .table tbody tr {
+      transition: background-color 0.15s ease;
+    }
+    .table tbody tr:hover {
+      background-color: var(--hover-bg);
+    }
+
+    /* Tab content fade */
+    .docs-tab, .perm-tab {
+      animation: tabContentFade 0.2s ease both;
+    }
+    @keyframes tabContentFade {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    /* Tab bar indicator */
+    .tab-bar button {
+      transition: color 0.2s ease, border-color 0.2s ease;
+    }
+
+    /* Wizard card entrance */
+    .wizard {
+      animation: wizardSlideIn 0.3s ease both;
+    }
+    @keyframes wizardSlideIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Wizard step card entrance */
+    .wiz-step-card {
+      animation: stepCardFadeIn 0.2s ease both;
+    }
+    @keyframes stepCardFadeIn {
+      from { opacity: 0; transform: scale(0.98); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    /* Wizard pick buttons */
+    .wiz-pick-btn {
+      transition: all 0.2s ease;
+    }
+    .wiz-pick-btn:active {
+      transform: scale(0.98);
+    }
+
+    /* Wizard type cards */
+    .wiz-type-card {
+      transition: all 0.2s ease;
+    }
+    .wiz-type-card:active {
+      transform: scale(0.97);
+    }
+
+    /* Wizard success entrance */
+    .wiz-success {
+      animation: successPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    }
+    @keyframes successPop {
+      from { opacity: 0; transform: scale(0.9); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    .wiz-success-icon {
+      animation: successCheckmark 0.5s ease 0.2s both;
+    }
+    @keyframes successCheckmark {
+      0% { opacity: 0; transform: scale(0.5) rotate(-20deg); }
+      60% { transform: scale(1.1) rotate(5deg); }
+      100% { opacity: 1; transform: scale(1) rotate(0); }
+    }
+
+    /* Test result entrance */
+    .wiz-test-result {
+      animation: testResultSlide 0.2s ease both;
+    }
+    @keyframes testResultSlide {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Log entry entrance — subtle stagger effect */
+    .log-entry {
+      animation: logEntryFade 0.2s ease both;
+      transition: background-color 0.15s ease;
+    }
+    .log-entry:hover {
+      background-color: var(--hover-bg);
+    }
+    @keyframes logEntryFade {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    /* Rule status banner animation */
+    .rule-status-banner, .status-disabled-banner, .status-active-banner {
+      animation: bannerSlideIn 0.3s ease both;
+    }
+    @keyframes bannerSlideIn {
+      from { opacity: 0; transform: translateX(-8px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    /* Permission card entrance */
+    .perm-admin-card {
+      transition: background-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .perm-admin-card:hover {
+      background-color: var(--hover-bg);
+    }
+
+    /* Search results dropdown */
+    .perm-search-results {
+      animation: dropdownSlideIn 0.15s ease both;
+    }
+
+    /* Badge pulse for important states */
+    .type-badge {
+      transition: all 0.15s ease;
+    }
+
+    /* Focus ring animation for inputs/textareas */
+    .wiz-textarea, .wiz-input, .perm-search-input {
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    /* Smooth icon transitions */
+    svg {
+      transition: color 0.15s ease;
+    }
+
+    /* Empty state fade */
+    .empty-state {
+      animation: sectionFadeIn 0.3s ease both;
+    }
+
+    /* Skeleton breathing */
+    .sk {
+      animation: skShimmer 1.5s ease-in-out infinite;
+    }
   `;
   document.head.appendChild(style);
 };

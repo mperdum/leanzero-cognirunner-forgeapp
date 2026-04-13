@@ -862,10 +862,7 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
                     step: i + 1, variable: f.variableName, name: f.name || `Step ${i + 1}`, description: f.prompt || "",
                   }));
                   return (
-                    <div key={fn.id} style={{
-                      marginBottom: "12px", border: "1px solid var(--border-color)", borderRadius: "8px",
-                      background: "var(--card-bg)", overflow: "visible",
-                    }}>
+                    <div key={fn.id} className="wiz-step-card">
                       {/* Step header */}
                       <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px", borderBottom: "1px solid var(--border-color)" }}>
                         <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--primary-color)", background: "rgba(37,99,235,0.1)", padding: "2px 8px", borderRadius: "4px" }}>#{idx + 1}</span>
