@@ -1032,12 +1032,28 @@ resolver.define("listProjects", async ({ context }) => {
     );
     if (!response.ok) return { success: false, error: `Failed to fetch projects: ${response.status}` };
     const data = await response.json();
-    const projects = (data.values || []).map((p) => ({
-      id: p.id,
-      key: p.key,
-      name: p.name,
-      projectTypeKey: p.projectTypeKey,
-      avatarUrl: p.avatarUrls?.["24x24"],
+    // Fetch avatar images as base64 since Forge Custom UI can't load external URLs
+    const projects = await Promise.all((data.values || []).map(async (p) => {
+      let avatarDataUrl = null;
+      const avatarUrl = p.avatarUrls?.["32x32"] || p.avatarUrls?.["24x24"];
+      if (avatarUrl) {
+        try {
+          const avatarResp = await api.asApp().requestJira(avatarUrl.replace(/^https?:\/\/[^/]+/, ""));
+          if (avatarResp.ok) {
+            const buf = await avatarResp.arrayBuffer();
+            const base64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+            const contentType = avatarResp.headers.get("content-type") || "image/png";
+            avatarDataUrl = `data:${contentType};base64,${base64}`;
+          }
+        } catch (e) { /* skip avatar */ }
+      }
+      return {
+        id: p.id,
+        key: p.key,
+        name: p.name,
+        projectTypeKey: p.projectTypeKey,
+        avatarUrl: avatarDataUrl,
+      };
     }));
     return { success: true, projects };
   } catch (error) {
