@@ -3423,46 +3423,47 @@ const executeSemanticPostFunction = async (issueKey, config) => {
   const trace = []; // Execution trace for detailed logging
   const sourceFieldId = fieldId || "description";
 
-  // Step 1: Fetch source field
+  // Fast path: if condition is "always run" / "run every time", skip AI evaluation
+  const alwaysRun = /^(run\s*(every\s*time|always)|always\s*run|every\s*time|true|yes)\s*[.!]?\s*$/i.test((conditionPrompt || "").trim());
+
+  // Steps 1+2 in parallel: fetch field value + context docs + credentials simultaneously
   trace.push(`Reading field "${sourceFieldId}" from ${issueKey}`);
-  const fieldValue = await getFieldValue(issueKey, sourceFieldId, null);
+  const [fieldValue, contextDocsText, apiKey, model] = await Promise.all([
+    getFieldValue(issueKey, sourceFieldId, null),
+    fetchContextDocs(config.selectedDocIds),
+    getOpenAIKey(),
+    getOpenAIModel(),
+  ]);
   const fieldLen = fieldValue ? fieldValue.length : 0;
   trace.push(fieldLen > 0
     ? `Field content: ${fieldLen} chars — "${fieldValue.substring(0, 80)}${fieldLen > 80 ? "..." : ""}"`
     : `Field "${sourceFieldId}" is empty`
   );
-
-  // Step 2: Fetch context documents
-  const contextDocsText = await fetchContextDocs(config.selectedDocIds);
   const docCount = config.selectedDocIds?.length || 0;
   if (docCount > 0) trace.push(`Loaded ${docCount} reference document(s) (${contextDocsText.length} chars)`);
 
-  // Step 3: Build prompts
-  const systemPrompt = `You are a workflow automation assistant. You will be given a field value and two instructions:
-1. CONDITION: Evaluate whether this condition is met based on the field value.
-2. ACTION: If the condition is met, generate the new value for the target field.
-
-You MUST respond with ONLY a valid JSON object (no markdown, no explanation):
-{
-  "decision": "UPDATE" or "SKIP",
-  "value": "the new field value (only if UPDATE)",
-  "reason": "brief explanation of your decision"
-}`
-  + (contextDocsText ? `\n\n## Reference Documentation\nUse the following documentation to inform your decisions:\n\n${contextDocsText.substring(0, 30000)}` : "");
-
-  const userContent = `Field value:\n${fieldValue || "(empty)"}\n\nCONDITION: ${conditionPrompt}\n\nACTION: ${actionPrompt || "Generate an appropriate value for the target field."}`;
+  // Step 3: Build prompts — shorter for always-run conditions
+  let systemPrompt, userContent;
+  if (alwaysRun) {
+    trace.push("Condition is always-run — skipping AI condition check");
+    systemPrompt = `Generate a new value for a Jira field. Respond with ONLY valid JSON: {"decision":"UPDATE","value":"the new value","reason":"brief reason"}`;
+    userContent = `Current field value:\n${fieldValue || "(empty)"}\n\nACTION: ${actionPrompt || "Generate an appropriate value."}`;
+  } else {
+    systemPrompt = `Evaluate a condition and optionally generate a new field value. Respond with ONLY valid JSON: {"decision":"UPDATE" or "SKIP","value":"new value (only if UPDATE)","reason":"brief reason"}`;
+    userContent = `Field value:\n${fieldValue || "(empty)"}\n\nCONDITION: ${conditionPrompt}\n\nACTION: ${actionPrompt || "Generate an appropriate value."}`;
+  }
+  if (contextDocsText) {
+    systemPrompt += `\n\nReference docs:\n${contextDocsText.substring(0, 30000)}`;
+  }
 
   try {
-    // Step 4: Get API credentials
-    const apiKey = await getOpenAIKey();
+    // Credentials already fetched in parallel above
     if (!apiKey) {
       trace.push("ERROR: No OpenAI API key configured");
       return { success: false, decision: "SKIP", reason: "No OpenAI API key configured", trace,
         recommendation: "Go to CogniRunner Settings and configure an OpenAI API key, or ask your admin to set the OPENAI_API_KEY environment variable via forge variables." };
     }
-    const model = await getOpenAIModel();
-    const byok = await isByokActive();
-    trace.push(`Using model: ${model} (${byok ? "BYOK key" : "factory key"})`);
+    trace.push(`Using model: ${model}`);
 
     // Step 5: Call OpenAI
     trace.push("Evaluating condition with AI...");
