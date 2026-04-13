@@ -105,7 +105,8 @@ export default function OpenAIConfig({ invoke }) {
         setSavedProvider(provider);
         setSuccess(`Switched to ${PROVIDER_OPTIONS.find((p) => p.value === provider)?.label || provider}`);
         setKeyInput("");
-        await loadStatus(); // reloads key/model state for the new provider
+        await new Promise((r) => setTimeout(r, 500));
+        await loadStatus();
       } else {
         setError(result.error || "Failed to save provider");
       }
@@ -144,6 +145,8 @@ export default function OpenAIConfig({ invoke }) {
       if (result.success) {
         setKeyInput("");
         setSuccess("API key saved successfully");
+        // Brief delay to let KVS propagate, then reload status + models
+        await new Promise((r) => setTimeout(r, 500));
         await loadStatus();
       } else {
         setError(result.error || "Failed to save key");
