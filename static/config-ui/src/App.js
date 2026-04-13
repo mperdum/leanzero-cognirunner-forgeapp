@@ -2206,36 +2206,24 @@ function App() {
         }
       }
 
-      // Fetch fields — use screen-based filtering via workflowId → project resolution
+      // Fetch ALL fields — validators and post-functions can target any field
       try {
-        const ext = currentContext?.extension || {};
-        const workflowId = ext.workflowId;
-        const transitionId = ext.transitionContext?.id;
-
-        console.log("[CogniRunner] Fetching fields: workflowId=" + workflowId + ", transitionId=" + transitionId);
-
-        const screenResult = await invoke("getScreenFields", {
-          workflowId,
-          transitionId,
-        });
-        console.log("[CogniRunner] getScreenFields result: source=" + screenResult.source + ", fields=" + (screenResult.fields?.length || 0) + ", isCreate=" + screenResult.isCreateTransition);
-
-        if (screenResult.success) {
-          let loadedFields = screenResult.fields;
-          setFieldsSource(screenResult.source);
-          setIsCreateTransition(screenResult.isCreateTransition || false);
+        const allResult = await invoke("getFields");
+        if (allResult.success && allResult.fields?.length > 0) {
+          let loadedFields = allResult.fields;
 
           // If editing an existing rule, ensure the configured field is in the list
           if (existingFieldId && !loadedFields.find((f) => f.id === existingFieldId)) {
             loadedFields = [
               ...loadedFields,
-              { id: existingFieldId, name: `${existingFieldId} (not on current screen)`, type: "Unknown", custom: false },
+              { id: existingFieldId, name: `${existingFieldId}`, type: "Unknown", custom: false },
             ];
           }
 
           setFields(loadedFields);
+          setFieldsSource("all");
         } else {
-          setFieldsError(screenResult.error || "Failed to load screen fields");
+          setFieldsError("Failed to load fields");
         }
       } catch (e) {
         console.error("[CogniRunner] Field fetch error:", e);
