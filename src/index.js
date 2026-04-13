@@ -1184,10 +1184,14 @@ resolver.define("getWorkflowTransitions", async ({ payload, context }) => {
 
   try {
     const response = await api.asApp().requestJira(
-      route`/rest/api/3/workflows/search?queryString=${workflowName}&expand=values.transitions,values.statuses`,
+      route`/rest/api/3/workflows/search?queryString=${workflowName}&expand=values.transitions`,
       { headers: { Accept: "application/json" } },
     );
-    if (!response.ok) return { success: false, error: `Failed to fetch workflow: ${response.status}` };
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => "");
+      console.error("Workflow search failed:", response.status, errBody);
+      return { success: false, error: `Failed to fetch workflow: ${response.status}` };
+    }
 
     const data = await response.json();
     const workflow = (data.values || []).find((w) => w.name === workflowName);
@@ -1360,7 +1364,7 @@ resolver.define("injectWorkflowRule", async ({ payload, context }) => {
 
     // Step 2: GET the full workflow definition
     const getResp = await api.asApp().requestJira(
-      route`/rest/api/3/workflows/search?queryString=${workflowName}&expand=values.transitions,values.statuses`,
+      route`/rest/api/3/workflows/search?queryString=${workflowName}&expand=values.transitions`,
       { headers: { Accept: "application/json" } },
     );
     if (!getResp.ok) {
