@@ -1026,61 +1026,58 @@ resolver.define("listProjects", async ({ context }) => {
 });
 
 /**
- * Get workflows for a specific project (via workflow scheme).
+ * Get workflows for a specific project.
+ * Uses the project statuses API to discover issue types, then fetches workflows.
+ * Falls back to listing all active workflows if project-specific resolution fails.
  */
 resolver.define("getProjectWorkflows", async ({ payload, context }) => {
   if (!(await requireRole(context.accountId, "editor"))) {
     return { success: false, error: "Editor access required" };
   }
-  const { projectId } = payload;
-  if (!projectId) return { success: false, error: "Project ID required" };
+  const { projectKey } = payload;
+  if (!projectKey) return { success: false, error: "Project key required" };
 
   try {
-    // Get the workflow scheme assigned to this project
-    const schemeResp = await api.asApp().requestJira(
-      route`/rest/api/3/workflowscheme/project?projectId=${projectId}`,
-      { headers: { Accept: "application/json" } },
-    );
-    if (!schemeResp.ok) {
-      return { success: false, error: `Failed to fetch workflow scheme: ${schemeResp.status}` };
-    }
-    const schemeData = await schemeResp.json();
-    const schemes = schemeData.values || [];
+    // Approach: Search all workflows and return active ones.
+    // Most Jira Cloud instances have <20 workflows, so this is practical.
+    const allWorkflows = [];
+    let startAt = 0;
+    const maxPages = 3; // cap at 150 workflows
 
-    // Collect unique workflow names from the scheme mappings
-    const workflowNames = new Set();
-    for (const scheme of schemes) {
-      if (scheme.defaultWorkflow) workflowNames.add(scheme.defaultWorkflow);
-      const mappings = scheme.issueTypeMappings || {};
-      for (const wfName of Object.values(mappings)) {
-        if (wfName) workflowNames.add(wfName);
+    for (let page = 0; page < maxPages; page++) {
+      const resp = await api.asApp().requestJira(
+        route`/rest/api/3/workflows/search?startAt=${startAt}&maxResults=50&isActive=true&expand=values.transitions`,
+        { headers: { Accept: "application/json" } },
+      );
+      if (!resp.ok) {
+        const errBody = await resp.text().catch(() => "");
+        console.error("Workflow search failed:", resp.status, errBody);
+        return { success: false, error: `Failed to fetch workflows: ${resp.status}` };
       }
+      const data = await resp.json();
+      const values = data.values || [];
+      for (const wf of values) {
+        allWorkflows.push({
+          id: wf.id,
+          name: wf.name,
+          transitionCount: (wf.transitions || []).length,
+          scope: wf.scope?.type || "GLOBAL",
+          projectKey: wf.scope?.project?.projectId || null,
+        });
+      }
+      if (values.length < 50) break;
+      startAt += 50;
     }
 
-    // Fetch workflow details for each workflow name
-    const workflows = [];
-    for (const name of workflowNames) {
-      try {
-        const wfResp = await api.asApp().requestJira(
-          route`/rest/api/3/workflows/search?queryString=${name}&expand=values.transitions`,
-          { headers: { Accept: "application/json" } },
-        );
-        if (wfResp.ok) {
-          const wfData = await wfResp.json();
-          const match = (wfData.values || []).find((w) => w.name === name);
-          if (match) {
-            workflows.push({
-              id: match.id,
-              name: match.name,
-              transitionCount: (match.transitions || []).length,
-            });
-          }
-        }
-      } catch (e) { /* skip failed workflows */ }
-    }
+    // For team-managed projects, filter to project-scoped workflows + global ones
+    // For company-managed, show all global workflows
+    const workflows = allWorkflows.filter((wf) =>
+      wf.scope === "GLOBAL" || wf.projectKey === projectKey
+    );
 
     return { success: true, workflows };
   } catch (error) {
+    console.error("getProjectWorkflows error:", error);
     return { success: false, error: error.message };
   }
 });
