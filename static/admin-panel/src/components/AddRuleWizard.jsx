@@ -45,8 +45,12 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
   const [conditionPrompt, setConditionPrompt] = useState("");
   const [actionPrompt, setActionPrompt] = useState("");
   const [actionFieldId, setActionFieldId] = useState("");
+  const [enableTools, setEnableTools] = useState(null); // null = auto, true = on, false = off
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [testIssue, setTestIssue] = useState("");
+  const [testRunning, setTestRunning] = useState(false);
+  const [testResult, setTestResult] = useState(null);
 
   // Load projects on mount
   useEffect(() => {
@@ -134,7 +138,7 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
       let result;
       const configPayload = isPostFunction
         ? { fieldId: fieldId || "description", prompt: prompt || conditionPrompt, conditionPrompt, actionPrompt, actionFieldId }
-        : { fieldId: fieldId || "description", prompt };
+        : { fieldId: fieldId || "description", prompt, enableTools };
 
       if (isPostFunction) {
         result = await invoke("registerPostFunction", {
@@ -443,9 +447,29 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
             {/* Validator / Condition config */}
             {(ruleType === "validator" || ruleType === "condition") && (
               <>
-                <div style={{ marginBottom: "12px" }}>
+                {/* Info banner */}
+                <div style={{
+                  display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", marginBottom: "14px",
+                  borderRadius: "8px", border: "1px solid var(--border-color)", background: "var(--input-bg)",
+                }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={ruleType === "condition" ? "var(--success-color)" : "var(--primary-color)"} strokeWidth="2">
+                    {ruleType === "condition"
+                      ? <><circle cx="12" cy="12" r="10" /><path d="M8 12l2 2 4-4" /></>
+                      : <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                    }
+                  </svg>
+                  <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+                    {ruleType === "condition"
+                      ? "Hides or shows the transition button based on AI evaluation. Does not block — just controls visibility."
+                      : "Blocks the transition if the AI determines the field content does not meet your criteria."
+                    }
+                  </div>
+                </div>
+
+                {/* Field selector */}
+                <div style={{ marginBottom: "14px" }}>
                   <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px" }}>
-                    Field to Validate
+                    Field to Validate <span style={{ color: "var(--error-color)" }}>*</span>
                   </label>
                   {loadingFields ? (
                     <div className="sk sk-block" style={{ height: 36 }} />
@@ -459,22 +483,123 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
                       options={fieldOptions}
                     />
                   )}
+                  <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
+                    Select the field whose value will be validated by AI on each transition.
+                  </p>
                 </div>
-                <div style={{ marginBottom: "12px" }}>
+
+                {/* Prompt */}
+                <div style={{ marginBottom: "14px" }}>
                   <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px" }}>
-                    Validation Prompt
+                    Validation Prompt <span style={{ color: "var(--error-color)" }}>*</span>
                   </label>
                   <textarea
-                    className="input"
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
                     placeholder={ruleType === "condition"
                       ? "When should this transition be visible? E.g. 'Show only when the description contains acceptance criteria'"
-                      : "What should be validated? E.g. 'Description must contain steps to reproduce, expected and actual behavior'"
+                      : "Describe what makes the field value valid. E.g. 'The description must include steps to reproduce, expected behavior, and actual behavior'"
                     }
-                    rows={4}
-                    style={{ width: "100%", fontSize: "13px", padding: "8px 12px", border: "1px solid var(--border-color)", borderRadius: "4px", background: "var(--input-bg)", color: "var(--text-color)", resize: "vertical" }}
+                    rows={5}
+                    style={{ width: "100%", fontSize: "13px", padding: "8px 12px", border: "1px solid var(--border-color)", borderRadius: "8px", background: "var(--input-bg)", color: "var(--text-color)", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
                   />
+                  <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
+                    Describe the validation criteria in natural language. The AI will evaluate if the field content meets these requirements.
+                  </p>
+                </div>
+
+                {/* JQL / Agentic toggle */}
+                <div style={{ marginBottom: "14px" }}>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px" }}>
+                    Jira Search (JQL)
+                  </label>
+                  <div style={{ maxWidth: "280px" }}>
+                    <CustomSelect
+                      value={enableTools === null ? "auto" : enableTools ? "on" : "off"}
+                      onChange={(v) => setEnableTools(v === "auto" ? null : v === "on")}
+                      options={[
+                        { value: "auto", label: "Auto-detect from prompt" },
+                        { value: "on", label: "Always enabled" },
+                        { value: "off", label: "Always disabled" },
+                      ]}
+                    />
+                  </div>
+                  <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
+                    When enabled, the AI can search Jira for similar or related issues during validation (e.g. duplicate detection). Auto-detect activates this when your prompt mentions duplicates, similarity, or existing issues.
+                  </p>
+                </div>
+
+                {/* Test Run */}
+                <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: "12px", marginBottom: "14px" }}>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px" }}>
+                    Test Validation
+                  </label>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <input
+                      type="text"
+                      value={testIssue}
+                      onChange={(e) => setTestIssue(e.target.value.toUpperCase())}
+                      placeholder="Issue key (e.g. WFH-36)"
+                      style={{ flex: 1, padding: "8px 12px", border: "1px solid var(--border-color)", borderRadius: "8px", background: "var(--input-bg)", color: "var(--text-color)", fontSize: "13px", fontFamily: "SFMono-Regular, Consolas, monospace" }}
+                    />
+                    <button
+                      className="btn-small btn-edit"
+                      disabled={testRunning || !testIssue.trim() || !fieldId || !prompt.trim()}
+                      onClick={async () => {
+                        setTestRunning(true);
+                        setTestResult(null);
+                        try {
+                          const result = await invoke("testValidation", {
+                            issueKey: testIssue.trim(),
+                            fieldId,
+                            prompt,
+                            enableTools,
+                          });
+                          setTestResult(result);
+                        } catch (e) {
+                          setTestResult({ success: false, error: e.message });
+                        }
+                        setTestRunning(false);
+                      }}
+                    >
+                      {testRunning ? "Running..." : "Run Test"}
+                    </button>
+                  </div>
+                  <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
+                    Dry run — no transition is blocked. Tests the validation against a real issue.
+                  </p>
+
+                  {testResult && (
+                    <div style={{
+                      marginTop: "8px", padding: "10px 12px", borderRadius: "8px",
+                      border: `1px solid ${testResult.success ? (testResult.isValid ? "var(--success-color)" : "var(--error-color)") : "var(--error-color)"}`,
+                      background: testResult.success ? (testResult.isValid ? "rgba(22,163,106,0.06)" : "rgba(220,38,38,0.06)") : "rgba(220,38,38,0.06)",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                        <span className={`type-badge ${testResult.success && testResult.isValid ? "type-condition" : "type-validator"}`} style={{ fontSize: "9px" }}>
+                          {testResult.success ? (testResult.isValid ? "PASS" : "FAIL") : "ERROR"}
+                        </span>
+                        {testResult.issueKey && <span style={{ fontSize: "12px", fontWeight: 600 }}>{testResult.issueKey}</span>}
+                        {testResult.executionTimeMs && <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{testResult.executionTimeMs}ms</span>}
+                        <button style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "16px" }} onClick={() => setTestResult(null)}>&times;</button>
+                      </div>
+                      {testResult.error && !testResult.success && (
+                        <div style={{ fontSize: "12px", color: "var(--error-color)", marginBottom: "4px" }}>{testResult.error}</div>
+                      )}
+                      {testResult.reason && (
+                        <div style={{ fontSize: "12px", color: "var(--text-color)" }}>
+                          <span style={{ fontWeight: 600, fontSize: "10px", color: "var(--text-muted)", textTransform: "uppercase" }}>AI Reasoning</span>
+                          <div style={{ marginTop: "2px" }}>{testResult.reason}</div>
+                        </div>
+                      )}
+                      {testResult.fieldValue && (
+                        <div style={{ marginTop: "6px" }}>
+                          <span style={{ fontWeight: 600, fontSize: "10px", color: "var(--text-muted)", textTransform: "uppercase" }}>Field Value</span>
+                          <pre style={{ margin: "2px 0 0 0", fontSize: "11px", padding: "6px 8px", background: "var(--code-bg)", borderRadius: "4px", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: "100px", overflow: "auto" }}>{testResult.fieldValue}</pre>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </>
             )}
