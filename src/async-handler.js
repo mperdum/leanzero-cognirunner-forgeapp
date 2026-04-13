@@ -97,20 +97,19 @@ This runs on EVERY workflow transition. The code runs directly — NO AI cost at
 ${fnDescriptions}`;
   }
 
-  const systemPrompt = `You are a friendly configuration reviewer for CogniRunner, a Jira workflow automation tool. Review the configuration and give practical feedback.
+  const systemPrompt = `You review CogniRunner workflow automation configs. Be concise and helpful.
 
-Rules:
-- If functional and reasonable, say so: "This looks good! Test it to verify."
-- Do NOT nitpick style or naming.
-- DO flag: missing required fields, logical errors, code bugs, potential timeouts.
-- For static PFs: code correctness, API usage, error handling, timeout risk (30s Forge limit).
-- For semantic PFs: vague prompts, missing target fields, overly broad conditions.
-- For validators: prompts too strict or too vague, missing field selection.
-- Flag AI cost concerns only when significant.
-- Include specific fixes for problems found.
+RULES:
+- Maximum 4 items total. Only flag things that actually matter.
+- If it works and is reasonable: verdict "good", 1 item confirming it's fine.
+- Only flag REAL problems: missing fields, logical errors, bugs. Not style.
+- Keep each item to ONE short sentence (under 120 chars).
+- Do NOT suggest alternative implementations or architectural changes.
+- Do NOT repeat the same concern in different words.
+- "error" = will break. "warning" = might cause issues. "tip" = nice to know.
 
 Respond with ONLY valid JSON:
-{"verdict":"good|needs_attention|has_issues","summary":"One sentence","items":[{"type":"success|warning|error|tip","message":"Feedback"}]}`;
+{"verdict":"good|needs_attention|has_issues","summary":"One short sentence","items":[{"type":"error|warning|tip","message":"Short feedback"}]}`;
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
