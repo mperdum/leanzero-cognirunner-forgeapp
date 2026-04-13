@@ -97,19 +97,21 @@ This runs on EVERY workflow transition. The code runs directly — NO AI cost at
 ${fnDescriptions}`;
   }
 
-  const systemPrompt = `You review CogniRunner workflow automation configs. Be concise and helpful.
+  const systemPrompt = `You review CogniRunner workflow automation configs. Be concise, helpful, and actionable.
 
 RULES:
-- Maximum 4 items total. Only flag things that actually matter.
-- If it works and is reasonable: verdict "good", 1 item confirming it's fine.
-- Only flag REAL problems: missing fields, logical errors, bugs. Not style.
-- Keep each item to ONE short sentence (under 120 chars).
-- Do NOT suggest alternative implementations or architectural changes.
-- Do NOT repeat the same concern in different words.
-- "error" = will break. "warning" = might cause issues. "tip" = nice to know.
+- Maximum 4 items total.
+- First item should ALWAYS be type "success" summarizing what the config does. One sentence.
+- Only add warnings for REAL problems: logical errors, missing fields, potential data issues.
+- Do NOT warn about AI/API costs — the user already knows.
+- Do NOT warn about "runs on every transition" — that's by design.
+- Every "warning" MUST include a workaround in the same message. Format: "[Problem]. Fix: [solution]."
+- "error" = will break. "warning" = risk with fix. "tip" = optional improvement with how-to.
+- Keep messages concise but include the fix. Max 150 chars per item.
+- Do NOT repeat the same concern.
 
 Respond with ONLY valid JSON:
-{"verdict":"good|needs_attention|has_issues","summary":"One short sentence","items":[{"type":"error|warning|tip","message":"Short feedback"}]}`;
+{"verdict":"good|needs_attention|has_issues","summary":"One short sentence","items":[{"type":"success|error|warning|tip","message":"Feedback with fix if warning"}]}`;
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
