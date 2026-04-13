@@ -139,6 +139,9 @@ export default function SemanticConfig({
             ]}
           />
         )}
+        <p className="hint">
+          The AI will update this field when the condition is met. All system and custom fields are available. Works best with text-based fields.
+        </p>
       </div>
 
       {/* Documentation Library */}

@@ -2603,27 +2603,9 @@ function App() {
               )}
             </div>
           )}
-          {fieldsSource === "screen" && (
-            <p className="hint" style={{ color: "var(--success-color)" }}>
-              Showing fields from the {isCreateTransition ? "create" : "edit/view"} screen for this project.
-            </p>
-          )}
-          {fieldsSource === "fallback" && (
-            <p className="hint">
-              Showing available fields{isCreateTransition ? " (filtered for issue creation)" : ""}.
-            </p>
-          )}
-          {fieldsSource === "all" && (
-            <p className="hint">
-              Showing all available fields.
-            </p>
-          )}
-          {!fieldsSource && (
-            <p className="hint">
-              Select the field whose value will be validated by AI during workflow
-              transitions.
-            </p>
-          )}
+          <p className="hint">
+            Select the field whose value will be validated by AI on each transition. All system and custom fields are available.
+          </p>
         </div>
 
         <div className="form-group">
