@@ -1147,6 +1147,178 @@ resolver.define("getWorkflowTransitions", async ({ payload, context }) => {
   }
 });
 
+// Module key mapping for workflow rule injection
+const RULE_KEY_MAP = {
+  validator: { ruleKey: "forge:expression-validator", moduleKey: "ai-text-field-validator" },
+  condition: { ruleKey: "forge:expression-condition", moduleKey: "ai-text-field-condition" },
+  "postfunction-semantic": { ruleKey: "forge:expression-post-function", moduleKey: "ai-semantic-post-function" },
+  "postfunction-static": { ruleKey: "forge:expression-post-function", moduleKey: "ai-static-post-function" },
+};
+
+/**
+ * Discover the environment ID from existing CogniRunner rules on any workflow.
+ * The envId is part of the extension ARI in rule parameters.key.
+ */
+const discoverEnvironmentId = async () => {
+  try {
+    // Search a few workflows to find any existing CogniRunner rule
+    const resp = await api.asApp().requestJira(
+      route`/rest/api/3/workflows/search?maxResults=20&isActive=true&expand=values.transitions`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    for (const wf of (data.values || [])) {
+      for (const t of (wf.transitions || [])) {
+        const allRules = [
+          ...(t.rules?.validators || []),
+          ...(t.rules?.conditions || []),
+          ...(t.rules?.postFunctions || []),
+        ];
+        for (const rule of allRules) {
+          const key = rule.parameters?.key;
+          if (key && key.includes(APP_ID)) {
+            // Extract envId: ari:cloud:ecosystem::extension/{appId}/{envId}/static/{moduleKey}
+            const match = key.match(new RegExp(`${APP_ID}/([^/]+)/static/`));
+            if (match) return match[1];
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error("discoverEnvironmentId error:", e);
+  }
+  return null;
+};
+
+/**
+ * Inject a CogniRunner rule into a workflow transition via REST API.
+ * This performs a full workflow update (GET + modify + POST).
+ */
+resolver.define("injectWorkflowRule", async ({ payload, context }) => {
+  if (!(await requireRole(context.accountId, "editor"))) {
+    return { success: false, error: "Editor access required" };
+  }
+  const { workflowName, transitionId, ruleType, config } = payload;
+  if (!workflowName || !transitionId || !ruleType) {
+    return { success: false, error: "Missing required fields: workflowName, transitionId, ruleType" };
+  }
+  const ruleInfo = RULE_KEY_MAP[ruleType];
+  if (!ruleInfo) return { success: false, error: `Unknown rule type: ${ruleType}` };
+
+  try {
+    // Step 1: Discover the environment ID
+    const envId = await discoverEnvironmentId();
+    if (!envId) {
+      return { success: false, error: "Cannot determine the app environment ID. Add at least one CogniRunner rule manually via the Jira workflow editor first, then the wizard can inject rules automatically." };
+    }
+
+    // Step 2: GET the full workflow definition
+    const getResp = await api.asApp().requestJira(
+      route`/rest/api/3/workflows/search?queryString=${workflowName}&expand=values.transitions,values.statuses`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!getResp.ok) {
+      return { success: false, error: `Failed to fetch workflow: ${getResp.status}` };
+    }
+    const getData = await getResp.json();
+    const workflow = (getData.values || []).find((w) => w.name === workflowName);
+    if (!workflow) return { success: false, error: "Workflow not found" };
+
+    if (!workflow.version?.id || workflow.version?.versionNumber === undefined) {
+      return { success: false, error: "Workflow version info not available. The workflow may be read-only." };
+    }
+
+    // Step 3: Find the target transition and add the rule
+    const targetTransition = (workflow.transitions || []).find((t) => String(t.id) === String(transitionId));
+    if (!targetTransition) {
+      return { success: false, error: `Transition ${transitionId} not found in workflow` };
+    }
+
+    // Check if our app already has a rule of this type on this transition
+    const rules = targetTransition.rules || {};
+    const ruleArray = ruleType === "condition" ? "conditions"
+      : ruleType === "validator" ? "validators"
+      : "postFunctions";
+
+    const existing = (rules[ruleArray] || []);
+    const alreadyHas = existing.some((r) =>
+      r.parameters?.key?.includes(APP_ID) && r.parameters?.key?.includes(ruleInfo.moduleKey)
+    );
+    if (alreadyHas) {
+      return { success: false, error: `This transition already has a CogniRunner ${ruleType} rule. Edit the existing one instead.` };
+    }
+
+    // Build the extension ARI
+    const extensionKey = `ari:cloud:ecosystem::extension/${APP_ID}/${envId}/static/${ruleInfo.moduleKey}`;
+    const ruleId = crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+
+    // Add the new rule
+    if (!targetTransition.rules) targetTransition.rules = {};
+    if (!targetTransition.rules[ruleArray]) targetTransition.rules[ruleArray] = [];
+    targetTransition.rules[ruleArray].push({
+      ruleKey: ruleInfo.ruleKey,
+      parameters: {
+        key: extensionKey,
+        config: typeof config === "string" ? config : JSON.stringify(config || {}),
+        id: ruleId,
+        disabled: "false",
+      },
+    });
+
+    // Step 4: Build the update payload
+    // We must send the FULL workflow definition including ALL statuses and transitions
+    const updatePayload = {
+      statuses: (workflow.statuses || []).map((s) => ({
+        id: s.id,
+        name: s.name,
+        statusCategory: s.statusCategory,
+        statusReference: s.statusReference,
+      })),
+      workflows: [{
+        id: workflow.id,
+        version: {
+          id: workflow.version.id,
+          versionNumber: workflow.version.versionNumber,
+        },
+        statuses: (workflow.statuses || []).map((s) => ({
+          statusReference: s.statusReference,
+        })),
+        transitions: workflow.transitions,
+      }],
+    };
+
+    // Step 5: POST the update
+    const updateResp = await api.asApp().requestJira(
+      route`/rest/api/3/workflows/update`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(updatePayload),
+      },
+    );
+
+    if (!updateResp.ok) {
+      const errBody = await updateResp.text().catch(() => "");
+      console.error("Workflow update failed:", updateResp.status, errBody);
+      let errMsg = `Workflow update failed (${updateResp.status})`;
+      try {
+        const errJson = JSON.parse(errBody);
+        if (errJson.errors) errMsg += ": " + Object.values(errJson.errors).join("; ");
+        else if (errJson.errorMessages) errMsg += ": " + errJson.errorMessages.join("; ");
+        else if (errJson.message) errMsg += ": " + errJson.message;
+      } catch { errMsg += ": " + errBody.substring(0, 200); }
+      return { success: false, error: errMsg };
+    }
+
+    console.log(`Injected ${ruleType} rule on "${workflowName}" transition ${transitionId}`);
+    return { success: true, ruleId };
+  } catch (error) {
+    console.error("injectWorkflowRule error:", error);
+    return { success: false, error: error.message };
+  }
+});
+
 // === Admin & Permission Resolvers ===
 
 /**

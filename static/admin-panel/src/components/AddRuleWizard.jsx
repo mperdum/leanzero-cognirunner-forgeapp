@@ -130,16 +130,17 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
     };
 
     try {
+      // Step A: Register config in CogniRunner KVS
       let result;
+      const configPayload = isPostFunction
+        ? { fieldId: fieldId || "description", prompt: prompt || conditionPrompt, conditionPrompt, actionPrompt, actionFieldId }
+        : { fieldId: fieldId || "description", prompt };
+
       if (isPostFunction) {
         result = await invoke("registerPostFunction", {
           id: ruleId,
           type: ruleType,
-          fieldId: fieldId || "description",
-          prompt: prompt || conditionPrompt,
-          conditionPrompt,
-          actionPrompt,
-          actionFieldId,
+          ...configPayload,
           functions: [],
           workflow: workflowData,
         });
@@ -147,17 +148,31 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
         result = await invoke("registerConfig", {
           id: ruleId,
           type: ruleType,
-          fieldId: fieldId || "description",
-          prompt,
+          ...configPayload,
           workflow: workflowData,
         });
       }
 
-      if (result.success) {
+      if (!result.success) {
+        setError(result.error || "Failed to save rule config");
+        setSaving(false);
+        return;
+      }
+
+      // Step B: Inject the rule into the actual Jira workflow
+      const injectResult = await invoke("injectWorkflowRule", {
+        workflowName: selectedWorkflow.name,
+        transitionId: selectedTransition.id,
+        ruleType,
+        config: JSON.stringify(configPayload),
+      });
+
+      if (injectResult.success) {
         if (onCreated) onCreated();
         onClose();
       } else {
-        setError(result.error || "Failed to save rule");
+        // Config was saved but injection failed — show warning, don't close
+        setError(`Rule config saved, but could not inject into workflow: ${injectResult.error}. You can add it manually from the Jira workflow editor.`);
       }
     } catch (e) {
       setError("Failed to save: " + e.message);
@@ -456,7 +471,7 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
             </div>
 
             <p style={{ margin: "8px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
-              The rule will be registered in CogniRunner. To activate it on the workflow transition, an admin must add the CogniRunner module in the Jira workflow editor.
+              The rule will be registered and injected into the workflow transition automatically.
             </p>
           </div>
         )}
