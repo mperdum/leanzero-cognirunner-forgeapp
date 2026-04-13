@@ -54,6 +54,8 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
   const [testIssue, setTestIssue] = useState("");
   const [testRunning, setTestRunning] = useState(false);
   const [testResult, setTestResult] = useState(null);
+  const [created, setCreated] = useState(false);
+  const [submitted, setSubmitted] = useState(false); // for field validation
 
   // Load projects on mount
   useEffect(() => {
@@ -121,6 +123,13 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
 
   // Save the rule
   const handleSave = async () => {
+    setSubmitted(true);
+    // Validate required fields
+    if (ruleType === "validator" && (!fieldId || !prompt.trim())) return;
+    if (ruleType === "condition" && (!fieldId || !prompt.trim())) return;
+    if (ruleType === "postfunction-semantic" && !conditionPrompt.trim()) return;
+    if (ruleType === "postfunction-static" && !functions.some((f) => f.code)) return;
+
     setSaving(true);
     setError(null);
 
@@ -178,7 +187,7 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
 
       if (injectResult.success) {
         if (onCreated) onCreated();
-        onClose();
+        setCreated(true);
       } else {
         // Config was saved but injection failed — show warning, don't close
         setError(`Rule config saved, but could not inject into workflow: ${injectResult.error}. You can add it manually from the Jira workflow editor.`);
@@ -203,38 +212,74 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
 
   const stepLabel = (num, label) => (
     <span
-      style={{
-        opacity: step >= num ? 1 : 0.4,
-        fontWeight: step === num ? 700 : 400,
-        cursor: step > num ? "pointer" : "default",
-        textDecoration: step > num ? "underline" : "none",
-        textDecorationColor: step > num ? "var(--primary-color)" : "transparent",
-      }}
+      className={step > num ? "wiz-step-done" : step === num ? "wiz-step-active" : "wiz-step-future"}
       onClick={() => goToStep(num)}
     >
       {num}. {label}
     </span>
   );
 
-  return (
-    <div className="card" style={{ marginBottom: "16px" }}>
-      <div style={{ padding: "16px" }}>
-        {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-          <h3 style={{ margin: 0, fontSize: "14px" }}>Add New Rule</h3>
-          <button className="btn-small" onClick={onClose}>Cancel</button>
+  if (created) {
+    return (
+      <div className="card wizard">
+        <div className="wiz-success">
+          <div className="wiz-success-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--success-color)" strokeWidth="2">
+              <path d="M20 6L9 17l-5-5" />
+            </svg>
+          </div>
+          <div className="wiz-success-title">Rule Created</div>
+          <div className="wiz-success-text">
+            {RULE_TYPE_OPTIONS.find((o) => o.value === ruleType)?.label} has been added to{" "}
+            <strong>{selectedTransition?.name}</strong> on {selectedWorkflow?.name}.
+          </div>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button className="btn-small" onClick={onClose}>Done</button>
+            <button className="btn-small btn-edit" onClick={() => {
+              setCreated(false); setStep(1); setSubmitted(false);
+              setSelectedProject(null); setSelectedWorkflow(null); setSelectedTransition(null); setRuleType(null);
+              setFieldId(""); setPrompt(""); setConditionPrompt(""); setActionPrompt(""); setActionFieldId("");
+              setTestResult(null); setTestIssue("");
+              setFunctions([{ id: Date.now().toString(), name: "", prompt: "", code: "", variableName: "result1", operationType: "work_item_query", includeBackoff: false }]);
+            }}>Add Another Rule</button>
+          </div>
         </div>
+      </div>
+    );
+  }
 
-        {/* Step indicators */}
-        <div style={{ display: "flex", gap: "16px", marginBottom: "16px", fontSize: "12px", color: "var(--text-secondary)" }}>
+  return (
+    <div className="card wizard">
+      {/* Header */}
+      <div className="wizard-header">
+        <div className="wizard-header-left">
+          <div className="wizard-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--primary-color)" strokeWidth="2">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="wizard-title">Add New Rule</h3>
+            <p className="wizard-subtitle">
+              {step <= 3 ? "Select where to add the rule" : step === 4 ? "Choose rule type" : "Configure the rule"}
+            </p>
+          </div>
+        </div>
+        <button className="btn-small" onClick={onClose}>Cancel</button>
+      </div>
+
+      <div className="wizard-body">
+        {/* Breadcrumb */}
+        <div className="wizard-breadcrumb">
           {stepLabel(1, "Project")}
-          <span style={{ opacity: 0.3 }}>/</span>
+          <span className="wiz-sep">/</span>
           {stepLabel(2, "Workflow")}
-          <span style={{ opacity: 0.3 }}>/</span>
+          <span className="wiz-sep">/</span>
           {stepLabel(3, "Transition")}
-          <span style={{ opacity: 0.3 }}>/</span>
+          <span className="wiz-sep">/</span>
           {stepLabel(4, "Type")}
-          <span style={{ opacity: 0.3 }}>/</span>
+          <span className="wiz-sep">/</span>
           {stepLabel(5, "Configure")}
         </div>
 
@@ -506,7 +551,7 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
                       : "Describe what makes the field value valid. E.g. 'The description must include steps to reproduce, expected behavior, and actual behavior'"
                     }
                     rows={5}
-                    style={{ width: "100%", fontSize: "13px", padding: "8px 12px", border: "1px solid var(--border-color)", borderRadius: "8px", background: "var(--input-bg)", color: "var(--text-color)", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
+                    className={`wiz-textarea${submitted && !prompt.trim() ? " wiz-error" : ""}`}
                   />
                   <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
                     Describe the validation criteria in natural language. The AI will evaluate if the field content meets these requirements.
@@ -545,7 +590,8 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
                       value={testIssue}
                       onChange={(e) => setTestIssue(e.target.value.toUpperCase())}
                       placeholder="Issue key (e.g. WFH-36)"
-                      style={{ flex: 1, padding: "8px 12px", border: "1px solid var(--border-color)", borderRadius: "8px", background: "var(--input-bg)", color: "var(--text-color)", fontSize: "13px", fontFamily: "SFMono-Regular, Consolas, monospace" }}
+                      className="wiz-input wiz-input-mono"
+                      style={{ flex: 1 }}
                     />
                     <button
                       className="btn-small btn-edit"
@@ -648,7 +694,7 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
                     onChange={(e) => setConditionPrompt(e.target.value)}
                     placeholder='E.g. "Run every time" or "Run when the description mentions a bug or defect"'
                     rows={4}
-                    style={{ width: "100%", fontSize: "13px", padding: "8px 12px", border: "1px solid var(--border-color)", borderRadius: "8px", background: "var(--input-bg)", color: "var(--text-color)", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
+                    className={`wiz-textarea${submitted && !conditionPrompt.trim() ? " wiz-error" : ""}`}
                   />
                   <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
                     The AI reads the source field and evaluates this condition. If met, the action runs. If not, the post-function is skipped.
@@ -665,7 +711,7 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
                     onChange={(e) => setActionPrompt(e.target.value)}
                     placeholder='E.g. "Summarize the issue into 2-3 bullet points" or "Append a review checklist"'
                     rows={5}
-                    style={{ width: "100%", fontSize: "13px", padding: "8px 12px", border: "1px solid var(--border-color)", borderRadius: "8px", background: "var(--input-bg)", color: "var(--text-color)", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
+                    className={`wiz-textarea${submitted && !prompt.trim() ? " wiz-error" : ""}`}
                   />
                   <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
                     When the condition passes, the AI generates a new value for the target field based on this instruction. Leave empty for generic summarization.
@@ -696,7 +742,8 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
                       value={testIssue}
                       onChange={(e) => setTestIssue(e.target.value.toUpperCase())}
                       placeholder="Issue key (e.g. WFH-36)"
-                      style={{ flex: 1, padding: "8px 12px", border: "1px solid var(--border-color)", borderRadius: "8px", background: "var(--input-bg)", color: "var(--text-color)", fontSize: "13px", fontFamily: "SFMono-Regular, Consolas, monospace" }}
+                      className="wiz-input wiz-input-mono"
+                      style={{ flex: 1 }}
                     />
                     <button
                       className="btn-small btn-edit"
@@ -999,7 +1046,8 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
                       value={testIssue}
                       onChange={(e) => setTestIssue(e.target.value.toUpperCase())}
                       placeholder="Issue key (optional for static PF)"
-                      style={{ flex: 1, padding: "8px 12px", border: "1px solid var(--border-color)", borderRadius: "8px", background: "var(--input-bg)", color: "var(--text-color)", fontSize: "13px", fontFamily: "SFMono-Regular, Consolas, monospace" }}
+                      className="wiz-input wiz-input-mono"
+                      style={{ flex: 1 }}
                     />
                     <button
                       className="btn-small btn-edit"
@@ -1064,24 +1112,26 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
               </>
             )}
 
-            {/* Save */}
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "16px" }}>
-              <button className="btn-small" onClick={onClose}>Cancel</button>
-              <button
-                className="btn-small btn-edit"
-                onClick={handleSave}
-                disabled={saving || (ruleType === "validator" && !prompt) || (ruleType === "condition" && !prompt) || (ruleType === "postfunction-semantic" && !conditionPrompt)}
-              >
-                {saving ? "Saving..." : "Create Rule"}
-              </button>
-            </div>
-
-            <p style={{ margin: "8px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
-              The rule will be registered and injected into the workflow transition automatically.
-            </p>
           </div>
         )}
       </div>
+
+      {/* Footer */}
+      {step === 5 && (
+        <div className="wiz-footer">
+          <span className="wiz-footer-hint">The rule will be registered and injected into the workflow transition automatically.</span>
+          <div className="wiz-footer-actions">
+            <button className="btn-small" onClick={onClose}>Cancel</button>
+            <button
+              className="btn-small btn-edit"
+              onClick={handleSave}
+              disabled={saving}
+            >
+              {saving ? "Creating..." : "Create Rule"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

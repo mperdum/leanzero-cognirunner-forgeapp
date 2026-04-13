@@ -923,6 +923,172 @@ const injectStyles = () => {
       from { opacity: 0; transform: translateX(-50%) translateY(-4px); }
       to { opacity: 1; transform: translateX(-50%) translateY(0); }
     }
+
+    /* === Add Rule Wizard === */
+    .wizard { margin-bottom: 16px; }
+    .wizard-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 16px 20px; border-bottom: 1px solid var(--border-color);
+    }
+    .wizard-header-left { display: flex; align-items: center; gap: 12px; }
+    .wizard-icon {
+      width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, var(--icon-bg), rgba(37, 99, 235, 0.12));
+    }
+    .wizard-title { font-size: 15px; font-weight: 700; margin: 0; }
+    .wizard-subtitle { font-size: 11px; color: var(--text-muted); margin: 2px 0 0 0; }
+    .wizard-body { padding: 16px 20px; }
+    .wizard-breadcrumb {
+      display: flex; gap: 12px; margin-bottom: 16px; font-size: 12px; color: var(--text-secondary);
+      padding: 8px 0; border-bottom: 1px solid var(--border-color);
+    }
+    .wizard-breadcrumb span { transition: color 0.15s ease; }
+    .wizard-breadcrumb .wiz-step-done { cursor: pointer; color: var(--primary-color); }
+    .wizard-breadcrumb .wiz-step-done:hover { text-decoration: underline; }
+    .wizard-breadcrumb .wiz-step-active { font-weight: 700; color: var(--text-color); }
+    .wizard-breadcrumb .wiz-step-future { opacity: 0.4; }
+    .wizard-breadcrumb .wiz-sep { opacity: 0.3; }
+    .wiz-section { margin-bottom: 14px; }
+    .wiz-label {
+      display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;
+    }
+    .wiz-label .wiz-req { color: var(--error-color); }
+    .wiz-hint { margin: 4px 0 0 0; font-size: 11px; color: var(--text-muted); }
+    .wiz-selected {
+      display: flex; align-items: center; gap: 8px; font-size: 12px;
+    }
+    .wiz-change {
+      font-size: 10px; padding: 2px 8px; border: 1px solid var(--border-color); border-radius: 4px;
+      background: var(--input-bg); color: var(--text-secondary); cursor: pointer; transition: all 0.15s ease;
+    }
+    .wiz-change:hover { border-color: var(--primary-color); color: var(--primary-color); }
+    .wiz-pick-btn {
+      display: flex; align-items: center; justify-content: space-between; width: 100%;
+      padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 8px;
+      background: var(--input-bg); color: var(--text-color); cursor: pointer;
+      transition: all 0.15s ease; font-size: 13px; text-align: left;
+    }
+    .wiz-pick-btn:hover { border-color: var(--primary-color); background: var(--hover-bg); }
+    .wiz-pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; }
+    .wiz-pick-list { display: flex; flex-direction: column; gap: 6px; }
+    .wiz-pick-name { font-weight: 600; }
+    .wiz-pick-meta { font-size: 11px; color: var(--text-muted); }
+    .wiz-pick-chevron { opacity: 0.4; }
+    .wiz-status-pill {
+      display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 500;
+    }
+    .wiz-status-from { background: rgba(100,116,139,0.1); color: var(--text-secondary); }
+    .wiz-status-to { background: rgba(37,99,235,0.1); color: var(--primary-color); }
+    .wiz-status-initial { background: rgba(22,163,106,0.1); color: var(--success-color); }
+    .wiz-cogni-badge {
+      font-size: 9px; padding: 2px 6px; border-radius: 4px; font-weight: 600;
+      background: rgba(37,99,235,0.12); color: var(--primary-color); letter-spacing: 0.3px;
+    }
+    .wiz-type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .wiz-type-card {
+      display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+      padding: 14px 16px; border: 1px solid var(--border-color); border-radius: 8px;
+      background: var(--input-bg); color: var(--text-color); cursor: pointer;
+      transition: all 0.15s ease; text-align: left;
+    }
+    .wiz-type-card:hover { border-color: var(--primary-color); background: var(--hover-bg); }
+    .wiz-type-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.3; }
+    .wiz-info-banner {
+      display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; margin-bottom: 14px;
+      border-radius: 8px; border: 1px solid var(--border-color); background: var(--input-bg);
+    }
+    .wiz-info-banner ol { margin: 0; padding-left: 18px; font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+    .wiz-textarea {
+      width: 100%; font-size: 13px; padding: 8px 12px; border: 1px solid var(--border-color);
+      border-radius: 8px; background: var(--input-bg); color: var(--text-color);
+      resize: vertical; font-family: inherit; line-height: 1.5;
+    }
+    .wiz-textarea:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+    .wiz-textarea.wiz-error { border-color: var(--error-color); }
+    .wiz-textarea.wiz-error:focus { box-shadow: 0 0 0 3px rgba(220,38,38,0.1); }
+    .wiz-input {
+      padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 8px;
+      background: var(--input-bg); color: var(--text-color); font-size: 13px;
+    }
+    .wiz-input:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+    .wiz-input-mono { font-family: SFMono-Regular, Consolas, monospace; }
+    .wiz-code-editor {
+      width: 100%; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px;
+      background: var(--code-bg); color: var(--text-color); font-size: 12px; line-height: 1.5;
+      font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+      resize: vertical; tab-size: 2;
+    }
+    .wiz-code-editor:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+    .wiz-step-card {
+      margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: 8px;
+      background: var(--card-bg); overflow: visible;
+    }
+    .wiz-step-header {
+      display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .wiz-step-badge {
+      font-size: 11px; font-weight: 700; color: var(--primary-color);
+      background: rgba(37,99,235,0.1); padding: 2px 8px; border-radius: 4px;
+    }
+    .wiz-step-name {
+      flex: 1; padding: 4px 8px; border: 1px solid transparent; border-radius: 4px;
+      background: transparent; color: var(--text-color); font-size: 13px; font-weight: 600;
+    }
+    .wiz-step-name:focus { border-color: var(--border-color); background: var(--input-bg); outline: none; }
+    .wiz-step-remove { background: none; border: none; color: var(--error-color); cursor: pointer; font-size: 16px; padding: 2px 6px; }
+    .wiz-step-body { padding: 12px 14px; }
+    .wiz-prior-vars {
+      margin-bottom: 10px; padding: 6px 10px; border-radius: 6px;
+      background: rgba(37,99,235,0.04); border: 1px solid rgba(37,99,235,0.1);
+    }
+    .wiz-prior-var {
+      font-size: 11px; padding: 2px 6px; border-radius: 3px;
+      background: var(--code-bg); color: var(--primary-color);
+    }
+    .wiz-test-result {
+      margin-top: 8px; padding: 10px 12px; border-radius: 8px;
+    }
+    .wiz-test-pass { border: 1px solid var(--success-color); background: rgba(22,163,106,0.06); }
+    .wiz-test-fail { border: 1px solid var(--error-color); background: rgba(220,38,38,0.06); }
+    .wiz-test-skip { border: 1px solid var(--primary-color); background: rgba(37,99,235,0.06); }
+    .wiz-test-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .wiz-test-dismiss { margin-left: auto; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 16px; }
+    .wiz-test-section { margin-bottom: 6px; }
+    .wiz-test-label { font-weight: 600; font-size: 10px; color: var(--text-muted); text-transform: uppercase; }
+    .wiz-test-value {
+      margin: 2px 0 0 0; font-size: 11px; padding: 6px 8px; background: var(--code-bg);
+      border-radius: 4px; white-space: pre-wrap; word-break: break-word; max-height: 100px; overflow: auto;
+    }
+    .wiz-test-log { font-size: 11px; font-family: SFMono-Regular, Consolas, monospace; color: var(--text-secondary); padding: 1px 0; }
+    .wiz-rec {
+      margin-top: 6px; padding: 6px 8px; border-radius: 4px; border-left: 3px solid var(--primary-color);
+      background: rgba(37,99,235,0.06); font-size: 11px; white-space: pre-line;
+    }
+    .wiz-footer {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 20px; border-top: 1px solid var(--border-color);
+    }
+    .wiz-footer-hint { font-size: 11px; color: var(--text-muted); }
+    .wiz-footer-actions { display: flex; gap: 8px; }
+    .wiz-success {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 32px 20px; text-align: center;
+    }
+    .wiz-success-icon {
+      width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      background: rgba(22,163,106,0.1); margin-bottom: 12px;
+    }
+    .wiz-success-title { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+    .wiz-success-text { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
+    .wiz-add-step-btn {
+      width: 100%; padding: 8px; margin-bottom: 14px; border: 1px dashed var(--border-color);
+      border-radius: 8px; background: transparent; color: var(--text-secondary);
+      cursor: pointer; font-size: 12px; transition: all 0.15s ease;
+    }
+    .wiz-add-step-btn:hover { border-color: var(--primary-color); color: var(--primary-color); background: rgba(37,99,235,0.04); }
+    .wiz-add-step-btn:disabled { opacity: 0.4; cursor: default; }
+    .wiz-divider { border-top: 1px solid var(--border-color); padding-top: 12px; margin-bottom: 14px; }
   `;
   document.head.appendChild(style);
 };
