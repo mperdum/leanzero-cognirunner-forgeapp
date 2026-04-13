@@ -945,6 +945,7 @@ function App() {
   const [licenseActive, setLicenseActive] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [userRole, setUserRole] = useState(null); // "viewer" | "editor" | "admin" | null
+  const [userScope, setUserScope] = useState(null); // "own" | "all" | null
   const [accountId, setAccountId] = useState(null);
   const [activeTab, setActiveTab] = useState("rules");
   const [rulesFilter, setRulesFilter] = useState("all");
@@ -1075,29 +1076,30 @@ function App() {
       // Check role BEFORE fetching configs
       let userIsAdmin = false;
       let detectedRole = null;
+      let detectedScope = null;
 
       try {
         const adminResult = await invoke("checkIsAdmin");
         if (adminResult.success) {
           if (adminResult.isAdmin) userIsAdmin = true;
           detectedRole = adminResult.role;
+          detectedScope = adminResult.scope;
           setAccountId(adminResult.accountId);
-          // Viewers and users with no role see only their rules
-          if (!detectedRole || detectedRole === "viewer") {
-            setRulesFilter("mine");
-          }
         }
       } catch (e) {
         console.log("Could not check role:", e);
       }
 
       // jira:adminPage always grants admin
-      if (isAdmin) { userIsAdmin = true; detectedRole = "admin"; }
+      if (isAdmin) { userIsAdmin = true; detectedRole = "admin"; detectedScope = "all"; }
       setIsAdmin((prev) => prev || userIsAdmin);
       setUserRole(detectedRole);
+      setUserScope(detectedScope);
 
-      // Editors and admins see all rules; viewers see their own
-      await fetchConfigs(false, detectedRole === "editor" || detectedRole === "admin" ? "all" : "mine");
+      // Determine filter based on role + scope
+      const defaultFilter = (detectedScope === "all" || detectedRole === "admin") ? "all" : "mine";
+      setRulesFilter(defaultFilter);
+      await fetchConfigs(false, defaultFilter);
       setLoading(false);
     };
     init();
@@ -1227,7 +1229,7 @@ function App() {
                 ]}
               />
             </div>
-            {isAdmin && (
+            {userScope === "all" && (
               <div style={{ width: "140px" }}>
                 <CustomSelect
                   value={rulesFilter}

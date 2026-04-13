@@ -14,10 +14,20 @@ const ROLE_OPTIONS = [
   { value: "admin", label: "Admin" },
 ];
 
+const SCOPE_OPTIONS = [
+  { value: "own", label: "Own Rules" },
+  { value: "all", label: "All Rules" },
+];
+
 const ROLE_DESCRIPTIONS = {
-  viewer: "Can view all rules and logs",
-  editor: "Can view, edit, disable, and manage all rules and docs",
+  viewer: "Can view rules and logs",
+  editor: "Can edit, disable, and manage rules and docs",
   admin: "Full access including permissions and settings",
+};
+
+const scopeLabel = (role, scope) => {
+  if (role === "admin") return "All rules (always)";
+  return scope === "all" ? "All rules" : "Own rules only";
 };
 
 export default function PermissionsTab({ invoke }) {
@@ -28,6 +38,7 @@ export default function PermissionsTab({ invoke }) {
   const [searching, setSearching] = useState(false);
   const [adding, setAdding] = useState(null);
   const [addRole, setAddRole] = useState("viewer");
+  const [addScope, setAddScope] = useState("own");
   const [removing, setRemoving] = useState(null);
   const [changingRole, setChangingRole] = useState(null);
   const [error, setError] = useState(null);
@@ -65,9 +76,10 @@ export default function PermissionsTab({ invoke }) {
     setAdding(user.accountId);
     setError(null);
     try {
-      const result = await invoke("addAppAdmin", { accountId: user.accountId, displayName: user.displayName, role: addRole });
+      const effectiveScope = addRole === "admin" ? "all" : addScope;
+      const result = await invoke("addAppAdmin", { accountId: user.accountId, displayName: user.displayName, role: addRole, scope: effectiveScope });
       if (result.success) {
-        setUsers([...users, { accountId: user.accountId, displayName: user.displayName, avatarUrl: user.avatarUrl, role: addRole }]);
+        setUsers([...users, { accountId: user.accountId, displayName: user.displayName, avatarUrl: user.avatarUrl, role: addRole, scope: effectiveScope }]);
         setSearchQuery("");
         setSearchResults([]);
       } else {
@@ -91,15 +103,16 @@ export default function PermissionsTab({ invoke }) {
     setRemoving(null);
   };
 
-  const handleRoleChange = async (accountId, newRole) => {
+  const handleRoleChange = async (accountId, newRole, newScope) => {
     setChangingRole(accountId);
     setError(null);
     try {
-      const result = await invoke("updateUserRole", { accountId, role: newRole });
+      const effectiveScope = newRole === "admin" ? "all" : (newScope || "own");
+      const result = await invoke("updateUserRole", { accountId, role: newRole, scope: effectiveScope });
       if (result.success) {
         setUsers(users.map((u) => {
           const uid = typeof u === "string" ? u : u.accountId;
-          if (uid === accountId) return { ...u, role: newRole };
+          if (uid === accountId) return { ...u, role: newRole, scope: effectiveScope };
           return u;
         }));
       } else {
@@ -183,13 +196,22 @@ export default function PermissionsTab({ invoke }) {
               <button className="perm-search-clear" onClick={() => { setSearchQuery(""); setSearchResults([]); }}>&times;</button>
             )}
           </div>
-          <div style={{ width: "120px" }}>
+          <div style={{ width: "110px" }}>
             <CustomSelect
               value={addRole}
-              onChange={setAddRole}
+              onChange={(v) => { setAddRole(v); if (v === "admin") setAddScope("all"); }}
               options={ROLE_OPTIONS}
             />
           </div>
+          {addRole !== "admin" && (
+            <div style={{ width: "120px" }}>
+              <CustomSelect
+                value={addScope}
+                onChange={setAddScope}
+                options={SCOPE_OPTIONS}
+              />
+            </div>
+          )}
         </div>
 
         {/* Search results */}
@@ -240,6 +262,7 @@ export default function PermissionsTab({ invoke }) {
             const name = typeof user === "string" ? user : user.displayName;
             const avatar = typeof user === "object" ? user.avatarUrl : null;
             const role = typeof user === "object" ? (user.role || "admin") : "admin";
+            const scope = typeof user === "object" ? (user.scope || "all") : "all";
             const isRemoving = removing === id;
             const isChanging = changingRole === id;
             return (
@@ -252,18 +275,28 @@ export default function PermissionsTab({ invoke }) {
                   )}
                   <div>
                     <div className="perm-admin-name">{name}</div>
-                    <div className="perm-admin-role">{ROLE_DESCRIPTIONS[role] || role}</div>
+                    <div className="perm-admin-role">{scopeLabel(role, scope)}</div>
                   </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <div style={{ width: "110px" }}>
+                  <div style={{ width: "100px" }}>
                     <CustomSelect
                       value={role}
-                      onChange={(newRole) => handleRoleChange(id, newRole)}
+                      onChange={(newRole) => handleRoleChange(id, newRole, newRole === "admin" ? "all" : scope)}
                       options={ROLE_OPTIONS}
                       disabled={isChanging}
                     />
                   </div>
+                  {role !== "admin" && (
+                    <div style={{ width: "120px" }}>
+                      <CustomSelect
+                        value={scope}
+                        onChange={(newScope) => handleRoleChange(id, role, newScope)}
+                        options={SCOPE_OPTIONS}
+                        disabled={isChanging}
+                      />
+                    </div>
+                  )}
                   <button
                     className="perm-remove-btn"
                     onClick={() => handleRemove(id)}

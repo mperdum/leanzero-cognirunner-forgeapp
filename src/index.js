@@ -36,13 +36,15 @@ const APP_ADMINS_KEY = "app_admins";
  * Check if a user is an admin (Jira site admin OR app admin).
  */
 const VALID_ROLES = ["viewer", "editor", "admin"];
+const VALID_SCOPES = ["own", "all"];
 
 /**
- * Get a user's role in CogniRunner.
- * Returns "admin", "editor", "viewer", or null (no access beyond defaults).
- * Jira site admins always get "admin".
+ * Get a user's full permission entry: { role, scope }.
+ * - role: "viewer" | "editor" | "admin"
+ * - scope: "own" (only own rules) | "all" (all rules). Admin always "all".
+ * Jira site admins always get { role: "admin", scope: "all" }.
  */
-const getUserRole = async (accountId) => {
+const getUserPermissions = async (accountId) => {
   if (!accountId) return null;
 
   // 1. Check app users list in KVS
@@ -50,15 +52,16 @@ const getUserRole = async (accountId) => {
     const appUsers = (await storage.get(APP_ADMINS_KEY)) || [];
     const entry = appUsers.find((a) => (typeof a === "string" ? a : a.accountId) === accountId);
     if (entry) {
-      // Legacy entries without role default to admin
-      return (typeof entry === "object" && entry.role) ? entry.role : "admin";
+      const role = (typeof entry === "object" && entry.role) ? entry.role : "admin";
+      const scope = role === "admin" ? "all" : ((typeof entry === "object" && entry.scope) ? entry.scope : "all");
+      return { role, scope };
     }
 
     // Bootstrap: if no users exist at all, the first user becomes admin
     if (appUsers.length === 0) {
       console.log(`No app users configured — bootstrapping ${accountId} as first admin`);
-      await storage.set(APP_ADMINS_KEY, [{ accountId, displayName: "Auto (first user)", role: "admin" }]);
-      return "admin";
+      await storage.set(APP_ADMINS_KEY, [{ accountId, displayName: "Auto (first user)", role: "admin", scope: "all" }]);
+      return { role: "admin", scope: "all" };
     }
   } catch (e) { /* fall through */ }
 
@@ -71,12 +74,18 @@ const getUserRole = async (accountId) => {
       );
       if (resp.ok) {
         const data = await resp.json();
-        if ((data.values || []).some((u) => u.accountId === accountId)) return "admin";
+        if ((data.values || []).some((u) => u.accountId === accountId)) return { role: "admin", scope: "all" };
       }
     } catch (e) { /* try next group */ }
   }
 
   return null;
+};
+
+/** Shorthand: get just the role string. */
+const getUserRole = async (accountId) => {
+  const perms = await getUserPermissions(accountId);
+  return perms ? perms.role : null;
 };
 
 /** Check if user has at least the given role level. */
@@ -85,6 +94,21 @@ const requireRole = async (accountId, minRole) => {
   if (!role) return false;
   const levels = { viewer: 1, editor: 2, admin: 3 };
   return (levels[role] || 0) >= (levels[minRole] || 0);
+};
+
+/**
+ * Check if user can act on a specific config (considering scope).
+ * Editors with scope "own" can only act on their own rules.
+ */
+const canActOnConfig = async (accountId, config, minRole) => {
+  const perms = await getUserPermissions(accountId);
+  if (!perms) return false;
+  const levels = { viewer: 1, editor: 2, admin: 3 };
+  if ((levels[perms.role] || 0) < (levels[minRole] || 0)) return false;
+  // Admin always has access, scope "all" always has access
+  if (perms.role === "admin" || perms.scope === "all") return true;
+  // scope "own": only if they created it or no createdBy
+  return !config.createdBy || config.createdBy === accountId;
 };
 
 /** Backward-compatible: requireAdmin = requireRole(id, "admin") */
@@ -288,10 +312,8 @@ resolver.define("removeConfig", async ({ payload, context }) => {
     const { id } = payload;
     let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
     const target = configs.find((c) => c.id === id);
-    if (target && target.createdBy && target.createdBy !== context.accountId) {
-      if (!(await requireRole(context.accountId, "editor"))) {
-        return { success: false, error: "Editor access required to remove others' rules" };
-      }
+    if (target && !(await canActOnConfig(context.accountId, target, "editor"))) {
+      return { success: false, error: "You don't have permission to remove this rule" };
     }
     configs = configs.filter((c) => c.id !== id);
     await storage.set(CONFIG_REGISTRY_KEY, configs);
@@ -314,8 +336,8 @@ resolver.define("disableRule", async ({ payload, context }) => {
     if (!config) {
       return { success: false, error: "Config not found in registry" };
     }
-    if (config.createdBy && config.createdBy !== context.accountId && !(await requireRole(context.accountId, "editor"))) {
-      return { success: false, error: "Editor access required to manage others' rules" };
+    if (!(await canActOnConfig(context.accountId, config, "editor"))) {
+      return { success: false, error: "You don't have permission to manage this rule" };
     }
     configs = configs.map((c) => c.id === id ? { ...c, disabled: true, updatedAt: new Date().toISOString() } : c);
     await storage.set(CONFIG_REGISTRY_KEY, configs);
@@ -337,8 +359,8 @@ resolver.define("enableRule", async ({ payload, context }) => {
     if (!config) {
       return { success: false, error: "Config not found in registry" };
     }
-    if (config.createdBy && config.createdBy !== context.accountId && !(await requireRole(context.accountId, "editor"))) {
-      return { success: false, error: "Editor access required to manage others' rules" };
+    if (!(await canActOnConfig(context.accountId, config, "editor"))) {
+      return { success: false, error: "You don't have permission to manage this rule" };
     }
     configs = configs.map((c) => c.id === id ? { ...c, disabled: false, updatedAt: new Date().toISOString() } : c);
     await storage.set(CONFIG_REGISTRY_KEY, configs);
@@ -985,13 +1007,19 @@ resolver.define("checkIsAdmin", async ({ context }) => {
     try {
       const appUsers = (await storage.get(APP_ADMINS_KEY)) || [];
       if (appUsers.length === 0) {
-        return { success: true, isAdmin: true, role: "admin", accountId: null };
+        return { success: true, isAdmin: true, role: "admin", scope: "all", accountId: null };
       }
     } catch (e) { /* fall through */ }
-    return { success: true, isAdmin: false, role: null, accountId: null };
+    return { success: true, isAdmin: false, role: null, scope: null, accountId: null };
   }
-  const role = await getUserRole(accountId);
-  return { success: true, isAdmin: role === "admin", role: role || null, accountId };
+  const perms = await getUserPermissions(accountId);
+  return {
+    success: true,
+    isAdmin: perms?.role === "admin",
+    role: perms?.role || null,
+    scope: perms?.scope || null,
+    accountId,
+  };
 });
 
 /**
@@ -1012,15 +1040,16 @@ resolver.define("addAppAdmin", async ({ payload, context }) => {
   if (!(await requireAdmin(context.accountId))) {
     return { success: false, error: "Admin access required" };
   }
-  const { accountId, displayName, role } = payload;
+  const { accountId, displayName, role, scope } = payload;
   if (!accountId) return { success: false, error: "Account ID required" };
   const assignRole = VALID_ROLES.includes(role) ? role : "viewer";
+  const assignScope = assignRole === "admin" ? "all" : (VALID_SCOPES.includes(scope) ? scope : "own");
 
   let users = (await storage.get(APP_ADMINS_KEY)) || [];
   if (users.some((a) => (typeof a === "string" ? a : a.accountId) === accountId)) {
     return { success: false, error: "User already has a role" };
   }
-  users.push({ accountId, displayName: displayName || accountId, role: assignRole });
+  users.push({ accountId, displayName: displayName || accountId, role: assignRole, scope: assignScope });
   await storage.set(APP_ADMINS_KEY, users);
   return { success: true };
 });
@@ -1032,9 +1061,10 @@ resolver.define("updateUserRole", async ({ payload, context }) => {
   if (!(await requireAdmin(context.accountId))) {
     return { success: false, error: "Admin access required" };
   }
-  const { accountId, role } = payload;
+  const { accountId, role, scope } = payload;
   if (!accountId) return { success: false, error: "Account ID required" };
   if (!VALID_ROLES.includes(role)) return { success: false, error: "Invalid role. Choose: viewer, editor, admin" };
+  const newScope = role === "admin" ? "all" : (VALID_SCOPES.includes(scope) ? scope : "own");
 
   let users = (await storage.get(APP_ADMINS_KEY)) || [];
   const idx = users.findIndex((a) => (typeof a === "string" ? a : a.accountId) === accountId);
@@ -1049,9 +1079,9 @@ resolver.define("updateUserRole", async ({ payload, context }) => {
   }
 
   if (typeof users[idx] === "string") {
-    users[idx] = { accountId: users[idx], displayName: users[idx], role };
+    users[idx] = { accountId: users[idx], displayName: users[idx], role, scope: newScope };
   } else {
-    users[idx] = { ...users[idx], role };
+    users[idx] = { ...users[idx], role, scope: newScope };
   }
   await storage.set(APP_ADMINS_KEY, users);
   return { success: true };
@@ -1383,10 +1413,8 @@ resolver.define("removePostFunction", async ({ payload, context }) => {
     const { id } = payload;
     let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
     const target = configs.find((c) => c.id === id);
-    if (target && target.createdBy && target.createdBy !== context.accountId) {
-      if (!(await requireRole(context.accountId, "editor"))) {
-        return { success: false, error: "Editor access required to remove others' post-functions" };
-      }
+    if (target && !(await canActOnConfig(context.accountId, target, "editor"))) {
+      return { success: false, error: "You don't have permission to remove this post-function" };
     }
     configs = configs.filter((c) => c.id !== id);
     await storage.set(CONFIG_REGISTRY_KEY, configs);
@@ -1406,8 +1434,8 @@ resolver.define("disablePostFunction", async ({ payload, context }) => {
     let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
     const idx = configs.findIndex((c) => c.id === id);
     if (idx < 0) return { success: false, error: "Post-function not found" };
-    if (configs[idx].createdBy && configs[idx].createdBy !== context.accountId && !(await requireRole(context.accountId, "editor"))) {
-      return { success: false, error: "Editor access required to manage others' post-functions" };
+    if (!(await canActOnConfig(context.accountId, configs[idx], "editor"))) {
+      return { success: false, error: "You don't have permission to manage this post-function" };
     }
     configs[idx].disabled = true;
     configs[idx].updatedAt = new Date().toISOString();
@@ -1428,8 +1456,8 @@ resolver.define("enablePostFunction", async ({ payload, context }) => {
     let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
     const idx = configs.findIndex((c) => c.id === id);
     if (idx < 0) return { success: false, error: "Post-function not found" };
-    if (configs[idx].createdBy && configs[idx].createdBy !== context.accountId && !(await requireRole(context.accountId, "editor"))) {
-      return { success: false, error: "Editor access required to manage others' post-functions" };
+    if (!(await canActOnConfig(context.accountId, configs[idx], "editor"))) {
+      return { success: false, error: "You don't have permission to manage this post-function" };
     }
     configs[idx].disabled = false;
     configs[idx].updatedAt = new Date().toISOString();
@@ -1545,10 +1573,8 @@ resolver.define("deleteContextDoc", async ({ payload, context }) => {
     // Check ownership — users can only delete their own docs, admins can delete any
     const index = (await storage.get(DOC_REPO_INDEX_KEY)) || [];
     const doc = index.find((d) => d.id === id);
-    if (doc && doc.createdBy && doc.createdBy !== context.accountId) {
-      if (!(await requireRole(context.accountId, "editor"))) {
-        return { success: false, error: "Editor access required to delete others' documents" };
-      }
+    if (doc && !(await canActOnConfig(context.accountId, doc, "editor"))) {
+      return { success: false, error: "You don't have permission to delete this document" };
     }
     await storage.delete(`${DOC_REPO_PREFIX}${id}`);
     const updated = index.filter((d) => d.id !== id);
