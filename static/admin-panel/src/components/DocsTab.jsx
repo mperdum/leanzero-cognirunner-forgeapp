@@ -82,6 +82,55 @@ export default function DocsTab({ invoke, isAdmin, accountId }) {
 
   const formatSize = (len) => len < 1024 ? `${len} B` : `${(len / 1024).toFixed(1)} KB`;
 
+  /** Detect content type and auto-format/indent. */
+  const autoFormat = (text) => {
+    if (!text || !text.trim()) return text;
+    const trimmed = text.trim();
+
+    // JSON
+    try {
+      const parsed = JSON.parse(trimmed);
+      return JSON.stringify(parsed, null, 2);
+    } catch { /* not JSON */ }
+
+    // XML / HTML
+    if (/^<[\s\S]*>$/m.test(trimmed)) {
+      try {
+        let indent = 0;
+        return trimmed
+          .replace(/>\s*</g, ">\n<")
+          .split("\n")
+          .map((line) => {
+            const ln = line.trim();
+            if (!ln) return "";
+            if (ln.startsWith("</")) indent = Math.max(0, indent - 1);
+            const out = "  ".repeat(indent) + ln;
+            if (ln.startsWith("<") && !ln.startsWith("</") && !ln.endsWith("/>") && !ln.includes("</")) indent++;
+            return out;
+          })
+          .join("\n");
+      } catch { /* fall through */ }
+    }
+
+    // YAML — basic reindent (normalize to 2 spaces)
+    if (/^[\w-]+\s*:/m.test(trimmed) && !trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+      return trimmed.replace(/\t/g, "  ");
+    }
+
+    // JavaScript / code — normalize indentation to 2 spaces
+    if (/(?:function\s|const\s|let\s|var\s|=>|import\s|export\s)/m.test(trimmed)) {
+      return trimmed
+        .split("\n")
+        .map((line) => {
+          const stripped = line.replace(/^\t+/, (tabs) => "  ".repeat(tabs.length));
+          return stripped;
+        })
+        .join("\n");
+    }
+
+    return text;
+  };
+
   return (
     <div className="docs-tab">
       <div className="section-header">
@@ -132,7 +181,19 @@ export default function DocsTab({ invoke, isAdmin, accountId }) {
             style={{ width: "100%", padding: "8px", border: "1px solid var(--border-color)", borderRadius: "4px", background: "var(--input-bg)", color: "var(--text-color)", fontSize: "12px", fontFamily: "SFMono-Regular, Consolas, monospace", resize: "vertical" }}
           />
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "8px" }}>
-            <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{newContent.length > 0 ? formatSize(newContent.length) : ""}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{newContent.length > 0 ? formatSize(newContent.length) : ""}</span>
+              {newContent.trim() && (
+                <button
+                  className="btn-small"
+                  onClick={() => setNewContent(autoFormat(newContent))}
+                  style={{ fontSize: "10px", padding: "3px 8px" }}
+                  title="Auto-format and indent content (JSON, XML, YAML, JavaScript)"
+                >
+                  Format
+                </button>
+              )}
+            </div>
             <button className="btn-small" onClick={handleSave} disabled={saving || !newTitle.trim() || !newContent.trim()} style={{ background: "var(--primary-color)", color: "white", border: "none" }}>
               {saving ? "Saving..." : "Save"}
             </button>
@@ -188,8 +249,8 @@ export default function DocsTab({ invoke, isAdmin, accountId }) {
                     {expandedDoc === doc.id && (
                       <tr>
                         <td colSpan={isAdmin ? 6 : 5} style={{ padding: "0 14px 14px" }}>
-                          <pre style={{ margin: 0, padding: "10px", background: "var(--code-bg)", borderRadius: "4px", fontSize: "11px", fontFamily: "SFMono-Regular, Consolas, monospace", maxHeight: "200px", overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word", color: "var(--text-secondary)" }}>
-                            {expandedContent}
+                          <pre style={{ margin: 0, padding: "10px", background: "var(--code-bg)", borderRadius: "6px", fontSize: "11px", fontFamily: "SFMono-Regular, Consolas, monospace", maxHeight: "300px", overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                            {autoFormat(expandedContent)}
                           </pre>
                         </td>
                       </tr>
