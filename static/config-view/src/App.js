@@ -788,7 +788,22 @@ function App() {
           {showLogs && (
             <div className="logs-list">
               {logsLoading ? (
-                <div className="no-logs">Loading logs...</div>
+                <div style={{ padding: "12px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+                    <div style={{ width: "40px", height: "14px", borderRadius: "6px", background: "linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%)", backgroundSize: "200% 100%", animation: "skShimmer 1.5s ease-in-out infinite" }} />
+                    <div style={{ width: "60px", height: "14px", borderRadius: "6px", background: "linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%)", backgroundSize: "200% 100%", animation: "skShimmer 1.5s ease-in-out infinite" }} />
+                    <div style={{ width: "120px", height: "12px", borderRadius: "6px", background: "linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%)", backgroundSize: "200% 100%", animation: "skShimmer 1.5s ease-in-out infinite" }} />
+                  </div>
+                  <div style={{ width: "80%", height: "12px", borderRadius: "6px", marginBottom: "8px", background: "linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%)", backgroundSize: "200% 100%", animation: "skShimmer 1.5s ease-in-out infinite" }} />
+                  <div style={{ width: "95%", height: "32px", borderRadius: "6px", marginBottom: "16px", background: "linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%)", backgroundSize: "200% 100%", animation: "skShimmer 1.5s ease-in-out infinite" }} />
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+                    <div style={{ width: "40px", height: "14px", borderRadius: "6px", background: "linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%)", backgroundSize: "200% 100%", animation: "skShimmer 1.5s ease-in-out infinite" }} />
+                    <div style={{ width: "60px", height: "14px", borderRadius: "6px", background: "linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%)", backgroundSize: "200% 100%", animation: "skShimmer 1.5s ease-in-out infinite" }} />
+                    <div style={{ width: "100px", height: "12px", borderRadius: "6px", background: "linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%)", backgroundSize: "200% 100%", animation: "skShimmer 1.5s ease-in-out infinite" }} />
+                  </div>
+                  <div style={{ width: "70%", height: "12px", borderRadius: "6px", marginBottom: "8px", background: "linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%)", backgroundSize: "200% 100%", animation: "skShimmer 1.5s ease-in-out infinite" }} />
+                  <div style={{ width: "85%", height: "32px", borderRadius: "6px", background: "linear-gradient(90deg, var(--border-color) 25%, var(--code-bg) 50%, var(--border-color) 75%)", backgroundSize: "200% 100%", animation: "skShimmer 1.5s ease-in-out infinite" }} />
+                </div>
               ) : logs.length === 0 ? (
                 <div className="no-logs">No validation logs yet</div>
               ) : (

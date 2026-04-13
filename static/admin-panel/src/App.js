@@ -1268,7 +1268,22 @@ function App() {
         {showLogs && (
           <div className="card">
             {logsLoading ? (
-              <div className="empty-state">Loading logs...</div>
+              <div style={{ padding: "14px" }}>
+                <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+                  <div className="sk sk-text" style={{ width: 40, height: 14 }} />
+                  <div className="sk sk-text" style={{ width: 60, height: 14 }} />
+                  <div className="sk sk-text" style={{ width: 120, height: 12 }} />
+                </div>
+                <div className="sk sk-text" style={{ width: "90%", height: 12, marginBottom: 8 }} />
+                <div className="sk sk-block" style={{ width: "95%", height: 28, marginBottom: 16 }} />
+                <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+                  <div className="sk sk-text" style={{ width: 40, height: 14 }} />
+                  <div className="sk sk-text" style={{ width: 60, height: 14 }} />
+                  <div className="sk sk-text" style={{ width: 100, height: 12 }} />
+                </div>
+                <div className="sk sk-text" style={{ width: "75%", height: 12, marginBottom: 8 }} />
+                <div className="sk sk-block" style={{ width: "85%", height: 28 }} />
+              </div>
             ) : logs.length === 0 ? (
               <div className="empty-state">No validation logs yet</div>
             ) : (
