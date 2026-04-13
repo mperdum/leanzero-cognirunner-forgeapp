@@ -22,6 +22,7 @@ import DocsTab from "./components/DocsTab";
 import PermissionsTab from "./components/PermissionsTab";
 import SettingsOpenAITab from "./components/SettingsOpenAITab";
 import CustomSelect from "./components/CustomSelect";
+import AddRuleWizard from "./components/AddRuleWizard";
 
 const injectStyles = () => {
   if (document.getElementById("app-styles")) return;
@@ -949,6 +950,7 @@ function App() {
   const [accountId, setAccountId] = useState(null);
   const [activeTab, setActiveTab] = useState("rules");
   const [rulesFilter, setRulesFilter] = useState("all");
+  const [showAddWizard, setShowAddWizard] = useState(false);
   const [typeFilter, setTypeFilter] = useState("all");
 
   const fetchConfigs = async (showLoading = false, filterOverride) => {
@@ -1244,8 +1246,22 @@ function App() {
             <button className="btn-small" onClick={() => fetchConfigs(true)} disabled={refreshingConfigs}>
               {refreshingConfigs ? "Refreshing..." : "Refresh"}
             </button>
+            {(userRole === "editor" || userRole === "admin") && (
+              <button className="btn-small btn-edit" onClick={() => setShowAddWizard(!showAddWizard)}>
+                {showAddWizard ? "Cancel" : "+ Add Rule"}
+              </button>
+            )}
           </div>
         </div>
+
+        {showAddWizard && (
+          <AddRuleWizard
+            invoke={invoke}
+            onClose={() => setShowAddWizard(false)}
+            onCreated={() => fetchConfigs(true)}
+          />
+        )}
+
         <div className="card">
           {refreshingConfigs ? (
             <div style={{ padding: "14px" }}>

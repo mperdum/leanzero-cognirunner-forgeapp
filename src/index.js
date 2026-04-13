@@ -996,6 +996,160 @@ resolver.define("getFields", async () => {
   }
 });
 
+// === Add Rule Wizard Resolvers ===
+
+/**
+ * List all Jira projects accessible to the app.
+ */
+resolver.define("listProjects", async ({ context }) => {
+  if (!(await requireRole(context.accountId, "editor"))) {
+    return { success: false, error: "Editor access required" };
+  }
+  try {
+    const response = await api.asApp().requestJira(
+      route`/rest/api/3/project/search?maxResults=100&orderBy=name&status=live`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!response.ok) return { success: false, error: `Failed to fetch projects: ${response.status}` };
+    const data = await response.json();
+    const projects = (data.values || []).map((p) => ({
+      id: p.id,
+      key: p.key,
+      name: p.name,
+      projectTypeKey: p.projectTypeKey,
+      avatarUrl: p.avatarUrls?.["24x24"],
+    }));
+    return { success: true, projects };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Get workflows for a specific project (via workflow scheme).
+ */
+resolver.define("getProjectWorkflows", async ({ payload, context }) => {
+  if (!(await requireRole(context.accountId, "editor"))) {
+    return { success: false, error: "Editor access required" };
+  }
+  const { projectId } = payload;
+  if (!projectId) return { success: false, error: "Project ID required" };
+
+  try {
+    // Get the workflow scheme assigned to this project
+    const schemeResp = await api.asApp().requestJira(
+      route`/rest/api/3/workflowscheme/project?projectId=${projectId}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!schemeResp.ok) {
+      return { success: false, error: `Failed to fetch workflow scheme: ${schemeResp.status}` };
+    }
+    const schemeData = await schemeResp.json();
+    const schemes = schemeData.values || [];
+
+    // Collect unique workflow names from the scheme mappings
+    const workflowNames = new Set();
+    for (const scheme of schemes) {
+      if (scheme.defaultWorkflow) workflowNames.add(scheme.defaultWorkflow);
+      const mappings = scheme.issueTypeMappings || {};
+      for (const wfName of Object.values(mappings)) {
+        if (wfName) workflowNames.add(wfName);
+      }
+    }
+
+    // Fetch workflow details for each workflow name
+    const workflows = [];
+    for (const name of workflowNames) {
+      try {
+        const wfResp = await api.asApp().requestJira(
+          route`/rest/api/3/workflows/search?queryString=${name}&expand=values.transitions`,
+          { headers: { Accept: "application/json" } },
+        );
+        if (wfResp.ok) {
+          const wfData = await wfResp.json();
+          const match = (wfData.values || []).find((w) => w.name === name);
+          if (match) {
+            workflows.push({
+              id: match.id,
+              name: match.name,
+              transitionCount: (match.transitions || []).length,
+            });
+          }
+        }
+      } catch (e) { /* skip failed workflows */ }
+    }
+
+    return { success: true, workflows };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Get transitions for a specific workflow (with existing CogniRunner rules noted).
+ */
+resolver.define("getWorkflowTransitions", async ({ payload, context }) => {
+  if (!(await requireRole(context.accountId, "editor"))) {
+    return { success: false, error: "Editor access required" };
+  }
+  const { workflowName } = payload;
+  if (!workflowName) return { success: false, error: "Workflow name required" };
+
+  try {
+    const response = await api.asApp().requestJira(
+      route`/rest/api/3/workflows/search?queryString=${workflowName}&expand=values.transitions`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!response.ok) return { success: false, error: `Failed to fetch workflow: ${response.status}` };
+
+    const data = await response.json();
+    const workflow = (data.values || []).find((w) => w.name === workflowName);
+    if (!workflow) return { success: false, error: "Workflow not found" };
+
+    const transitions = (workflow.transitions || []).map((t) => {
+      const rules = t.rules || {};
+      const validators = rules.validators || [];
+      const conditions = rules.conditions || [];
+      const postFunctions = rules.postFunctions || rules.actions || [];
+
+      // Check which CogniRunner rules already exist on this transition
+      const hasCogniValidator = validators.some((r) => r.parameters?.key?.includes(APP_ID));
+      const hasCogniCondition = conditions.some((r) => r.parameters?.key?.includes(APP_ID));
+      const hasCogniPostFunction = postFunctions.some((r) => r.parameters?.key?.includes(APP_ID));
+
+      return {
+        id: String(t.id),
+        name: t.name,
+        type: t.type,
+        fromName: t.from?.[0]?.statusReference || t.from?.[0] || "Any",
+        toName: t.to?.statusReference || t.to || "",
+        validatorCount: validators.length,
+        conditionCount: conditions.length,
+        postFunctionCount: postFunctions.length,
+        hasCogniValidator,
+        hasCogniCondition,
+        hasCogniPostFunction,
+      };
+    });
+
+    // Resolve status names
+    const statuses = workflow.statuses || [];
+    const statusMap = new Map();
+    for (const s of statuses) {
+      if (s.statusReference) statusMap.set(s.statusReference, s.name);
+      if (s.id) statusMap.set(String(s.id), s.name);
+    }
+    for (const t of transitions) {
+      t.fromName = statusMap.get(t.fromName) || t.fromName;
+      t.toName = statusMap.get(t.toName) || t.toName;
+    }
+
+    return { success: true, transitions, workflowId: workflow.id };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 // === Admin & Permission Resolvers ===
 
 /**
