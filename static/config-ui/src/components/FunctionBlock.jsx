@@ -12,6 +12,7 @@ import CustomSelect from "./CustomSelect";
 import CodeEditor from "./CodeEditor";
 import DocRepository from "./DocRepository";
 import IssuePicker from "./IssuePicker";
+import AILoadingState from "./AILoadingState";
 import JIRA_ENDPOINTS_DATA from "../data/jira-endpoints";
 
 const OPERATION_TYPES = [
@@ -571,18 +572,22 @@ export default function FunctionBlock({ index, functionData, priorSteps, onUpdat
       )}
 
       {/* Generate / code section */}
-      <div className="generate-row">
-        <button
-          className={`btn-generate ${hasCode ? "btn-generate-secondary" : ""}`}
-          onClick={handleGenerate}
-          disabled={isGenerating || !hasPrompt}
-        >
-          {isGenerating ? "Generating..." : hasCode ? "Regenerate Code" : "Generate Code"}
-        </button>
-        {!hasPrompt && (
-          <span className="generate-hint">Describe what this step does to enable code generation</span>
-        )}
-      </div>
+      {isGenerating ? (
+        <AILoadingState type="codegen" />
+      ) : (
+        <div className="generate-row">
+          <button
+            className={`btn-generate ${hasCode ? "btn-generate-secondary" : ""}`}
+            onClick={handleGenerate}
+            disabled={!hasPrompt}
+          >
+            {hasCode ? "Regenerate Code" : "Generate Code"}
+          </button>
+          {!hasPrompt && (
+            <span className="generate-hint">Describe what this step does to enable code generation</span>
+          )}
+        </div>
+      )}
 
       {hasCode && (
         <div className="form-group">

@@ -1631,6 +1631,52 @@ const injectStyles = () => {
       font-size: 12px;
     }
 
+    /* AI Loading State */
+    .ai-loading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 16px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(37, 99, 235, 0.06), rgba(37, 99, 235, 0.02));
+      border: 1px solid rgba(37, 99, 235, 0.15);
+      margin-top: 10px;
+    }
+
+    .ai-loading-dots {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .ai-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--primary-color);
+      animation: aiDotPulse 1.4s ease-in-out infinite;
+    }
+
+    .ai-dot:nth-child(2) { animation-delay: 0.2s; }
+    .ai-dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes aiDotPulse {
+      0%, 80%, 100% { opacity: 0.25; transform: scale(0.8); }
+      40% { opacity: 1; transform: scale(1.1); }
+    }
+
+    .ai-loading-text {
+      font-size: 13px;
+      color: var(--primary-color);
+      font-weight: 500;
+      animation: aiTextFade 0.4s ease;
+    }
+
+    @keyframes aiTextFade {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
     /* AI Review panel */
     .review-panel {
       margin: 12px 0;
