@@ -307,7 +307,17 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
             </label>
             {step === 1 ? (
               loadingProjects ? (
-                <div className="sk sk-block" style={{ height: 36 }} />
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "6px" }}>
+                  {[1, 2, 3, 4, 5, 6].map((i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", border: "1px solid var(--border-color)", borderRadius: "8px" }}>
+                      <div className="sk sk-block" style={{ width: 24, height: 24, borderRadius: 6, flexShrink: 0 }} />
+                      <div style={{ flex: 1 }}>
+                        <div className="sk sk-text" style={{ width: "70%", height: 12, marginBottom: 4 }} />
+                        <div className="sk sk-text" style={{ width: "30%", height: 10 }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
               ) : (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "6px" }}>
                   {projects.map((p) => (
@@ -358,7 +368,14 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
             </label>
             {step === 2 ? (
               loadingWorkflows ? (
-                <div className="sk sk-block" style={{ height: 36 }} />
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  {[1, 2].map((i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", border: "1px solid var(--border-color)", borderRadius: "8px" }}>
+                      <div className="sk sk-text" style={{ width: "50%", height: 13 }} />
+                      <div className="sk sk-text" style={{ width: "20%", height: 11 }} />
+                    </div>
+                  ))}
+                </div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                   {workflows.map((w) => (
@@ -403,7 +420,19 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
             </label>
             {step === 3 ? (
               loadingTransitions ? (
-                <div className="sk sk-block" style={{ height: 36 }} />
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  {[1, 2, 3, 4].map((i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", border: "1px solid var(--border-color)", borderRadius: "8px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <div className="sk sk-text" style={{ width: 80, height: 13 }} />
+                        <div className="sk sk-text" style={{ width: 40, height: 16, borderRadius: 4 }} />
+                        <div className="sk sk-text" style={{ width: 12, height: 12 }} />
+                        <div className="sk sk-text" style={{ width: 50, height: 16, borderRadius: 4 }} />
+                      </div>
+                      <div className="sk sk-text" style={{ width: 14, height: 14 }} />
+                    </div>
+                  ))}
+                </div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                   {transitions.map((t) => (

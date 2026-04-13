@@ -247,7 +247,23 @@ export default function PermissionsTab({ invoke }) {
       {/* Current users list */}
       <div className="perm-list">
         {loading ? (
-          <div className="perm-empty">Loading users...</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="perm-admin-card">
+                <div className="perm-admin-info">
+                  <div className="sk" style={{ width: 36, height: 36, borderRadius: "50%", flexShrink: 0 }} />
+                  <div>
+                    <div className="sk sk-text" style={{ width: 120, height: 13, marginBottom: 4 }} />
+                    <div className="sk sk-text" style={{ width: 80, height: 10 }} />
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <div className="sk sk-block" style={{ width: 100, height: 32, borderRadius: 10 }} />
+                  <div className="sk sk-block" style={{ width: 60, height: 32, borderRadius: 10 }} />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : users.length === 0 ? (
           <div className="perm-empty">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

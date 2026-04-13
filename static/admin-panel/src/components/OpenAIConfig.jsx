@@ -205,9 +205,27 @@ export default function OpenAIConfig({ invoke }) {
         </div>
         <div className="card">
           <div style={{ padding: "16px" }}>
-            <div className="sk sk-text" style={{ width: "40%", height: 12, marginBottom: 12 }} />
-            <div className="sk sk-block" style={{ height: 40, marginBottom: 12 }} />
-            <div className="sk sk-text" style={{ width: "60%", height: 10 }} />
+            {/* Provider selector skeleton */}
+            <div style={{ marginBottom: "16px" }}>
+              <div className="sk sk-text" style={{ width: 60, height: 10, marginBottom: 6 }} />
+              <div className="sk sk-block" style={{ width: 280, height: 36, borderRadius: 10 }} />
+            </div>
+            {/* Status skeleton */}
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: 4 }}>
+                <div className="sk" style={{ width: 8, height: 8, borderRadius: "50%" }} />
+                <div className="sk sk-text" style={{ width: 140, height: 13 }} />
+              </div>
+              <div className="sk sk-text" style={{ width: "80%", height: 10 }} />
+            </div>
+            {/* Key input skeleton */}
+            <div style={{ marginBottom: "16px" }}>
+              <div className="sk sk-text" style={{ width: 80, height: 10, marginBottom: 6 }} />
+              <div style={{ display: "flex", gap: "8px" }}>
+                <div className="sk sk-block" style={{ flex: 1, height: 36, borderRadius: 10 }} />
+                <div className="sk sk-block" style={{ width: 90, height: 36, borderRadius: 10 }} />
+              </div>
+            </div>
           </div>
         </div>
       </div>

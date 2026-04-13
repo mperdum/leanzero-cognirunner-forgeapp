@@ -204,9 +204,18 @@ export default function DocsTab({ invoke, isAdmin, accountId }) {
       <div className="card">
         {loading ? (
           <div style={{ padding: "14px" }}>
-            <div className="sk sk-text" style={{ width: "50%", height: 12, marginBottom: 10 }} />
-            <div className="sk sk-text" style={{ width: "70%", height: 12, marginBottom: 10 }} />
-            <div className="sk sk-text" style={{ width: "35%", height: 12 }} />
+            {[1, 2, 3].map((i) => (
+              <div key={i} style={{ display: "flex", gap: "16px", alignItems: "center", padding: "10px 0", borderBottom: i < 3 ? "1px solid var(--border-color)" : "none" }}>
+                <div className="sk sk-text" style={{ width: 120, height: 13 }} />
+                <div className="sk sk-text" style={{ width: 70, height: 16, borderRadius: 4 }} />
+                <div className="sk sk-text" style={{ width: 50, height: 11 }} />
+                <div className="sk sk-text" style={{ width: 80, height: 11 }} />
+                <div style={{ marginLeft: "auto", display: "flex", gap: "6px" }}>
+                  <div className="sk sk-block" style={{ width: 44, height: 28, borderRadius: 10 }} />
+                  <div className="sk sk-block" style={{ width: 52, height: 28, borderRadius: 10 }} />
+                </div>
+              </div>
+            ))}
           </div>
         ) : docs.length === 0 ? (
           <div className="empty-state">
