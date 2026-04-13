@@ -311,6 +311,13 @@ export default function OpenAIConfig({ invoke }) {
             </div>
           )}
 
+          {/* Key/Model section — only show for the saved (active) provider */}
+          {provider !== savedProvider ? (
+            <div style={{ padding: "12px 0", textAlign: "center", color: "var(--text-muted)", fontSize: "13px" }}>
+              Click <strong>Switch Provider</strong> to activate {PROVIDER_OPTIONS.find((p) => p.value === provider)?.label || provider} and manage its API key.
+            </div>
+          ) : (<>
+
           {/* Status */}
           <div className="openai-status" style={{ marginBottom: "16px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
@@ -451,6 +458,7 @@ export default function OpenAIConfig({ invoke }) {
               )}
             </div>
           )}
+          </>)}
         </div>
       </div>
     </div>
