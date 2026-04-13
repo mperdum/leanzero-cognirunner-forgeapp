@@ -113,12 +113,21 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
   const handleTypeSelect = async (type) => {
     setRuleType(type);
     setStep(5);
-    setLoadingFields(true);
-    try {
-      const result = await invoke("getFields");
-      if (result.success) setFields(result.fields || []);
-    } catch (e) { /* fields optional */ }
-    setLoadingFields(false);
+    // Only fetch fields if not already loaded
+    if (fields.length === 0) {
+      setLoadingFields(true);
+      try {
+        const result = await invoke("getFields");
+        if (result.success) {
+          setFields(result.fields || []);
+        } else {
+          console.error("getFields failed:", result.error);
+        }
+      } catch (e) {
+        console.error("getFields error:", e);
+      }
+      setLoadingFields(false);
+    }
   };
 
   // Save the rule
