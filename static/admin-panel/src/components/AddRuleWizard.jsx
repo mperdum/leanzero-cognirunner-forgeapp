@@ -680,19 +680,6 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
                   </ol>
                 </div>
 
-                {/* Source Field */}
-                <div style={{ marginBottom: "14px" }}>
-                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px" }}>
-                    Source Field
-                  </label>
-                  {loadingFields ? <div className="sk sk-block" style={{ height: 36 }} /> : (
-                    <CustomSelect value={fieldId} onChange={setFieldId} placeholder="Select source field..." searchable searchPlaceholder="Search fields..." options={fieldOptions} />
-                  )}
-                  <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
-                    The field the AI reads to evaluate the condition. Defaults to Description if not set.
-                  </p>
-                </div>
-
                 {/* Condition Prompt */}
                 <div style={{ marginBottom: "14px" }}>
                   <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px" }}>
@@ -720,7 +707,7 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
                     onChange={(e) => setActionPrompt(e.target.value)}
                     placeholder='E.g. "Summarize the issue into 2-3 bullet points" or "Append a review checklist"'
                     rows={5}
-                    className={`wiz-textarea${submitted && !prompt.trim() ? " wiz-error" : ""}`}
+                    className="wiz-textarea"
                   />
                   <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
                     When the condition passes, the AI generates a new value for the target field based on this instruction. Leave empty for generic summarization.
@@ -733,7 +720,7 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
                     Target Field <span style={{ color: "var(--error-color)" }}>*</span>
                   </label>
                   {loadingFields ? <div className="sk sk-block" style={{ height: 36 }} /> : (
-                    <CustomSelect value={actionFieldId} onChange={setActionFieldId} placeholder="Select target field..." searchable searchPlaceholder="Search fields..." options={fieldOptions} />
+                    <CustomSelect value={actionFieldId} onChange={setActionFieldId} placeholder="Select target field..." searchable searchPlaceholder="Search fields..." error={submitted && !actionFieldId} options={fieldOptions} />
                   )}
                   <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
                     The AI will update this field when the condition is met. Works best with text-based fields.
