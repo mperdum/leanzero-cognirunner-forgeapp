@@ -1056,10 +1056,16 @@ resolver.define("saveOpenAIKey", async ({ payload, context }) => {
   }
   try {
     const { key } = payload;
-    if (!key || typeof key !== "string" || !key.startsWith("sk-")) {
-      return { success: false, error: "Invalid API key format. Must start with sk-" };
+    if (!key || typeof key !== "string" || key.trim().length < 8) {
+      return { success: false, error: "Invalid API key format" };
+    }
+    // Validate sk- prefix only for OpenAI provider
+    const provider = (await storage.get("COGNIRUNNER_AI_PROVIDER")) || "openai";
+    if (provider === "openai" && !key.startsWith("sk-")) {
+      return { success: false, error: "OpenAI API keys must start with sk-" };
     }
     await storage.set("COGNIRUNNER_OPENAI_API_KEY", key);
+    _cachedKey = key; _cachedKeyChecked = true; // update cache
     return { success: true };
   } catch (error) {
     console.error("Failed to save OpenAI key:", error);
@@ -1095,6 +1101,7 @@ resolver.define("removeOpenAIKey", async ({ context }) => {
   try {
     await storage.delete("COGNIRUNNER_OPENAI_API_KEY");
     await storage.delete("COGNIRUNNER_OPENAI_MODEL");
+    _cachedKey = null; _cachedKeyChecked = false; _cachedModel = null; // invalidate caches
     return { success: true };
   } catch (error) {
     console.error("Failed to remove OpenAI key:", error);
@@ -1103,38 +1110,108 @@ resolver.define("removeOpenAIKey", async ({ context }) => {
 });
 
 /**
- * Get available OpenAI models.
- * - If BYOK: fetches from OpenAI /v1/models API using user's key.
+ * Save the AI provider and optional custom base URL.
+ * Clears key + model when switching providers (keys aren't cross-compatible).
+ */
+resolver.define("saveProvider", async ({ payload, context }) => {
+  if (!(await requireAdmin(context.accountId))) {
+    return { success: false, error: "Admin access required" };
+  }
+  try {
+    const { provider, baseUrl } = payload;
+    if (!provider || !PROVIDERS[provider]) {
+      return { success: false, error: "Invalid provider. Choose: openai, azure, openrouter" };
+    }
+    // Azure: validate base URL format if provided, but allow saving without one initially
+    if (provider === "azure" && baseUrl && !baseUrl.includes(".openai.azure.com")) {
+      return { success: false, error: "Azure endpoint must contain .openai.azure.com (e.g. https://myresource.openai.azure.com/openai/v1)" };
+    }
+
+    const currentProvider = await storage.get("COGNIRUNNER_AI_PROVIDER");
+    await storage.set("COGNIRUNNER_AI_PROVIDER", provider);
+
+    if (baseUrl) {
+      // Normalize: remove trailing slash
+      await storage.set("COGNIRUNNER_AI_BASE_URL", baseUrl.replace(/\/+$/, ""));
+    } else if (PROVIDERS[provider].baseUrl) {
+      await storage.set("COGNIRUNNER_AI_BASE_URL", PROVIDERS[provider].baseUrl);
+    }
+
+    // If switching providers, clear key + model (they're provider-specific)
+    if (currentProvider && currentProvider !== provider) {
+      await storage.delete("COGNIRUNNER_OPENAI_API_KEY");
+      await storage.delete("COGNIRUNNER_OPENAI_MODEL");
+      _cachedKey = null; _cachedKeyChecked = false; _cachedModel = null;
+    }
+
+    // Invalidate provider cache
+    _cachedProviderChecked = false; _cachedProvider = null; _cachedBaseUrl = null;
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to save provider:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Get the current provider config (provider name + base URL).
+ */
+resolver.define("getProvider", async () => {
+  try {
+    const provider = (await storage.get("COGNIRUNNER_AI_PROVIDER")) || "openai";
+    const baseUrl = await storage.get("COGNIRUNNER_AI_BASE_URL");
+    return {
+      success: true,
+      provider,
+      baseUrl: baseUrl || (PROVIDERS[provider] && PROVIDERS[provider].baseUrl) || PROVIDERS.openai.baseUrl,
+      providers: Object.entries(PROVIDERS).map(([key, val]) => ({ key, label: val.label, hasDefaultUrl: !!val.baseUrl })),
+    };
+  } catch (error) {
+    console.error("Failed to get provider:", error);
+    return { success: false, provider: "openai", baseUrl: PROVIDERS.openai.baseUrl };
+  }
+});
+
+/**
+ * Get available models from the configured provider.
+ * - If BYOK: fetches from the provider's /models endpoint.
  * - If factory: returns empty array (no model choice — factory model is fixed).
  */
 resolver.define("getOpenAIModels", async () => {
   try {
     const byokKey = await storage.get("COGNIRUNNER_OPENAI_API_KEY");
     if (!byokKey) {
-      // Factory key — no model selection available, show auto-detected model
       const factoryModel = await getOpenAIModel();
       return { success: true, models: [], isByok: false, currentModel: factoryModel };
     }
 
-    // BYOK — fetch available models from OpenAI
-    const response = await fetch("https://api.openai.com/v1/models", {
+    // Fetch models from the configured provider's endpoint
+    const { provider, baseUrl } = await getProviderConfig();
+    const response = await fetch(`${baseUrl}/models`, {
       method: "GET",
       headers: { Authorization: `Bearer ${byokKey}` },
     });
 
     if (!response.ok) {
-      return { success: false, error: "Failed to fetch models. Check your API key.", models: [], isByok: true };
+      return { success: false, error: "Failed to fetch models. Check your API key and endpoint.", models: [], isByok: true };
     }
 
     const data = await response.json();
-    const chatModels = (data.data || [])
-      .filter((m) => /^(gpt-5|o3-|o4-)/.test(m.id))
-      .map((m) => m.id)
-      .sort();
+    let chatModels = (data.data || []).map((m) => m.id).sort();
 
-    return { success: true, models: chatModels.slice(0, 30), isByok: true };
+    // Provider-specific filtering
+    if (provider === "openai") {
+      chatModels = chatModels.filter((id) => /^(gpt-5|o3-|o4-)/.test(id));
+    } else if (provider === "openrouter") {
+      // OpenRouter prefixes models with provider — show GPT models
+      chatModels = chatModels.filter((id) => /openai\//.test(id));
+    }
+    // Azure: no filtering — show all available deployments
+
+    return { success: true, models: chatModels.slice(0, 50), isByok: true };
   } catch (error) {
-    console.error("Failed to get OpenAI models:", error);
+    console.error("Failed to get models:", error);
     return { success: false, error: error.message, models: [], isByok: false };
   }
 });
@@ -1425,7 +1502,7 @@ resolver.define("suggestEndpoint", async ({ payload }) => {
 
   try {
     const apiKey = await getOpenAIKey();
-    if (!apiKey) return { success: false, error: "No OpenAI API key configured" };
+    if (!apiKey) return { success: false, error: "No API key configured" };
     const model = await getOpenAIModel();
 
     const systemPrompt = `You are a Jira REST API assistant. Given a user's description of what they want to do, suggest the correct Jira REST API v3 endpoint.
@@ -1481,7 +1558,7 @@ Respond with ONLY a valid JSON object:
   "explanation": "Brief explanation of why this endpoint and how to use it"
 }`;
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch(`${(await getProviderConfig()).baseUrl}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
@@ -1520,7 +1597,7 @@ resolver.define("generatePostFunctionCode", async ({ payload }) => {
   try {
     const apiKey = await getOpenAIKey();
     if (!apiKey) {
-      return { success: false, error: "No OpenAI API key configured. Set one in the Admin panel." };
+      return { success: false, error: "No API key configured. Set one in CogniRunner Settings." };
     }
     // Always use the best available model for code generation — code quality
     // matters more than token cost here. Fall back to configured model only
@@ -1741,7 +1818,7 @@ ${priorSteps.map((s) => `- \`${s.variable}\` (from step ${s.step}: "${s.name}") 
 
 IMPORTANT: Use these variables in your code. For example, if a prior step stored search results in \`searchResults\`, you can write \`searchResults.issues.forEach(...)\` directly. Do NOT re-fetch data that a prior step already fetched.` : ""}`;
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch(`${(await getProviderConfig()).baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -2028,29 +2105,36 @@ resolver.define("testSemanticPostFunction", async ({ payload }) => {
 
   const startTime = Date.now();
   const logs = [];
+  const sourceFieldId = fieldId || "description";
+  const targetFieldId = actionFieldId || sourceFieldId;
 
   try {
-    // Fetch context docs
-    const contextDocsText = await fetchContextDocs(selectedDocIds);
+    // Step 1: Fetch issue + context docs + editmeta + credentials in parallel
+    logs.push(`Fetching issue ${issueKey} and checking field access...`);
+    const [issueResponse, editMetaResp, contextDocsText, apiKey, model] = await Promise.all([
+      api.asApp().requestJira(route`/rest/api/3/issue/${issueKey}?expand=renderedFields`),
+      api.asApp().requestJira(route`/rest/api/3/issue/${issueKey}/editmeta`, { headers: { Accept: "application/json" } }),
+      fetchContextDocs(selectedDocIds),
+      getOpenAIKey(),
+      getOpenAIModel(),
+    ]);
+
     if (contextDocsText) logs.push(`Loaded ${(selectedDocIds || []).length} context document(s)`);
 
-    // Fetch the real issue
-    logs.push(`Fetching issue ${issueKey}...`);
-    const issueResponse = await api.asApp().requestJira(
-      route`/rest/api/3/issue/${issueKey}?expand=renderedFields`,
-    );
+    // Step 2: Validate issue exists
     if (!issueResponse.ok) {
       return { success: false, error: `Failed to fetch ${issueKey}: HTTP ${issueResponse.status}`, logs };
     }
     const issue = await issueResponse.json();
     logs.push(`Fetched ${issue.key}: "${issue.fields?.summary}"`);
 
-    // Extract source field value
-    const sourceFieldId = fieldId || "description";
+    // Step 3: Check source field exists on issue
     const rawValue = issue.fields?.[sourceFieldId];
+    if (rawValue === undefined && sourceFieldId !== "description") {
+      logs.push(`WARNING: Source field "${sourceFieldId}" does not exist on ${issueKey}`);
+    }
     let fieldValue = "";
     if (rawValue && typeof rawValue === "object" && rawValue.type === "doc") {
-      // Extract text from ADF
       const extractAdf = (node) => {
         if (!node) return "";
         if (node.type === "text") return node.text || "";
@@ -2063,14 +2147,57 @@ resolver.define("testSemanticPostFunction", async ({ payload }) => {
     }
     logs.push(`Source field "${sourceFieldId}": ${fieldValue ? fieldValue.substring(0, 150) + (fieldValue.length > 150 ? "..." : "") : "(empty)"}`);
 
-    // Call OpenAI to evaluate condition + action
-    const apiKey = await getOpenAIKey();
-    if (!apiKey) {
-      return { success: false, error: "No OpenAI API key configured", logs };
-    }
-    const model = await getOpenAIModel();
+    // Step 4: Pre-flight — check target field editability via editmeta
+    let targetFieldMeta = null;
+    if (editMetaResp.ok) {
+      const editMeta = await editMetaResp.json();
+      const editableFields = editMeta.fields || {};
+      if (!editableFields[targetFieldId]) {
+        const available = Object.keys(editableFields);
+        const availablePreview = available.slice(0, 15).join(", ");
+        logs.push(`FAIL: Field "${targetFieldId}" is NOT editable on ${issueKey}`);
+        return {
+          success: false,
+          error: `Target field "${targetFieldId}" is not editable on this issue`,
+          logs,
+          recommendation: `The field "${targetFieldId}" cannot be edited on issue ${issueKey}. This could mean:\n`
+            + `- The field is not on the issue's edit screen\n`
+            + `- The field is read-only (e.g. created, updated, status, resolution)\n`
+            + `- The field does not exist on this issue type\n\n`
+            + `Editable fields on this issue (${available.length} total): ${availablePreview}${available.length > 15 ? "..." : ""}.\n`
+            + `Change the Target Field in your post-function configuration to one of these.`,
+          executionTimeMs: Date.now() - startTime,
+        };
+      }
+      targetFieldMeta = editableFields[targetFieldId];
+      const schemaType = targetFieldMeta.schema?.type || "unknown";
+      const schemaSystem = targetFieldMeta.schema?.system || "";
+      const schemaItems = targetFieldMeta.schema?.items ? `, items: ${targetFieldMeta.schema.items}` : "";
+      logs.push(`Target field "${targetFieldId}" is editable (type: ${schemaType}${schemaSystem ? `, system: ${schemaSystem}` : ""}${schemaItems})`);
 
-    const systemPrompt = `You are a workflow automation assistant. You will be given a field value and two instructions:
+      // Log allowed values if it's a select/option field
+      if (targetFieldMeta.allowedValues && targetFieldMeta.allowedValues.length > 0) {
+        const allowedPreview = targetFieldMeta.allowedValues.slice(0, 8).map((v) => v.value || v.name || v.id).join(", ");
+        logs.push(`Allowed values: ${allowedPreview}${targetFieldMeta.allowedValues.length > 8 ? ` (+${targetFieldMeta.allowedValues.length - 8} more)` : ""}`);
+      }
+    } else {
+      logs.push(`Warning: Could not check editmeta (HTTP ${editMetaResp.status}) — field editability not verified`);
+    }
+
+    // Step 5: Check API key
+    if (!apiKey) {
+      return { success: false, error: "No API key configured", logs, executionTimeMs: Date.now() - startTime };
+    }
+
+    // Step 6: Build prompts (same logic as real execution)
+    const alwaysRun = /^(run\s*(every\s*time|always)|always\s*run|every\s*time|true|yes)\s*[.!]?\s*$/i.test((conditionPrompt || "").trim());
+    let systemPrompt, userContent;
+    if (alwaysRun) {
+      logs.push("Condition is always-run — skipping AI condition check");
+      systemPrompt = `Generate a new value for a Jira field. Respond with ONLY valid JSON: {"decision":"UPDATE","value":"the new value","reason":"brief reason"}`;
+      userContent = `Current field value:\n${fieldValue || "(empty)"}\n\nACTION: ${actionPrompt || "Generate an appropriate value."}`;
+    } else {
+      systemPrompt = `You are a workflow automation assistant. You will be given a field value and two instructions:
 1. CONDITION: Evaluate whether this condition is met based on the field value.
 2. ACTION: If the condition is met, generate the new value for the target field.
 
@@ -2079,14 +2206,17 @@ You MUST respond with ONLY a valid JSON object (no markdown, no explanation):
   "decision": "UPDATE" or "SKIP",
   "value": "the new field value (only if UPDATE)",
   "reason": "brief explanation of your decision"
-}`
-    + (contextDocsText ? `\n\n## Reference Documentation\nUse the following documentation to inform your decisions:\n\n${contextDocsText.substring(0, 30000)}` : "");
+}`;
+      userContent = `Field value:\n${fieldValue || "(empty)"}\n\nCONDITION: ${conditionPrompt}\n\nACTION: ${actionPrompt || "Generate an appropriate value for the target field."}`;
+    }
+    if (contextDocsText) {
+      systemPrompt += `\n\n## Reference Documentation\nUse the following documentation to inform your decisions:\n\n${contextDocsText.substring(0, 30000)}`;
+    }
 
-    const userContent = `Field value:\n${fieldValue || "(empty)"}\n\nCONDITION: ${conditionPrompt}\n\nACTION: ${actionPrompt || "Generate an appropriate value for the target field."}`;
-
+    // Step 7: Call AI
     logs.push(`Calling AI (model: ${model})...`);
-
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const aiStart = Date.now();
+    const response = await fetch(`${(await getProviderConfig()).baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -2101,28 +2231,63 @@ You MUST respond with ONLY a valid JSON object (no markdown, no explanation):
         ],
       }),
     });
+    const aiTimeMs = Date.now() - aiStart;
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "");
       console.error("testSemanticPF AI error:", response.status, errText);
       logs.push(`AI error: ${response.status} — ${errText.substring(0, 200)}`);
-      return { success: false, error: `AI error (${response.status}): ${errText.substring(0, 150)}`, logs };
+      return { success: false, error: `AI error (${response.status}): ${errText.substring(0, 150)}`, logs, executionTimeMs: Date.now() - startTime };
     }
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
     if (!content) {
       logs.push("AI returned empty response");
-      return { success: false, error: "Empty AI response", logs };
+      return { success: false, error: "Empty AI response", logs, executionTimeMs: Date.now() - startTime };
     }
 
-    const result = JSON.parse(content);
-    logs.push(`AI decision: ${result.decision}`);
+    let result;
+    try {
+      result = JSON.parse(content);
+    } catch (parseErr) {
+      logs.push(`AI response is not valid JSON: ${content.substring(0, 150)}`);
+      return { success: false, error: "AI returned invalid JSON", logs, executionTimeMs: Date.now() - startTime,
+        recommendation: "The AI response couldn't be parsed as JSON. Simplify your prompts." };
+    }
+
+    logs.push(`AI decision: ${result.decision} (${aiTimeMs}ms, ${data.usage?.total_tokens || "?"} tokens)`);
     logs.push(`Reason: ${result.reason}`);
 
+    // Step 8: If UPDATE, validate the proposed value against the field schema
     if (result.decision === "UPDATE") {
-      logs.push(`Proposed value for "${actionFieldId || sourceFieldId}": ${typeof result.value === "string" ? result.value.substring(0, 200) : JSON.stringify(result.value)}`);
-      logs.push(`DRY RUN — field was NOT updated`);
+      const rawProposed = result.value;
+      logs.push(`Proposed raw value: ${typeof rawProposed === "string" ? rawProposed.substring(0, 200) : JSON.stringify(rawProposed).substring(0, 200)}`);
+
+      // Auto-format value (same as real execution)
+      if (targetFieldMeta) {
+        const formatted = formatValueForField(rawProposed, targetFieldMeta);
+        if (formatted !== rawProposed) {
+          logs.push(`Auto-formatted for ${targetFieldMeta.schema?.type} field: ${JSON.stringify(formatted).substring(0, 200)}`);
+          result.value = formatted;
+        }
+
+        // Schema validation warnings
+        const schemaType = targetFieldMeta.schema?.type;
+        if (schemaType === "option" && typeof rawProposed === "string" && targetFieldMeta.allowedValues) {
+          const match = targetFieldMeta.allowedValues.find((v) => (v.value || v.name || "").toLowerCase() === rawProposed.toLowerCase());
+          if (!match) {
+            logs.push(`WARNING: "${rawProposed}" is not in the allowed values for this select field — the update would likely fail`);
+          } else {
+            logs.push(`Value "${rawProposed}" matches allowed option`);
+          }
+        }
+        if (schemaType === "number" && typeof rawProposed === "string" && isNaN(Number(rawProposed))) {
+          logs.push(`WARNING: "${rawProposed}" is not a valid number — this field requires a numeric value`);
+        }
+      }
+
+      logs.push(`DRY RUN — field was NOT updated. In a real execution, "${targetFieldId}" would be set to this value.`);
     }
 
     return {
@@ -2130,7 +2295,7 @@ You MUST respond with ONLY a valid JSON object (no markdown, no explanation):
       decision: result.decision,
       reason: result.reason,
       proposedValue: result.value,
-      targetField: actionFieldId || sourceFieldId,
+      targetField: targetFieldId,
       sourceField: sourceFieldId,
       sourceValue: fieldValue ? fieldValue.substring(0, 300) : "(empty)",
       issueKey,
@@ -2304,6 +2469,37 @@ resolver.define("testPostFunction", async ({ payload }) => {
 });
 
 export const handler = resolver.getDefinitions();
+
+// === Provider definitions ===
+const PROVIDERS = {
+  openai: { label: "OpenAI", baseUrl: "https://api.openai.com/v1" },
+  azure: { label: "Azure OpenAI", baseUrl: null }, // user must provide
+  openrouter: { label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1" },
+};
+
+// In-memory provider cache
+let _cachedProvider = null;
+let _cachedBaseUrl = null;
+let _cachedProviderChecked = false;
+
+/**
+ * Get the configured AI provider info: { provider, baseUrl }.
+ * Returns cached value on subsequent calls within the same invocation.
+ */
+const getProviderConfig = async () => {
+  if (_cachedProviderChecked) return { provider: _cachedProvider || "openai", baseUrl: _cachedBaseUrl || PROVIDERS.openai.baseUrl };
+  try {
+    const provider = (await storage.get("COGNIRUNNER_AI_PROVIDER")) || "openai";
+    const customUrl = await storage.get("COGNIRUNNER_AI_BASE_URL");
+    _cachedProviderChecked = true;
+    _cachedProvider = provider;
+    _cachedBaseUrl = customUrl || (PROVIDERS[provider] && PROVIDERS[provider].baseUrl) || PROVIDERS.openai.baseUrl;
+    return { provider: _cachedProvider, baseUrl: _cachedBaseUrl };
+  } catch (error) {
+    console.error("Error reading provider config:", error);
+    return { provider: "openai", baseUrl: PROVIDERS.openai.baseUrl };
+  }
+};
 
 // In-memory key cache — avoids KVS read on every invocation
 let _cachedKey = null;
@@ -2868,7 +3064,7 @@ Respond with JSON only.`;
   }
 
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch(`${(await getProviderConfig()).baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -3033,7 +3229,7 @@ RESPONSE FORMAT:
         requestBody.tool_choice = "auto";
       }
 
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      const response = await fetch(`${(await getProviderConfig()).baseUrl}/chat/completions`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -3139,6 +3335,42 @@ RESPONSE FORMAT:
  * - Number fields: customfield_XXXXX (number)
  * - And more...
  */
+/**
+ * Auto-format an AI-generated value to match the Jira field's expected schema.
+ * Prevents common 400 errors by converting plain strings to the right structure.
+ */
+const formatValueForField = (value, fieldMeta) => {
+  if (!fieldMeta || !fieldMeta.schema) return value;
+  const schemaType = fieldMeta.schema.type;
+
+  // If value is already an object/array, assume the AI got it right
+  if (typeof value !== "string") return value;
+
+  switch (schemaType) {
+    case "option":
+      // Single select/radio — wrap string in {value: "..."} if not already an object
+      return { value };
+    case "array":
+      // Multi-select, labels, components — depends on items type
+      if (fieldMeta.schema.items === "option") {
+        // Multi-select: split comma-separated values into array of {value: "..."}
+        return value.split(",").map((v) => ({ value: v.trim() })).filter((v) => v.value);
+      }
+      if (fieldMeta.schema.items === "string") {
+        // Labels: array of strings
+        return value.split(",").map((v) => v.trim()).filter(Boolean);
+      }
+      return value;
+    case "number":
+      // Number fields
+      const num = Number(value);
+      return isNaN(num) ? value : num;
+    default:
+      // string, date, datetime, etc. — plain string is correct
+      return value;
+  }
+};
+
 const getFieldValue = async (issueKey, fieldId, modifiedFields) => {
   let rawValue = null;
 
@@ -3459,8 +3691,8 @@ const executeSemanticPostFunction = async (issueKey, config) => {
   try {
     // Credentials already fetched in parallel above
     if (!apiKey) {
-      trace.push("ERROR: No OpenAI API key configured");
-      return { success: false, decision: "SKIP", reason: "No OpenAI API key configured", trace,
+      trace.push("ERROR: No API key configured");
+      return { success: false, decision: "SKIP", reason: "No API key configured", trace,
         recommendation: "Go to CogniRunner Settings and configure an OpenAI API key, or ask your admin to set the OPENAI_API_KEY environment variable via forge variables." };
     }
     trace.push(`Using model: ${model}`);
@@ -3468,7 +3700,7 @@ const executeSemanticPostFunction = async (issueKey, config) => {
     // Step 5: Call OpenAI
     trace.push("Evaluating condition with AI...");
     const aiStart = Date.now();
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch(`${(await getProviderConfig()).baseUrl}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({ model, ...buildModelParams(),
@@ -3481,17 +3713,17 @@ const executeSemanticPostFunction = async (issueKey, config) => {
       const status = response.status;
       const errBody = await response.text().catch(() => "");
       console.error("Semantic PF AI error:", status, errBody);
-      trace.push(`ERROR: OpenAI returned HTTP ${status} (${aiTimeMs}ms) — ${errBody.substring(0, 200)}`);
+      trace.push(`ERROR: AI provider returned HTTP ${status} (${aiTimeMs}ms) — ${errBody.substring(0, 200)}`);
       const rec = status === 401 || status === 403
-        ? "Your API key is invalid or expired. Check it in CogniRunner Settings or regenerate it on the OpenAI dashboard."
+        ? "Your API key is invalid or expired. Check it in CogniRunner Settings."
         : status === 429
-          ? "OpenAI rate limit reached. Wait a few minutes or upgrade your OpenAI plan for higher limits."
+          ? "AI provider rate limit reached. Wait a few minutes or check your plan limits."
           : status === 404
             ? `Model "${model}" not found. Change the model in CogniRunner Settings to another available model.`
             : status === 400
-              ? `Bad request to OpenAI. The model "${model}" may not support the current parameters. Error: ${errBody.substring(0, 100)}`
-              : "Check your OpenAI API key and account status at platform.openai.com.";
-      return { success: false, decision: "SKIP", reason: `OpenAI error: ${status}`, trace, recommendation: rec, aiTimeMs };
+              ? `Bad request to AI provider. The model "${model}" may not support the current parameters. Error: ${errBody.substring(0, 100)}`
+              : "Check your API key and provider settings in CogniRunner Settings.";
+      return { success: false, decision: "SKIP", reason: `AI provider error: ${status}`, trace, recommendation: rec, aiTimeMs };
     }
 
     // Step 6: Parse response
@@ -3519,6 +3751,45 @@ const executeSemanticPostFunction = async (issueKey, config) => {
 
     // Step 7: Execute update if decision is UPDATE
     if (result.decision === "UPDATE" && actionFieldId && result.value !== undefined) {
+      // Step 7a: Check if the target field is editable on this issue
+      trace.push(`Checking if "${actionFieldId}" is editable on ${issueKey}...`);
+      try {
+        const editMetaResp = await api.asApp().requestJira(
+          route`/rest/api/3/issue/${issueKey}/editmeta`,
+          { headers: { Accept: "application/json" } },
+        );
+        if (editMetaResp.ok) {
+          const editMeta = await editMetaResp.json();
+          const editableFields = editMeta.fields || {};
+          if (!editableFields[actionFieldId]) {
+            const availableFields = Object.keys(editableFields).slice(0, 10).join(", ");
+            trace.push(`ERROR: Field "${actionFieldId}" is not editable on ${issueKey}`);
+            return { success: false, decision: "UPDATE", reason: `Field "${actionFieldId}" is not editable`, trace,
+              recommendation: `The field "${actionFieldId}" cannot be edited on issue ${issueKey}. This could mean:\n`
+                + `- The field is not on the issue's edit screen\n`
+                + `- The field is read-only (e.g. created, updated, status, resolution)\n`
+                + `- The field does not exist on this issue type\n\n`
+                + `Editable fields on this issue include: ${availableFields}${Object.keys(editableFields).length > 10 ? "..." : ""}.\n`
+                + `Change the Target Field in your post-function configuration to one of these.`,
+              aiTimeMs, tokens };
+          }
+          // Log the field schema so we know what format Jira expects
+          const fieldMeta = editableFields[actionFieldId];
+          const schemaType = fieldMeta.schema?.type || "unknown";
+          const schemaSystem = fieldMeta.schema?.system || "";
+          trace.push(`Field "${actionFieldId}" is editable (type: ${schemaType}${schemaSystem ? `, system: ${schemaSystem}` : ""})`);
+
+          // Auto-format the value based on field schema
+          const formattedValue = formatValueForField(result.value, fieldMeta);
+          if (formattedValue !== result.value) {
+            trace.push(`Auto-formatted value for ${schemaType} field`);
+          }
+          result.value = formattedValue;
+        }
+      } catch (editMetaErr) {
+        trace.push(`Warning: Could not check editmeta — proceeding with update anyway`);
+      }
+
       trace.push(`Updating field "${actionFieldId}" on ${issueKey}...`);
       const updateBody = { fields: { [actionFieldId]: result.value } };
       const updateResponse = await api.asApp().requestJira(
@@ -3527,15 +3798,30 @@ const executeSemanticPostFunction = async (issueKey, config) => {
       );
       if (!updateResponse.ok) {
         const errStatus = updateResponse.status;
-        trace.push(`ERROR: Field update failed with HTTP ${errStatus}`);
+        const errBody = await updateResponse.text().catch(() => "");
+        let jiraError = "";
+        try {
+          const errJson = JSON.parse(errBody);
+          jiraError = errJson.errors ? Object.entries(errJson.errors).map(([k, v]) => `${k}: ${v}`).join("; ")
+            : errJson.errorMessages ? errJson.errorMessages.join("; ")
+            : errBody.substring(0, 200);
+        } catch { jiraError = errBody.substring(0, 200); }
+        trace.push(`ERROR: Field update failed with HTTP ${errStatus} — ${jiraError}`);
         const rec = errStatus === 400
-          ? `The value format is wrong for field "${actionFieldId}". Check if it's a text, select, or ADF field — each requires a different format. Edit your action prompt to specify the correct format.`
+          ? `Jira rejected the value for "${actionFieldId}": ${jiraError}\n\n`
+            + `Common fixes:\n`
+            + `- Text fields: Send a plain string value\n`
+            + `- Rich text fields (description, etc.): Send an ADF document object, not plain text. Add "format the value as plain text, not ADF" to your action prompt.\n`
+            + `- Select/dropdown fields: Send {value: "Option Name"} or {id: "10001"}, not a plain string\n`
+            + `- Multi-select fields: Send an array of {value: "..."} objects\n`
+            + `- User fields: Send {accountId: "..."}\n`
+            + `- Number fields: Send a number, not a string`
           : errStatus === 403
             ? `The app doesn't have permission to edit "${actionFieldId}". Check that write:jira-work scope is configured and the field is editable.`
             : errStatus === 404
-              ? `Issue ${issueKey} or field "${actionFieldId}" not found. Verify the field ID is correct in your post-function configuration.`
-              : `Jira returned HTTP ${errStatus}. Check the field ID and value format.`;
-        return { success: false, decision: "UPDATE", reason: `Field update failed: ${errStatus}`, trace, recommendation: rec, aiTimeMs, tokens };
+              ? `Issue ${issueKey} or field "${actionFieldId}" not found. Verify the field ID is correct.`
+              : `Jira returned HTTP ${errStatus}: ${jiraError}`;
+        return { success: false, decision: "UPDATE", reason: `Field update failed (${errStatus}): ${jiraError}`, trace, recommendation: rec, aiTimeMs, tokens };
       }
       const valuePreview = typeof result.value === "string" ? result.value.substring(0, 150) : JSON.stringify(result.value).substring(0, 150);
       trace.push(`Successfully updated "${actionFieldId}" → "${valuePreview}${valuePreview.length >= 150 ? "..." : ""}"`);
@@ -3559,7 +3845,7 @@ const executeSemanticPostFunction = async (issueKey, config) => {
       recommendation: error.message.includes("JSON")
         ? "The AI response couldn't be parsed. Try simplifying your prompts."
         : error.message.includes("fetch")
-          ? "Network error reaching OpenAI. Check your internet connection and API key."
+          ? "Network error reaching AI provider. Check your internet connection and API key."
           : "An unexpected error occurred. Check the execution trace for details." };
   }
 };

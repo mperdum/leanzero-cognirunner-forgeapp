@@ -272,6 +272,7 @@ const injectStyles = () => {
       font-size: 11px;
       line-height: 1.5;
       color: var(--text-color);
+      white-space: pre-line;
     }
 
     .log-rec-icon { flex-shrink: 0; font-size: 13px; }

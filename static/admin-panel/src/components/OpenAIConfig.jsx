@@ -7,31 +7,56 @@
 
 import React, { useState, useEffect } from "react";
 import CustomSelect from "./CustomSelect";
+import Tooltip from "./Tooltip";
+
+const PROVIDER_OPTIONS = [
+  { value: "openai", label: "OpenAI" },
+  { value: "azure", label: "Azure OpenAI" },
+  { value: "openrouter", label: "OpenRouter" },
+];
+
+const PROVIDER_HELP = {
+  openai: { keyPlaceholder: "sk-...", keyLabel: "OpenAI API Key", endpointNeeded: false },
+  azure: { keyPlaceholder: "Enter your Azure OpenAI API key...", keyLabel: "Azure API Key", endpointNeeded: true, endpointPlaceholder: "https://myresource.openai.azure.com/openai/v1" },
+  openrouter: { keyPlaceholder: "sk-or-...", keyLabel: "OpenRouter API Key", endpointNeeded: false },
+};
 
 export default function OpenAIConfig({ invoke }) {
+  const [provider, setProvider] = useState("openai");
+  const [baseUrl, setBaseUrl] = useState("");
   const [isByok, setIsByok] = useState(false);
   const [hasKey, setHasKey] = useState(false);
   const [keyInput, setKeyInput] = useState("");
+  const [endpointInput, setEndpointInput] = useState("");
   const [models, setModels] = useState([]);
   const [currentModel, setCurrentModel] = useState(null);
   const [selectedModel, setSelectedModel] = useState("");
   const [factoryModel, setFactoryModel] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingProvider, setSavingProvider] = useState(false);
   const [savingModel, setSavingModel] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
 
+  const pHelp = PROVIDER_HELP[provider] || PROVIDER_HELP.openai;
+
   const loadStatus = async () => {
     if (!invoke) return;
     try {
-      const [keyResult, modelsResult, modelKvs] = await Promise.all([
+      const [keyResult, modelsResult, modelKvs, providerResult] = await Promise.all([
         invoke("getOpenAIKey"),
         invoke("getOpenAIModels"),
         invoke("getOpenAIModelFromKVS"),
+        invoke("getProvider"),
       ]);
 
+      if (providerResult.success) {
+        setProvider(providerResult.provider || "openai");
+        setBaseUrl(providerResult.baseUrl || "");
+        setEndpointInput(providerResult.provider === "azure" ? (providerResult.baseUrl || "") : "");
+      }
       if (keyResult.success) {
         setHasKey(keyResult.hasKey);
         setIsByok(keyResult.isByok);
@@ -52,7 +77,7 @@ export default function OpenAIConfig({ invoke }) {
         }
       }
     } catch (e) {
-      console.error("Failed to load OpenAI status:", e);
+      console.error("Failed to load AI config status:", e);
     }
     setLoading(false);
   };
@@ -61,12 +86,57 @@ export default function OpenAIConfig({ invoke }) {
     loadStatus();
   }, []);
 
+  const handleSaveProvider = async (newProvider) => {
+    setSavingProvider(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const payload = { provider: newProvider };
+      if (newProvider === "azure" && endpointInput.trim()) {
+        payload.baseUrl = endpointInput.trim();
+      }
+      const result = await invoke("saveProvider", payload);
+      if (result.success) {
+        setProvider(newProvider);
+        setSuccess(`Switched to ${PROVIDER_OPTIONS.find((p) => p.value === newProvider)?.label || newProvider}`);
+        // Clear key state since provider changed
+        setIsByok(false);
+        setHasKey(false);
+        setModels([]);
+        setCurrentModel(null);
+        setSelectedModel("");
+        setKeyInput("");
+        await loadStatus();
+      } else {
+        setError(result.error || "Failed to save provider");
+      }
+    } catch (e) {
+      setError("Failed to save provider: " + e.message);
+    }
+    setSavingProvider(false);
+  };
+
+  const handleSaveEndpoint = async () => {
+    if (!endpointInput.trim()) return;
+    setSavingProvider(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await invoke("saveProvider", { provider: "azure", baseUrl: endpointInput.trim() });
+      if (result.success) {
+        setSuccess("Azure endpoint saved");
+        await loadStatus();
+      } else {
+        setError(result.error || "Failed to save endpoint");
+      }
+    } catch (e) {
+      setError("Failed to save endpoint: " + e.message);
+    }
+    setSavingProvider(false);
+  };
+
   const handleSaveKey = async () => {
     if (!keyInput.trim()) return;
-    if (!keyInput.startsWith("sk-")) {
-      setError("API key must start with sk-");
-      return;
-    }
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -129,7 +199,7 @@ export default function OpenAIConfig({ invoke }) {
     return (
       <div className="section">
         <div className="section-header">
-          <span className="section-title">OpenAI Configuration</span>
+          <span className="section-title">AI Provider Configuration</span>
         </div>
         <div className="card">
           <div style={{ padding: "16px" }}>
@@ -142,10 +212,12 @@ export default function OpenAIConfig({ invoke }) {
     );
   }
 
+  const providerLabel = PROVIDER_OPTIONS.find((p) => p.value === provider)?.label || provider;
+
   return (
     <div className="section">
       <div className="section-header">
-        <span className="section-title">OpenAI Configuration</span>
+        <span className="section-title">AI Provider Configuration</span>
       </div>
 
       {error && (
@@ -163,6 +235,70 @@ export default function OpenAIConfig({ invoke }) {
 
       <div className="card">
         <div style={{ padding: "16px" }}>
+          {/* Provider Selector */}
+          <div style={{ marginBottom: "16px" }}>
+            <label style={{ display: "block", fontSize: "12px", fontWeight: "600", color: "var(--text-secondary)", marginBottom: "6px" }}>
+              Provider
+            </label>
+            <div style={{ maxWidth: "280px" }}>
+              <CustomSelect
+                value={provider}
+                onChange={(val) => {
+                  if (val !== provider) handleSaveProvider(val);
+                }}
+                options={PROVIDER_OPTIONS}
+                disabled={savingProvider}
+              />
+            </div>
+            <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
+              All providers use ChatGPT-compatible APIs (OpenAI chat completions format).
+            </p>
+          </div>
+
+          {/* Azure Endpoint — only for Azure */}
+          {provider === "azure" && (
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ display: "flex", alignItems: "center", fontSize: "12px", fontWeight: "600", color: "var(--text-secondary)", marginBottom: "6px" }}>
+                Azure Endpoint
+                <Tooltip text={
+                  "How to get your Azure OpenAI endpoint:\n\n" +
+                  "1. Go to portal.azure.com\n" +
+                  "2. Navigate to your Azure OpenAI resource (or create one under 'Azure AI services' > 'Azure OpenAI')\n" +
+                  "3. In the resource overview, find 'Endpoint' — it looks like:\n" +
+                  "   https://myresource.openai.azure.com/\n" +
+                  "4. Append /openai/v1 to the end, so the full URL is:\n" +
+                  "   https://myresource.openai.azure.com/openai/v1\n\n" +
+                  "Make sure you have at least one model deployed in Azure AI Studio (e.g. gpt-4o or gpt-4o-mini) before connecting."
+                } />
+              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <input
+                  type="text"
+                  value={endpointInput}
+                  onChange={(e) => setEndpointInput(e.target.value)}
+                  placeholder={pHelp.endpointPlaceholder}
+                  style={{
+                    flex: 1,
+                    padding: "8px 12px",
+                    border: "1px solid var(--border-color)",
+                    borderRadius: "4px",
+                    background: "var(--input-bg)",
+                    color: "var(--text-color)",
+                    fontSize: "13px",
+                    fontFamily: "SFMono-Regular, Consolas, monospace",
+                  }}
+                  onKeyDown={(e) => e.key === "Enter" && handleSaveEndpoint()}
+                />
+                <button className="btn-small btn-edit" onClick={handleSaveEndpoint} disabled={savingProvider || !endpointInput.trim()}>
+                  {savingProvider ? "Saving..." : "Save"}
+                </button>
+              </div>
+              <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
+                Your Azure OpenAI resource URL. Must end with <code style={{ fontSize: "11px" }}>/openai/v1</code>
+              </p>
+            </div>
+          )}
+
           {/* Status */}
           <div className="openai-status" style={{ marginBottom: "16px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
@@ -174,23 +310,42 @@ export default function OpenAIConfig({ invoke }) {
                 background: hasKey ? "var(--success-color)" : "var(--error-color)",
               }} />
               <strong style={{ fontSize: "13px" }}>
-                {isByok ? "Using your API key" : "Using factory key"}
+                {isByok ? `Using your ${providerLabel} key` : "Using factory key"}
               </strong>
             </div>
             <p style={{ margin: 0, fontSize: "12px", color: "var(--text-secondary)" }}>
               {isByok
-                ? "You can select from available models on your key. Remove it to revert to the factory key."
+                ? `Connected to ${providerLabel}. You can select from available models. Remove the key to revert to the factory key.`
                 : hasKey
-                  ? `Factory model: ${factoryModel || "gpt-5-mini"}. Provide your own key to unlock model selection.`
-                  : "No API key configured. Contact your app administrator or provide your own key."
+                  ? `Factory model: ${factoryModel || "gpt-5.4-mini"}. Provide your own ${providerLabel} key to unlock model selection.`
+                  : `No API key configured. Provide your ${providerLabel} API key to get started.`
               }
             </p>
           </div>
 
           {/* API Key Input */}
           <div style={{ marginBottom: "16px" }}>
-            <label style={{ display: "block", fontSize: "12px", fontWeight: "600", color: "var(--text-secondary)", marginBottom: "6px" }}>
-              API Key
+            <label style={{ display: "flex", alignItems: "center", fontSize: "12px", fontWeight: "600", color: "var(--text-secondary)", marginBottom: "6px" }}>
+              {pHelp.keyLabel}
+              {provider === "azure" && (
+                <Tooltip text={
+                  "How to get your Azure OpenAI API key:\n\n" +
+                  "1. Go to portal.azure.com\n" +
+                  "2. Open your Azure OpenAI resource\n" +
+                  "3. In the left sidebar, click 'Keys and Endpoint' (under Resource Management)\n" +
+                  "4. Copy either Key 1 or Key 2 — both work\n\n" +
+                  "The key is a 32-character hex string (no 'sk-' prefix). Keep it secret — anyone with this key can use your Azure OpenAI quota."
+                } />
+              )}
+              {provider === "openrouter" && (
+                <Tooltip text={
+                  "How to get your OpenRouter API key:\n\n" +
+                  "1. Go to openrouter.ai and sign in\n" +
+                  "2. Click your profile icon > 'Keys'\n" +
+                  "3. Click 'Create Key', give it a name, and copy it\n\n" +
+                  "OpenRouter keys start with 'sk-or-'. You'll need credits in your account to make API calls."
+                } />
+              )}
             </label>
             {isByok ? (
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -204,7 +359,7 @@ export default function OpenAIConfig({ invoke }) {
                   color: "var(--text-secondary)",
                   letterSpacing: "1px",
                 }}>
-                  sk-••••••••••••••••
+                  ••••••••••••••••
                 </span>
                 <button className="btn-small btn-danger" onClick={handleRemoveKey} disabled={removing}>
                   {removing ? "Removing..." : "Remove Key"}
@@ -216,7 +371,7 @@ export default function OpenAIConfig({ invoke }) {
                   type="password"
                   value={keyInput}
                   onChange={(e) => setKeyInput(e.target.value)}
-                  placeholder="sk-..."
+                  placeholder={pHelp.keyPlaceholder}
                   style={{
                     flex: 1,
                     padding: "8px 12px",
@@ -244,7 +399,7 @@ export default function OpenAIConfig({ invoke }) {
               </label>
               {models.length === 0 ? (
                 <p style={{ margin: 0, fontSize: "12px", color: "var(--text-muted)" }}>
-                  No chat models found on this key. Try saving the key again.
+                  No chat models found. Check your API key and try again.
                 </p>
               ) : (
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>

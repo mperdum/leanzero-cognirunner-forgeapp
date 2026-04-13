@@ -48,13 +48,30 @@ const getOpenAIModel = async () => {
   return process.env.OPENAI_MODEL || "gpt-5.4-mini";
 };
 
+const PROVIDERS = {
+  openai: { baseUrl: "https://api.openai.com/v1" },
+  azure: { baseUrl: null },
+  openrouter: { baseUrl: "https://openrouter.ai/api/v1" },
+};
+
+const getProviderConfig = async () => {
+  try {
+    const provider = (await storage.get("COGNIRUNNER_AI_PROVIDER")) || "openai";
+    const customUrl = await storage.get("COGNIRUNNER_AI_BASE_URL");
+    const baseUrl = customUrl || (PROVIDERS[provider] && PROVIDERS[provider].baseUrl) || PROVIDERS.openai.baseUrl;
+    return { provider, baseUrl };
+  } catch (e) {
+    return { provider: "openai", baseUrl: PROVIDERS.openai.baseUrl };
+  }
+};
+
 /**
  * Execute an AI review of a configuration.
  */
 const executeReview = async (params) => {
   const { configType, config } = params;
   const apiKey = await getOpenAIKey();
-  if (!apiKey) return { success: false, error: "No OpenAI API key configured" };
+  if (!apiKey) return { success: false, error: "No API key configured" };
   const model = await getOpenAIModel();
 
   let configDescription = "";
@@ -113,7 +130,8 @@ RULES:
 Respond with ONLY valid JSON:
 {"verdict":"good|needs_attention|has_issues","summary":"One short sentence","items":[{"type":"success|error|warning|tip","message":"Feedback with fix if warning"}]}`;
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const { baseUrl } = await getProviderConfig();
+  const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({

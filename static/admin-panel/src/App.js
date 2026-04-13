@@ -841,6 +841,78 @@ const injectStyles = () => {
     }
     .dropdown-item.dropdown-selected .dropdown-item-type { background-color: var(--card-bg); }
     .dropdown-empty { padding: 16px 12px; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+    /* === Tooltip === */
+    .tooltip-wrap {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+    .tooltip-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--primary-color);
+      color: #fff;
+      font-size: 9px;
+      font-weight: 700;
+      cursor: help;
+      line-height: 1;
+      opacity: 0.7;
+      transition: opacity 0.15s ease;
+    }
+    .tooltip-wrap:hover .tooltip-icon { opacity: 1; }
+    .tooltip-portal {
+      position: absolute;
+      transform: translateX(-50%);
+      z-index: 99999;
+      padding: 10px 14px;
+      border-radius: 8px;
+      background: #0f172a;
+      color: #e2e8f0;
+      font-size: 12px;
+      font-weight: 400;
+      font-style: normal;
+      line-height: 1.5;
+      letter-spacing: normal;
+      text-transform: none;
+      white-space: normal;
+      width: 320px;
+      max-width: calc(100vw - 32px);
+      pointer-events: none;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.25), 0 0 0 1px rgba(255,255,255,0.06);
+      animation: tooltipFadeIn 0.15s ease;
+    }
+    html[data-color-mode="dark"] .tooltip-portal {
+      background: #1e293b;
+      color: #e2e8f0;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.08);
+    }
+    .tooltip-portal::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 6px solid transparent;
+    }
+    .tooltip-bottom::after { bottom: 100%; border-bottom-color: #0f172a; }
+    html[data-color-mode="dark"] .tooltip-bottom::after { border-bottom-color: #1e293b; }
+    .tooltip-top::after { top: 100%; border-top-color: #0f172a; }
+    html[data-color-mode="dark"] .tooltip-top::after { border-top-color: #1e293b; }
+    @keyframes tooltipFadeIn {
+      from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+    .tooltip-top.tooltip-portal { animation-name: tooltipFadeInUp; }
+    @keyframes tooltipFadeInUp {
+      from { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
   `;
   document.head.appendChild(style);
 };

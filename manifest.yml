@@ -140,8 +140,12 @@ permissions:
     fetch:
       client:
         - address: https://api.openai.com
+        - address: "*.openai.azure.com"
+        - address: https://openrouter.ai
       backend:
         - address: https://api.openai.com
+        - address: "*.openai.azure.com"
+        - address: https://openrouter.ai
 
 app:
   runtime:
