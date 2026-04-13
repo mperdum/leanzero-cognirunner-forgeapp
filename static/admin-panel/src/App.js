@@ -1144,7 +1144,23 @@ function App() {
           </div>
         </div>
         <div className="card">
-          {configs.length === 0 ? (
+          {refreshingConfigs ? (
+            <div style={{ padding: "14px" }}>
+              {[1, 2, 3].map((i) => (
+                <div key={i} style={{ display: "flex", gap: "16px", alignItems: "center", padding: "10px 0", borderBottom: i < 3 ? "1px solid var(--border-color)" : "none" }}>
+                  <div className="sk sk-text" style={{ width: 80, height: 16 }} />
+                  <div className="sk sk-text" style={{ width: 140, height: 14 }} />
+                  <div className="sk sk-text" style={{ width: 70, height: 14 }} />
+                  <div className="sk sk-text" style={{ width: 160, height: 14, flex: 1 }} />
+                  <div className="sk sk-text" style={{ width: 110, height: 12 }} />
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <div className="sk sk-block" style={{ width: 44, height: 28 }} />
+                    <div className="sk sk-block" style={{ width: 56, height: 28 }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : configs.length === 0 ? (
             <div className="empty-state">
               No validators or conditions configured yet. Add one from a workflow transition.
             </div>
