@@ -168,6 +168,7 @@ export default function CustomSelect({
       onClick={() => selectOption(opt)}
       onMouseEnter={() => setHighlighted(idx)}
     >
+      {opt.icon && <span className="dropdown-item-icon" dangerouslySetInnerHTML={{ __html: opt.icon }} />}
       <span className="dropdown-item-name">{opt.label}</span>
       {opt.meta && <span className="dropdown-item-meta">{opt.meta}</span>}
       {opt.type && <span className="dropdown-item-type">{opt.type}</span>}
@@ -183,7 +184,10 @@ export default function CustomSelect({
         disabled={disabled}
       >
         {selectedOpt ? (
-          <span>{selectedOpt.label}</span>
+          <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            {selectedOpt.icon && <span className="dropdown-item-icon" dangerouslySetInnerHTML={{ __html: selectedOpt.icon }} />}
+            {selectedOpt.label}
+          </span>
         ) : (
           <span className="dropdown-placeholder">{placeholder}</span>
         )}

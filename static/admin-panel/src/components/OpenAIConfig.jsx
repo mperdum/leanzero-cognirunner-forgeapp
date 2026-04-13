@@ -10,10 +10,10 @@ import CustomSelect from "./CustomSelect";
 import Tooltip from "./Tooltip";
 
 const PROVIDER_OPTIONS = [
-  { value: "openai", label: "OpenAI" },
-  { value: "azure", label: "Azure OpenAI" },
-  { value: "openrouter", label: "OpenRouter" },
-  { value: "anthropic", label: "Anthropic" },
+  { value: "openai", label: "OpenAI", icon: '<svg viewBox="0 0 24 24" fill="none"><path d="M22.28 9.37a5.84 5.84 0 0 0-.51-4.79 5.93 5.93 0 0 0-6.38-2.87A5.84 5.84 0 0 0 11 0a5.93 5.93 0 0 0-5.66 4.13 5.84 5.84 0 0 0-3.9 2.83 5.93 5.93 0 0 0 .73 6.95 5.84 5.84 0 0 0 .51 4.79 5.93 5.93 0 0 0 6.38 2.87A5.84 5.84 0 0 0 13 24a5.93 5.93 0 0 0 5.66-4.13 5.84 5.84 0 0 0 3.9-2.83 5.93 5.93 0 0 0-.73-6.95l.45-.72z" fill="currentColor" opacity="0.7"/></svg>' },
+  { value: "azure", label: "Azure OpenAI", icon: '<svg viewBox="0 0 24 24" fill="none"><path d="M13.05 4.24L7.4 18.5H2L7.66 4.24h5.39zM22 18.5h-5.13l-1.91-5.36-3.25 3.99L22 18.5zm-8.27-8.33l2.47 6.87L22 4.24h-5.71L13.73 10.17z" fill="#0078d4"/></svg>' },
+  { value: "openrouter", label: "OpenRouter", icon: '<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5" opacity="0.5"/><path d="M8 12h8M12 8v8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>' },
+  { value: "anthropic", label: "Anthropic", icon: '<svg viewBox="0 0 24 24" fill="none"><path d="M13.83 3h3.34L22 21h-3.34l-4.83-18zm-7 0H3.5L8.33 21h3.34L6.83 3z" fill="currentColor" opacity="0.7"/></svg>' },
 ];
 
 const PROVIDER_HELP = {

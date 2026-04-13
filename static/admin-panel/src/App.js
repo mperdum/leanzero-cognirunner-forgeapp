@@ -825,12 +825,14 @@ const injectStyles = () => {
       padding: 8px 12px;
       cursor: pointer;
       display: flex;
-      align-items: baseline;
+      align-items: center;
       gap: 8px;
       transition: background-color 0.1s;
     }
     .dropdown-item:hover, .dropdown-item.dropdown-highlighted { background-color: var(--code-bg); }
     .dropdown-item.dropdown-selected { background-color: var(--icon-bg); }
+    .dropdown-item-icon { display: inline-flex; align-items: center; flex-shrink: 0; line-height: 0; }
+    .dropdown-item-icon svg { width: 16px; height: 16px; }
     .dropdown-item-name { font-size: 14px; color: var(--text-color); flex-shrink: 0; }
     .dropdown-item-meta {
       font-size: 11px;
