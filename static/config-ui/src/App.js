@@ -1967,6 +1967,8 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [fields, setFields] = useState([]);
+  const [allFields, setAllFields] = useState([]);
+  const [allFieldsLoading, setAllFieldsLoading] = useState(true);
   const [fieldsLoading, setFieldsLoading] = useState(true);
   const [fieldsError, setFieldsError] = useState(null);
   const [fieldsSource, setFieldsSource] = useState(null);
@@ -2242,6 +2244,18 @@ function App() {
         setFieldsLoading(false);
       }
 
+      // Load ALL fields for post-function target field selector
+      // (not limited to transition screen — PFs can update any field)
+      try {
+        const allResult = await invoke("getFields");
+        if (allResult.success) {
+          setAllFields(allResult.fields || []);
+        }
+      } catch (e) {
+        console.log("Could not load all fields:", e);
+      }
+      setAllFieldsLoading(false);
+
       // Register the onConfigure callback - this is called when user clicks Add/Update button
       // The callback should return the current form state as JSON string
       if (workflowRules) {
@@ -2479,8 +2493,8 @@ function App() {
             actionFieldId={actionFieldId}
             setActionFieldId={setActionFieldId}
             fieldId={fieldId}
-            fields={fields}
-            loadingFields={fieldsLoading}
+            fields={allFields.length > 0 ? allFields : fields}
+            loadingFields={allFieldsLoading && fieldsLoading}
             errorFields={fieldsError}
             selectedDocIds={validatorDocIds}
             onDocSelectionChange={(ids) => { setValidatorDocIds(ids); currentValidatorDocIds = ids; }}
