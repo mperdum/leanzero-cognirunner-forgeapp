@@ -323,7 +323,14 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
                       onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary-color)"; e.currentTarget.style.background = "var(--hover-bg)"; }}
                       onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border-color)"; e.currentTarget.style.background = "var(--input-bg)"; }}
                     >
-                      {p.avatarUrl && <img src={p.avatarUrl} alt="" style={{ width: 20, height: 20, borderRadius: 4 }} />}
+                      {p.avatarUrl ? (
+                        <img src={p.avatarUrl} alt="" style={{ width: 24, height: 24, borderRadius: 6 }} />
+                      ) : (
+                        <span style={{
+                          width: 24, height: 24, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center",
+                          background: "rgba(37,99,235,0.12)", color: "var(--primary-color)", fontSize: "10px", fontWeight: 700,
+                        }}>{p.key.substring(0, 2)}</span>
+                      )}
                       <div style={{ display: "flex", flexDirection: "column" }}>
                         <span style={{ fontWeight: 600, lineHeight: 1.2 }}>{p.name}</span>
                         <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{p.key}</span>
