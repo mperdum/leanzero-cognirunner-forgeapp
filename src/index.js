@@ -2550,8 +2550,21 @@ resolver.define("reviewConfig", async ({ payload }) => {
     const queue = new Queue({ key: "async-ai-queue" });
     const taskId = `review_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
+    // Trim config to avoid exceeding Queue payload size limit (200KB)
+    const trimmedConfig = { ...config };
+    if (trimmedConfig.functions) {
+      trimmedConfig.functions = trimmedConfig.functions.map((f) => ({
+        ...f,
+        code: f.code ? f.code.substring(0, 3000) : "",
+        operationPrompt: f.operationPrompt ? f.operationPrompt.substring(0, 500) : "",
+      }));
+    }
+    if (trimmedConfig.prompt) trimmedConfig.prompt = trimmedConfig.prompt.substring(0, 1000);
+    if (trimmedConfig.conditionPrompt) trimmedConfig.conditionPrompt = trimmedConfig.conditionPrompt.substring(0, 1000);
+    if (trimmedConfig.actionPrompt) trimmedConfig.actionPrompt = trimmedConfig.actionPrompt.substring(0, 1000);
+
     await queue.push({
-      body: { taskType: "review", taskId, params: { configType, config } },
+      body: { taskType: "review", taskId, params: { configType, config: trimmedConfig } },
     });
 
     return { success: true, taskId, async: true };
