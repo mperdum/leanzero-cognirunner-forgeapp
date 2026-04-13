@@ -919,15 +919,89 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
                               value={fn.operationType}
                               onChange={(v) => { const u = [...functions]; u[idx] = { ...fn, operationType: v }; setFunctions(u); }}
                               options={[
-                                { value: "work_item_query", label: "JQL Search" },
-                                { value: "rest_api_internal", label: "Jira REST API" },
-                                { value: "rest_api_external", label: "External API" },
-                                { value: "confluence_api", label: "Confluence API" },
-                                { value: "log_function", label: "Debug Log" },
+                                { value: "work_item_query", label: "JQL Search", meta: "Search Jira issues" },
+                                { value: "rest_api_internal", label: "Jira REST API", meta: "Call any Jira endpoint" },
+                                { value: "rest_api_external", label: "External API", meta: "Call external HTTP" },
+                                { value: "confluence_api", label: "Confluence API", meta: "Read/write pages" },
+                                { value: "log_function", label: "Debug Log", meta: "Log for troubleshooting" },
                               ]}
                             />
                           </div>
                         </div>
+
+                        {/* Operation-specific fields */}
+                        {fn.operationType === "rest_api_internal" && (
+                          <div style={{ marginBottom: "10px" }}>
+                            <label className="wiz-label" style={{ fontSize: "11px" }}>HTTP Method</label>
+                            <div style={{ maxWidth: "160px" }}>
+                              <CustomSelect
+                                value={fn.method || "GET"}
+                                onChange={(v) => { const u = [...functions]; u[idx] = { ...fn, method: v }; setFunctions(u); }}
+                                options={[
+                                  { value: "GET", label: "GET" },
+                                  { value: "POST", label: "POST" },
+                                  { value: "PUT", label: "PUT" },
+                                  { value: "DELETE", label: "DELETE" },
+                                  { value: "PATCH", label: "PATCH" },
+                                ]}
+                              />
+                            </div>
+                            <div style={{ marginTop: "6px" }}>
+                              <label className="wiz-label" style={{ fontSize: "11px" }}>Endpoint Path</label>
+                              <input
+                                type="text"
+                                className="wiz-input"
+                                value={fn.endpoint || ""}
+                                onChange={(e) => { const u = [...functions]; u[idx] = { ...fn, endpoint: e.target.value }; setFunctions(u); }}
+                                placeholder="/rest/api/3/issue/{issueIdOrKey}"
+                                style={{ width: "100%" }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                        {fn.operationType === "rest_api_external" && (
+                          <div style={{ marginBottom: "10px" }}>
+                            <label className="wiz-label" style={{ fontSize: "11px" }}>External URL</label>
+                            <input
+                              type="text"
+                              className="wiz-input"
+                              value={fn.endpoint || ""}
+                              onChange={(e) => { const u = [...functions]; u[idx] = { ...fn, endpoint: e.target.value }; setFunctions(u); }}
+                              placeholder="https://api.example.com/webhook"
+                              style={{ width: "100%" }}
+                            />
+                            <p className="wiz-hint">The domain must be whitelisted in manifest.yml</p>
+                          </div>
+                        )}
+                        {fn.operationType === "confluence_api" && (
+                          <div style={{ marginBottom: "10px" }}>
+                            <label className="wiz-label" style={{ fontSize: "11px" }}>Confluence Operation</label>
+                            <div style={{ maxWidth: "200px" }}>
+                              <CustomSelect
+                                value={fn.confluenceOp || "GET_PAGE"}
+                                onChange={(v) => { const u = [...functions]; u[idx] = { ...fn, confluenceOp: v }; setFunctions(u); }}
+                                options={[
+                                  { value: "GET_PAGE", label: "Get Page" },
+                                  { value: "UPDATE_PAGE", label: "Update Page" },
+                                  { value: "CREATE_PAGE", label: "Create Page" },
+                                  { value: "DELETE_PAGE", label: "Delete Page" },
+                                  { value: "ADD_COMMENT", label: "Add Comment" },
+                                ]}
+                              />
+                            </div>
+                            <div style={{ marginTop: "6px" }}>
+                              <label className="wiz-label" style={{ fontSize: "11px" }}>Space Key</label>
+                              <input
+                                type="text"
+                                className="wiz-input"
+                                value={fn.spaceKey || ""}
+                                onChange={(e) => { const u = [...functions]; u[idx] = { ...fn, spaceKey: e.target.value }; setFunctions(u); }}
+                                placeholder="e.g. ENG"
+                                style={{ width: "120px" }}
+                              />
+                            </div>
+                          </div>
+                        )}
 
                         {/* Variable name (hidden for log_function) */}
                         {fn.operationType !== "log_function" && (
@@ -969,6 +1043,8 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
                                 const result = await invoke("generatePostFunctionCode", {
                                   prompt: fn.prompt,
                                   operationType: fn.operationType,
+                                  endpoint: fn.endpoint || "",
+                                  method: fn.method || "GET",
                                   includeBackoff: fn.includeBackoff,
                                   priorSteps,
                                 });
