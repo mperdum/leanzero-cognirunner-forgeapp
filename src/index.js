@@ -17,7 +17,9 @@
  */
 
 import api, { route, fetch, getAppContext } from "@forge/api";
-import { storage } from "@forge/api";
+// `storage` was deprecated from @forge/api — migrated to @forge/kvs.
+// Aliased back to `storage` so the existing get/set/delete call sites stay unchanged.
+import storage from "@forge/kvs";
 import Resolver from "@forge/resolver";
 
 const resolver = new Resolver();

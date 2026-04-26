@@ -16,7 +16,9 @@
  * 4. Frontend polls the resolver for the result
  */
 
-import { storage } from "@forge/api";
+// `storage` was deprecated from @forge/api — migrated to @forge/kvs.
+// Aliased back to `storage` so the existing call sites stay unchanged.
+import storage from "@forge/kvs";
 import api, { route, fetch } from "@forge/api";
 
 const TASK_PREFIX = "async_task:";
