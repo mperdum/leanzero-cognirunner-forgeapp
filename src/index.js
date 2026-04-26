@@ -130,6 +130,124 @@ const buildModelParams = () => ({});
 const MAX_JQL_RESULTS = 10;
 const AGENTIC_TIMEOUT_MS = 22000; // 22s budget within Forge's 25s validator limit
 
+/**
+ * Detects whether the user's condition prompt is one of the well-known "always run"
+ * shortcuts. When true, we skip the AI condition check and go straight to value
+ * generation — saves tokens and avoids the AI deciding SKIP on a clearly-always rule.
+ *
+ * Anchored on both ends to avoid false positives — "always when the description is short"
+ * is a real condition and must NOT match.
+ */
+const ALWAYS_RUN_PATTERN = /^(always|every\s*(time|transition|run)|on\s*every\s*(time|transition|run)|run\s*(every\s*time|always|on\s*every\s*(time|transition))|always\s*run|true|yes|yep|y)\s*[.!]?\s*$/i;
+
+/**
+ * Build the AI request (system prompt + user content) for a semantic post-function.
+ * Used by BOTH the real executor and the dry-run test resolver so users can trust that
+ * test results match production. Any prompt drift between the two paths is a
+ * foundational control bug — keep this as the single source of truth.
+ *
+ * Pre-loads the target field's schema (type, allowedValues) into the prompt so the AI
+ * generates values Jira will accept on first try (e.g. picks from allowed options for
+ * select fields, returns numbers for number fields).
+ */
+const buildSemanticAIRequest = ({ conditionPrompt, actionPrompt, fieldValue, contextDocsText, targetFieldMeta }) => {
+  const condition = (conditionPrompt || "").trim();
+  const alwaysRun = ALWAYS_RUN_PATTERN.test(condition);
+
+  // Target field hints — let the AI see the schema so it produces a valid value.
+  let targetHints = "";
+  if (targetFieldMeta?.schema) {
+    const schemaType = targetFieldMeta.schema.type;
+    const schemaItems = targetFieldMeta.schema.items;
+    const lines = [`- Type: ${schemaType}${schemaItems ? ` of ${schemaItems}` : ""}`];
+    if (schemaType === "doc") {
+      lines.push("- Format: rich text. Emit plain text (paragraphs separated by blank lines) — it will be auto-converted to ADF before writing.");
+    } else if (schemaType === "string") {
+      lines.push("- Format: plain string.");
+    } else if (schemaType === "number") {
+      lines.push("- Format: return a number (not a string). Decimals allowed.");
+    } else if (schemaType === "date") {
+      lines.push("- Format: ISO date string \"YYYY-MM-DD\" (e.g. \"2025-12-31\").");
+    } else if (schemaType === "datetime") {
+      lines.push("- Format: ISO datetime string with timezone (e.g. \"2025-12-31T15:00:00.000+0000\").");
+    } else if (schemaType === "user") {
+      lines.push("- Format: an accountId string (NOT a display name). If you don't know the accountId, return SKIP and explain.");
+    }
+    // Allowed values — for option / single-select / array of option / known reference fields
+    if (Array.isArray(targetFieldMeta.allowedValues) && targetFieldMeta.allowedValues.length > 0) {
+      const allowed = targetFieldMeta.allowedValues
+        .slice(0, 30)
+        .map((v) => v.value || v.name || v.id)
+        .filter(Boolean);
+      if (allowed.length > 0) {
+        const isMulti = schemaType === "array";
+        lines.push(
+          `- Allowed values (you MUST pick from this list${isMulti ? ", comma-separated for multiple" : ""}): ${allowed.map((v) => `"${v}"`).join(", ")}${targetFieldMeta.allowedValues.length > 30 ? " (and more — use one of the listed)" : ""}.`
+        );
+      }
+    }
+    targetHints = `\n\nTARGET FIELD CONSTRAINTS:\n${lines.join("\n")}`;
+  }
+
+  // System + user prompts — IDENTICAL across real and dry-run.
+  let systemPrompt, userContent;
+  if (alwaysRun) {
+    systemPrompt = `You are a Jira workflow automation assistant. Generate a new value for a target field based on the user's instruction. Respond with ONLY a valid JSON object — no markdown, no explanation, no surrounding prose:
+{
+  "decision": "UPDATE",
+  "value": "the new field value",
+  "reason": "brief reason (one sentence)"
+}${targetHints}`;
+    userContent = `Source field value:\n${fieldValue || "(empty)"}\n\nACTION: ${actionPrompt || "Use the source field as the basis for an appropriate target value."}`;
+  } else {
+    systemPrompt = `You are a Jira workflow automation assistant. You will receive a source field value and two instructions:
+1. CONDITION — evaluate whether this condition is met based on the source field value.
+2. ACTION — if (and only if) the condition is met, generate the new value for the target field.
+
+Respond with ONLY a valid JSON object — no markdown, no explanation, no surrounding prose:
+{
+  "decision": "UPDATE" or "SKIP",
+  "value": "the new field value (include only when decision is UPDATE)",
+  "reason": "brief explanation of your decision (one sentence)"
+}${targetHints}`;
+    userContent = `Source field value:\n${fieldValue || "(empty)"}\n\nCONDITION: ${conditionPrompt}\n\nACTION: ${actionPrompt || "Use the source field as the basis for an appropriate target value."}`;
+  }
+
+  if (contextDocsText) {
+    systemPrompt += `\n\n## Reference Documentation\nUse the following documentation to inform your decisions:\n\n${contextDocsText.substring(0, 30000)}`;
+  }
+
+  return { systemPrompt, userContent, alwaysRun };
+};
+
+/**
+ * Tolerant JSON parser for LLM output. Strips markdown fences (```json, ```js,
+ * plain ```), trims, and as a last resort extracts the first {...} or [...] block
+ * from prose-wrapped responses. Returns null instead of throwing.
+ */
+const parseAIJson = (raw) => {
+  if (raw == null) return null;
+  let cleaned = String(raw).trim()
+    .replace(/^```(?:json|javascript|js)?\s*\n?/i, "")
+    .replace(/\n?```\s*$/i, "")
+    .trim();
+  if (!cleaned) return null;
+  // Try direct parse first
+  try { return JSON.parse(cleaned); } catch { /* fall through */ }
+  // Salvage attempt: pull the first balanced-looking {...} or [...] block
+  const startObj = cleaned.indexOf("{");
+  const startArr = cleaned.indexOf("[");
+  let start = -1;
+  if (startObj >= 0 && startArr >= 0) start = Math.min(startObj, startArr);
+  else start = startObj >= 0 ? startObj : startArr;
+  if (start < 0) return null;
+  const openChar = cleaned[start];
+  const closeChar = openChar === "{" ? "}" : "]";
+  const end = cleaned.lastIndexOf(closeChar);
+  if (end <= start) return null;
+  try { return JSON.parse(cleaned.substring(start, end + 1)); } catch { return null; }
+};
+
 // Prompt patterns that signal the need for JQL search tools.
 // When a validation prompt matches any of these, agentic mode activates automatically.
 // Designed to avoid false positives: words like "unique", "original", "similar" alone
@@ -1619,6 +1737,17 @@ resolver.define("getOpenAIKey", async () => {
   try {
     const provider = (await storage.get("COGNIRUNNER_AI_PROVIDER")) || "openai";
     const byokKey = await storage.get(providerKeySlot(provider));
+    if (provider === "lmstudio") {
+      // LM Studio: "configured" once a baseUrl is set; auth is optional.
+      // Always BYOK semantics (never falls back to factory env var).
+      const lmBaseUrl = await storage.get("COGNIRUNNER_AI_BASE_URL");
+      return {
+        success: true,
+        hasKey: !!lmBaseUrl,
+        isByok: !!lmBaseUrl,
+        hasToken: !!byokKey,
+      };
+    }
     return {
       success: true,
       hasKey: !!byokKey || !!process.env.OPENAI_API_KEY,
@@ -1661,18 +1790,37 @@ resolver.define("saveProvider", async ({ payload, context }) => {
   try {
     const { provider, baseUrl } = payload;
     if (!provider || !PROVIDERS[provider]) {
-      return { success: false, error: "Invalid provider. Choose: openai, azure, openrouter, anthropic" };
+      return { success: false, error: "Invalid provider. Choose: openai, azure, openrouter, anthropic, lmstudio" };
     }
     if (provider === "azure" && baseUrl && !baseUrl.includes(".openai.azure.com")) {
       return { success: false, error: "Azure endpoint must contain .openai.azure.com (e.g. https://myresource.openai.azure.com/openai/v1)" };
     }
 
+    let normalizedBaseUrl = baseUrl;
+    if (provider === "lmstudio") {
+      if (!baseUrl || !String(baseUrl).trim()) {
+        return { success: false, error: "LM Studio requires a public base URL (e.g. https://your-tunnel.ngrok-free.app). Expose your LM Studio server via Cloudflare Tunnel, ngrok, or Tailscale Funnel." };
+      }
+      const trimmed = String(baseUrl).trim();
+      if (!/^https:\/\//i.test(trimmed)) {
+        return { success: false, error: "LM Studio URL must use https:// — Forge cannot reach plain HTTP endpoints from the cloud." };
+      }
+      if (/(localhost|127\.0\.0\.1|0\.0\.0\.0)/i.test(trimmed)) {
+        return { success: false, error: "LM Studio URL cannot point to localhost. Use a public tunnel URL (Cloudflare Tunnel, ngrok, Tailscale Funnel)." };
+      }
+      // Strip trailing slash and a trailing /v1 — we append the path ourselves at call time.
+      normalizedBaseUrl = trimmed.replace(/\/+$/, "").replace(/\/v1$/i, "");
+    }
+
     await storage.set("COGNIRUNNER_AI_PROVIDER", provider);
 
-    if (baseUrl) {
-      await storage.set("COGNIRUNNER_AI_BASE_URL", baseUrl.replace(/\/+$/, ""));
+    if (normalizedBaseUrl) {
+      await storage.set("COGNIRUNNER_AI_BASE_URL", String(normalizedBaseUrl).replace(/\/+$/, ""));
     } else if (PROVIDERS[provider].baseUrl) {
       await storage.set("COGNIRUNNER_AI_BASE_URL", PROVIDERS[provider].baseUrl);
+    } else {
+      // Provider has no default and no override — clear any stale URL so we don't leak Azure/etc.
+      await storage.delete("COGNIRUNNER_AI_BASE_URL");
     }
 
     // Invalidate all caches — new provider may have different key/model
@@ -1714,6 +1862,82 @@ resolver.define("getOpenAIModels", async () => {
   try {
     const activeProvider = (await storage.get("COGNIRUNNER_AI_PROVIDER")) || "openai";
     const byokKey = await storage.get(providerKeySlot(activeProvider));
+
+    // LM Studio: auth is optional, baseUrl is required. Always treated as BYOK.
+    // Tries the native /api/v1/models (richest metadata) first, falls back to /api/v0/models,
+    // then to OpenAI-compat /v1/models for older LM Studio builds.
+    if (activeProvider === "lmstudio") {
+      const { baseUrl } = await getProviderConfig();
+      if (!baseUrl) {
+        return { success: false, error: "LM Studio base URL not configured. Set it in Provider Configuration.", models: [], isByok: true };
+      }
+      const headers = { Accept: "application/json" };
+      if (byokKey) headers["Authorization"] = `Bearer ${byokKey}`;
+
+      const candidates = [`${baseUrl}/api/v1/models`, `${baseUrl}/api/v0/models`, `${baseUrl}/v1/models`];
+      let data = null;
+      let endpointUsed = null;
+      let lastErr = null;
+      for (const url of candidates) {
+        try {
+          const resp = await fetch(url, { method: "GET", headers });
+          if (resp.ok) {
+            data = await resp.json();
+            endpointUsed = url;
+            break;
+          }
+          // 404 means this endpoint isn't available on this build — try the next one.
+          // Any other status (401/403/500) is a real problem — surface it immediately.
+          if (resp.status !== 404) {
+            const body = await resp.text().catch(() => "");
+            return {
+              success: false,
+              error: `LM Studio returned HTTP ${resp.status} from ${url}. ${body.substring(0, 200)}`.trim(),
+              models: [],
+              isByok: true,
+            };
+          }
+          lastErr = `404 ${url}`;
+        } catch (e) {
+          lastErr = `${e.message} (${url})`;
+        }
+      }
+      if (!data) {
+        return {
+          success: false,
+          error: `Could not reach LM Studio at ${baseUrl}. ${lastErr || "Check the tunnel is up and 'Serve on Local Network' is enabled in LM Studio's Developer settings."}`,
+          models: [],
+          isByok: true,
+        };
+      }
+
+      // Filter to LLMs (drop embeddings/vision-only for the chat picker).
+      // Items lacking `type` are treated as LLMs (older builds don't return type).
+      const items = (data.data || []).filter((m) => !m.type || m.type === "llm");
+      const enriched = items.map((m) => ({
+        id: m.id,
+        state: m.state || null,                       // "loaded" | "not-loaded" | null
+        quantization: m.quantization || null,
+        max_context_length: m.max_context_length || null,
+        arch: m.arch || null,
+        publisher: m.publisher || null,
+      }));
+      // Sort: loaded models first (zero cold-start), then alphabetically.
+      enriched.sort((a, b) => {
+        if (a.state === "loaded" && b.state !== "loaded") return -1;
+        if (a.state !== "loaded" && b.state === "loaded") return 1;
+        return String(a.id).localeCompare(String(b.id));
+      });
+
+      return {
+        success: true,
+        isByok: true,
+        models: enriched.map((m) => m.id),
+        modelDetails: enriched.slice(0, 200),
+        endpointUsed,
+      };
+    }
+
     if (!byokKey) {
       const factoryModel = await getOpenAIModel();
       return { success: true, models: [], isByok: false, currentModel: factoryModel };
@@ -1785,8 +2009,15 @@ resolver.define("saveOpenAIModel", async ({ payload, context }) => {
     }
     const provider = (await storage.get("COGNIRUNNER_AI_PROVIDER")) || "openai";
     const byokKey = await storage.get(providerKeySlot(provider));
-    if (!byokKey) {
+    // LM Studio doesn't require a key (auth is optional) — allow model save with just baseUrl.
+    if (!byokKey && provider !== "lmstudio") {
       return { success: false, error: "Model selection requires an API key" };
+    }
+    if (provider === "lmstudio") {
+      const lmBaseUrl = await storage.get("COGNIRUNNER_AI_BASE_URL");
+      if (!lmBaseUrl) {
+        return { success: false, error: "Set the LM Studio base URL before selecting a model." };
+      }
     }
     await storage.set(providerModelSlot(provider), model);
     _cachedModel = null; // invalidate cache
@@ -1804,6 +2035,12 @@ resolver.define("getOpenAIModelFromKVS", async () => {
   try {
     const provider = (await storage.get("COGNIRUNNER_AI_PROVIDER")) || "openai";
     const byokKey = await storage.get(providerKeySlot(provider));
+    // LM Studio is always BYOK semantics — auth is optional, baseUrl is the gating config.
+    if (provider === "lmstudio") {
+      const lmBaseUrl = await storage.get("COGNIRUNNER_AI_BASE_URL");
+      const savedModel = await storage.get(providerModelSlot(provider));
+      return { success: true, model: savedModel || null, isByok: !!lmBaseUrl };
+    }
     if (!byokKey) {
       const factoryModel = await getOpenAIModel();
       return { success: true, model: factoryModel, isByok: false };
@@ -1813,6 +2050,129 @@ resolver.define("getOpenAIModelFromKVS", async () => {
   } catch (error) {
     console.error("Failed to get model from KVS:", error);
     return { success: false, model: null, isByok: false };
+  }
+});
+
+/**
+ * Test reachability and authentication of an LM Studio server.
+ * Hits /v1/models then a 1-token /v1/chat/completions to verify the token works
+ * (some LM Studio builds return 200 on /v1/models even with a wrong token).
+ */
+resolver.define("pingLmStudio", async ({ payload, context }) => {
+  if (!(await requireAdmin(context.accountId))) {
+    return { success: false, error: "Admin access required" };
+  }
+  try {
+    const baseUrl = String(payload?.baseUrl || "").trim().replace(/\/+$/, "").replace(/\/v1$/i, "");
+    const apiKey = payload?.apiKey ? String(payload.apiKey).trim() : "";
+    if (!baseUrl) return { success: false, error: "Base URL is required" };
+    if (!/^https:\/\//i.test(baseUrl)) return { success: false, error: "Base URL must start with https://" };
+
+    const headers = { Accept: "application/json" };
+    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+
+    // Step 1: list models — proves the server is reachable.
+    let modelsResp;
+    try {
+      modelsResp = await fetch(`${baseUrl}/v1/models`, { method: "GET", headers });
+    } catch (e) {
+      return { success: false, error: `Cannot reach ${baseUrl}: ${e.message}. Check the tunnel is up and HTTPS is enabled.` };
+    }
+    if (!modelsResp.ok) {
+      const body = await modelsResp.text().catch(() => "");
+      const hint = modelsResp.status === 401 || modelsResp.status === 403
+        ? "The API token is invalid. Generate a new token in LM Studio's Developer page."
+        : modelsResp.status === 404
+          ? "Endpoint not found. Make sure LM Studio's API server is running and 'Serve on Local Network' is enabled."
+          : `HTTP ${modelsResp.status}: ${body.substring(0, 150)}`;
+      return { success: false, error: hint };
+    }
+    const modelsData = await modelsResp.json();
+    const modelCount = (modelsData.data || []).length;
+
+    // Step 2: tiny chat ping — proves auth actually works for inference.
+    // We pick the first model from the list; if the server has none downloaded, skip.
+    let authOk = true;
+    let pingError = null;
+    if (modelCount > 0) {
+      const firstModel = modelsData.data[0]?.id;
+      try {
+        const chatResp = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { ...headers, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: firstModel,
+            messages: [{ role: "user", content: "ping" }],
+            max_tokens: 1,
+          }),
+        });
+        if (!chatResp.ok) {
+          authOk = false;
+          const body = await chatResp.text().catch(() => "");
+          pingError = `HTTP ${chatResp.status}: ${body.substring(0, 150)}`;
+        }
+      } catch (e) {
+        authOk = false;
+        pingError = e.message;
+      }
+    }
+
+    return {
+      success: true,
+      ok: true,
+      modelCount,
+      authOk,
+      pingError,
+      message: authOk
+        ? `Connected. Found ${modelCount} model${modelCount === 1 ? "" : "s"}.`
+        : `Reachable but inference failed: ${pingError || "unknown"}.`,
+    };
+  } catch (error) {
+    console.error("LM Studio ping failed:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Preload an LM Studio model so the first inference call doesn't pay JIT cold-start latency.
+ * Calls POST /api/v1/models/load with the chosen model id.
+ */
+resolver.define("loadLmStudioModel", async ({ payload, context }) => {
+  if (!(await requireAdmin(context.accountId))) {
+    return { success: false, error: "Admin access required" };
+  }
+  try {
+    const provider = (await storage.get("COGNIRUNNER_AI_PROVIDER")) || "openai";
+    if (provider !== "lmstudio") {
+      return { success: false, error: "Active provider is not LM Studio." };
+    }
+    const baseUrl = await storage.get("COGNIRUNNER_AI_BASE_URL");
+    if (!baseUrl) return { success: false, error: "LM Studio base URL not configured." };
+    const model = payload?.model && String(payload.model).trim();
+    if (!model) return { success: false, error: "Model id is required." };
+    const apiKey = await storage.get(providerKeySlot("lmstudio"));
+
+    const headers = { "Content-Type": "application/json" };
+    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+
+    const resp = await fetch(`${baseUrl}/api/v1/models/load`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ model }),
+    });
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => "");
+      return {
+        success: false,
+        error: resp.status === 404
+          ? "Load endpoint not available — your LM Studio build may be older than 0.4.0. Load the model manually via the LM Studio UI."
+          : `LM Studio returned HTTP ${resp.status}: ${body.substring(0, 200)}`,
+      };
+    }
+    return { success: true, message: `Model "${model}" loaded.` };
+  } catch (error) {
+    console.error("LM Studio load failed:", error);
+    return { success: false, error: error.message };
   }
 });
 
@@ -1830,6 +2190,11 @@ resolver.define("registerPostFunction", async ({ payload, context }) => {
     let configs = (await storage.get(CONFIG_REGISTRY_KEY)) || [];
 
     const existing = configs.findIndex((c) => c.id === id);
+    // On update: verify the caller has editor rights on the existing record. Other PF resolvers
+    // (remove/disable/enable) already do this; the create/update path was an oversight.
+    if (existing >= 0 && !(await canActOnConfig(context.accountId, configs[existing], "editor"))) {
+      return { success: false, error: "You don't have permission to modify this post-function" };
+    }
     const entry = {
       id,
       type,
@@ -2071,7 +2436,7 @@ ISSUES:
 - GET /rest/api/3/issue/{key}/editmeta — Get editable fields and their schemas
 
 SEARCH:
-- POST /rest/api/3/search — JQL search (body: {jql, maxResults, fields, expand})
+- POST /rest/api/3/search/jql — JQL search (body: {jql, maxResults, fields, nextPageToken}). NOTE: legacy /rest/api/3/search was shut down 2025-10-31. Response no longer includes a "total" field; use nextPageToken for pagination.
 
 TRANSITIONS:
 - GET /rest/api/3/issue/{key}/transitions — List available transitions
@@ -2143,6 +2508,7 @@ Respond with ONLY a valid JSON object:
 
     const result = await callAIChat({
       apiKey, model,
+      jsonMode: true,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: prompt },
@@ -2154,12 +2520,20 @@ Respond with ONLY a valid JSON object:
     const content = result.data.choices?.[0]?.message?.content;
     if (!content) return { success: false, error: "Empty AI response" };
 
-    try {
-      const suggestion = JSON.parse(content.replace(/^```json\s*\n?/i, "").replace(/\n?```\s*$/i, ""));
+    const suggestion = parseAIJson(content);
+    if (suggestion) {
       return { success: true, suggestion, tokens: result.data.usage?.total_tokens };
-    } catch {
-      return { success: true, suggestion: { explanation: content.substring(0, 500) } };
     }
+    // Graceful fallback: surface the AI's prose so the user still gets *something*,
+    // but flag clearly that the structured fields (method/path/body) couldn't be parsed.
+    return {
+      success: true,
+      suggestion: {
+        explanation: String(content).substring(0, 500),
+        unparsed: true,
+      },
+      tokens: result.data.usage?.total_tokens,
+    };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -2184,6 +2558,12 @@ resolver.define("generatePostFunctionCode", async ({ payload }) => {
     const model = configuredModel;
 
     const systemPrompt = `You are an expert Jira automation engineer generating JavaScript for Forge workflow post-functions. Your code runs in a sandboxed Node.js 22 environment after a Jira workflow transition completes. Write production-quality code that handles edge cases.
+
+## OUTPUT FORMAT — READ THIS FIRST
+
+Return ONLY raw executable JavaScript. Do not wrap your answer in markdown code fences (\`\`\`). Do not prefix with explanations like "Here's the code:". Do not append commentary. The first character of your response must be the first character of the code (typically a comment, a const/let, or an await call). The last character must be the last character of the code.
+
+You must ONLY use these methods on the \`api\` object: \`getIssue\`, \`updateIssue\`, \`searchJql\`, \`transitionIssue\`, \`log\`, and the \`api.context\` accessor. Never invent other methods (\`api.deleteIssue\`, \`api.addComment\`, \`api.batch\`, etc. do NOT exist and will throw at runtime).
 
 ## SANDBOX API REFERENCE
 
@@ -2262,8 +2642,8 @@ Updates fields via PUT /rest/api/3/issue/{key}. Field value formats:
 { type: "codeBlock", attrs: { language: "javascript" }, content: [{ type: "text", text: "const x = 1;" }] }
 \`\`\`
 
-### api.searchJql(jqlQuery) → { issues: [...], total: number }
-Searches via POST /rest/api/3/search. Returns up to 20 results.
+### api.searchJql(jqlQuery) → { issues: [...], nextPageToken?: string }
+Searches via POST /rest/api/3/search/jql (the legacy /rest/api/3/search endpoint was shut down on 2025-10-31). Returns up to 20 results. The response does NOT include a "total" count — use issues.length to know how many came back, and nextPageToken if more pages exist.
 
 **JQL operators:** \`=\`, \`!=\`, \`~\` (contains), \`!~\`, \`IN\`, \`NOT IN\`, \`>\`, \`<\`, \`>=\`, \`<=\`, \`IS EMPTY\`, \`IS NOT EMPTY\`
 **JQL functions:** \`currentUser()\`, \`startOfDay()\`, \`endOfDay()\`, \`startOfWeek()\`
@@ -2410,9 +2790,26 @@ IMPORTANT: Use these variables in your code. For example, if a prior step stored
 
     let code = result.data.choices?.[0]?.message?.content || "";
 
-    // Strip markdown code fences if present
-    code = code.replace(/^```(?:javascript|js)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+    // Strip markdown code fences — handle every variant: ```javascript, ```js, ```typescript,
+    // ```ts, plain ```, and any prose intro like "Here's the code:" before the first fence.
+    code = String(code).trim();
+    // Remove any leading prose up to the first fence or first code-looking line
+    const fenceStart = code.search(/^```/m);
+    if (fenceStart > 0 && /^[a-z]/i.test(code)) {
+      // Has prose before the fence — drop it
+      code = code.substring(fenceStart);
+    }
+    code = code
+      .replace(/^```[a-z]*\s*\n?/i, "")
+      .replace(/\n?```\s*$/i, "")
+      .trim();
 
+    if (!code || code.length < 5) {
+      return {
+        success: false,
+        error: "AI returned empty or unusable code. Try rephrasing your description with more detail.",
+      };
+    }
     return { success: true, code };
   } catch (error) {
     console.error("Code generation error:", error);
@@ -2481,11 +2878,12 @@ resolver.define("searchIssues", async ({ payload }) => {
       jql = `${projectFilter}(summary ~ "${escaped}" OR key = "${escaped.toUpperCase()}") ORDER BY updated DESC`;
     }
 
+    // Migrated to /rest/api/3/search/jql — legacy /rest/api/3/search was shut down 2025-10-31.
     const response = await api.asApp().requestJira(
-      route`/rest/api/3/search`,
+      route`/rest/api/3/search/jql`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ jql, maxResults: 8, fields: ["summary", "status", "issuetype", "priority"] }),
       },
     );
@@ -2769,35 +3167,23 @@ resolver.define("testSemanticPostFunction", async ({ payload }) => {
       return { success: false, error: "No API key configured", logs, executionTimeMs: Date.now() - startTime };
     }
 
-    // Step 6: Build prompts (same logic as real execution)
-    const alwaysRun = /^(run\s*(every\s*time|always)|always\s*run|every\s*time|true|yes)\s*[.!]?\s*$/i.test((conditionPrompt || "").trim());
-    let systemPrompt, userContent;
-    if (alwaysRun) {
-      logs.push("Condition is always-run — skipping AI condition check");
-      systemPrompt = `Generate a new value for a Jira field. Respond with ONLY valid JSON: {"decision":"UPDATE","value":"the new value","reason":"brief reason"}`;
-      userContent = `Current field value:\n${fieldValue || "(empty)"}\n\nACTION: ${actionPrompt || "Generate an appropriate value."}`;
-    } else {
-      systemPrompt = `You are a workflow automation assistant. You will be given a field value and two instructions:
-1. CONDITION: Evaluate whether this condition is met based on the field value.
-2. ACTION: If the condition is met, generate the new value for the target field.
-
-You MUST respond with ONLY a valid JSON object (no markdown, no explanation):
-{
-  "decision": "UPDATE" or "SKIP",
-  "value": "the new field value (only if UPDATE)",
-  "reason": "brief explanation of your decision"
-}`;
-      userContent = `Field value:\n${fieldValue || "(empty)"}\n\nCONDITION: ${conditionPrompt}\n\nACTION: ${actionPrompt || "Generate an appropriate value for the target field."}`;
-    }
-    if (contextDocsText) {
-      systemPrompt += `\n\n## Reference Documentation\nUse the following documentation to inform your decisions:\n\n${contextDocsText.substring(0, 30000)}`;
-    }
+    // Step 6: Build prompts via the SHARED helper — IDENTICAL to real execution so test
+    // results faithfully predict production behavior. Any drift here is a control bug.
+    const { systemPrompt, userContent, alwaysRun } = buildSemanticAIRequest({
+      conditionPrompt,
+      actionPrompt,
+      fieldValue,
+      contextDocsText,
+      targetFieldMeta,
+    });
+    if (alwaysRun) logs.push("Condition is always-run — skipping AI condition check");
 
     // Step 7: Call AI
     logs.push(`Calling AI (model: ${model})...`);
     const aiStart = Date.now();
     const aiResult = await callAIChat({
       apiKey, model,
+      jsonMode: true, // enforce JSON output on providers that honor response_format
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userContent },
@@ -2818,13 +3204,23 @@ You MUST respond with ONLY a valid JSON object (no markdown, no explanation):
       return { success: false, error: "Empty AI response", logs, executionTimeMs: Date.now() - startTime };
     }
 
-    let result;
-    try {
-      result = JSON.parse(content);
-    } catch (parseErr) {
+    const result = parseAIJson(content);
+    if (!result) {
       logs.push(`AI response is not valid JSON: ${content.substring(0, 150)}`);
       return { success: false, error: "AI returned invalid JSON", logs, executionTimeMs: Date.now() - startTime,
         recommendation: "The AI response couldn't be parsed as JSON. Simplify your prompts." };
+    }
+    // Clamp the response to known shape so the rest of the function can trust it.
+    const allowedDecisions = new Set(["UPDATE", "SKIP"]);
+    if (!allowedDecisions.has(result.decision)) {
+      logs.push(`Unexpected decision "${result.decision}" — treating as SKIP`);
+      result.decision = "SKIP";
+    }
+    if (typeof result.reason !== "string") result.reason = "(no reason given)";
+    if (result.decision === "UPDATE" && result.value === undefined) {
+      logs.push(`AI said UPDATE but returned no value — treating as SKIP`);
+      result.decision = "SKIP";
+      result.reason = `AI said UPDATE but did not provide a value. Original reason: ${result.reason}`;
     }
 
     logs.push(`AI decision: ${result.decision} (${aiTimeMs}ms, ${data.usage?.total_tokens || "?"} tokens)`);
@@ -2903,14 +3299,19 @@ resolver.define("testPostFunction", async ({ payload }) => {
     testLogs.push(`Running JQL to find test issue: ${jql}`);
     try {
       const searchRes = await api.asApp().requestJira(
-        route`/rest/api/3/search`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jql, maxResults: 1 }) },
+        route`/rest/api/3/search/jql`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ jql, maxResults: 1, fields: ["summary"] }),
+        },
       );
       if (searchRes.ok) {
         const searchData = await searchRes.json();
         if (searchData.issues && searchData.issues.length > 0) {
           resolvedKey = searchData.issues[0].key;
-          testLogs.push(`Found: ${resolvedKey} (${searchData.total} total matches)`);
+          // The new endpoint doesn't return `total` — just confirm we got a match.
+          testLogs.push(`Found: ${resolvedKey}${searchData.nextPageToken ? " (more matches available)" : ""}`);
         } else {
           testLogs.push("JQL returned no results. Falling back to mock data.");
           mode = "mock";
@@ -2977,19 +3378,30 @@ resolver.define("testPostFunction", async ({ payload }) => {
     },
 
     searchJql: async (searchJql) => {
-      // Always run real JQL — it's a read operation and the whole point of testing
+      // Always run real JQL — it's a read operation and the whole point of testing.
+      // Migrated to /rest/api/3/search/jql (legacy endpoint was shut down 2025-10-31).
+      // The new endpoint does not return `total` — log the issues count instead.
       testLogs.push(`searchJql("${searchJql}") — running real search`);
       try {
         const res = await api.asApp().requestJira(
-          route`/rest/api/3/search`,
-          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jql: searchJql, maxResults: 10 }) },
+          route`/rest/api/3/search/jql`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify({
+              jql: searchJql,
+              maxResults: 10,
+              fields: ["summary", "status", "issuetype", "priority", "assignee"],
+            }),
+          },
         );
         if (!res.ok) {
           testLogs.push(`searchJql failed (${res.status})`);
           return { issues: [], total: 0 };
         }
         const data = await res.json();
-        testLogs.push(`searchJql — found ${data.total} issues (returning first ${data.issues?.length || 0})`);
+        const count = data.issues?.length || 0;
+        testLogs.push(`searchJql — returned ${count} issue${count === 1 ? "" : "s"}${data.nextPageToken ? " (more available — use nextPageToken to paginate)" : ""}`);
         return data;
       } catch (e) {
         testLogs.push(`searchJql error: ${e.message}`);
@@ -3047,6 +3459,9 @@ const PROVIDERS = {
   azure: { label: "Azure OpenAI", baseUrl: null, defaultModel: "gpt-5.4-mini" }, // user must provide URL
   openrouter: { label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", defaultModel: "openai/gpt-4o-mini" },
   anthropic: { label: "Anthropic", baseUrl: "https://api.anthropic.com", defaultModel: "claude-haiku-4-5-20251001" },
+  // LM Studio: user-hosted OpenAI-compatible server. baseUrl is the user's public tunnel root
+  // (e.g. https://abc.ngrok-free.app); we append /v1 for inference and /api/v1 for model lifecycle.
+  lmstudio: { label: "LM Studio", baseUrl: null, defaultModel: null },
 };
 
 /**
@@ -3063,24 +3478,34 @@ const PROVIDERS = {
  * @returns {Promise<{ok: boolean, status: number, data: object}>} - Normalized response in OpenAI format
  */
 const callAIChat = async (opts) => {
-  const { apiKey, model, messages, tools, tool_choice } = opts;
+  const { apiKey, model, messages, tools, tool_choice, jsonMode } = opts;
   const { provider, baseUrl } = await getProviderConfig();
 
   if (provider === "anthropic") {
     return callAnthropicChat({ apiKey, model, messages, tools, tool_choice, baseUrl });
   }
 
-  // OpenAI-compatible providers (OpenAI, Azure, OpenRouter)
+  // OpenAI-compatible providers (OpenAI, Azure, OpenRouter, LM Studio)
   const requestBody = { model, ...buildModelParams(), messages };
   if (tools && tools.length > 0) {
     requestBody.tools = tools;
     if (tool_choice) requestBody.tool_choice = tool_choice;
+  }
+  // Constrain to JSON only on providers that reliably honor response_format.
+  // Skip openrouter (passes through; many upstream models reject the field).
+  // For Anthropic we already returned above — its JSON mode is via system prompt only.
+  if (jsonMode && (provider === "openai" || provider === "azure" || provider === "lmstudio")) {
+    requestBody.response_format = { type: "json_object" };
   }
 
   const headers = { "Content-Type": "application/json" };
   // Provider-specific auth headers
   if (provider === "azure") {
     headers["api-key"] = apiKey;
+  } else if (provider === "lmstudio") {
+    // LM Studio: auth is optional. Only send Authorization when a token is set —
+    // some LM Studio builds 401 on `Bearer ` with an empty token.
+    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
   } else {
     headers["Authorization"] = `Bearer ${apiKey}`;
   }
@@ -3090,7 +3515,13 @@ const callAIChat = async (opts) => {
     headers["X-OpenRouter-Title"] = "CogniRunner";
   }
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
+  // LM Studio's baseUrl is the tunnel root (no /v1) so we append the OpenAI-compat path here.
+  // For other providers, baseUrl already ends in /v1.
+  const inferenceUrl = provider === "lmstudio"
+    ? `${baseUrl}/v1/chat/completions`
+    : `${baseUrl}/chat/completions`;
+
+  const response = await fetch(inferenceUrl, {
     method: "POST",
     headers,
     body: JSON.stringify(requestBody),
@@ -3894,6 +4325,7 @@ Respond with JSON only.`;
   try {
     const result = await callAIChat({
       apiKey, model,
+      jsonMode: true,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userContent },
@@ -3917,11 +4349,17 @@ Respond with JSON only.`;
       };
     }
 
-    // Parse the JSON response
-    const parsed = JSON.parse(content);
+    // Tolerant parse: handles markdown fences, prose-wrapped JSON, etc.
+    const parsed = parseAIJson(content);
+    if (!parsed) {
+      return {
+        isValid: false,
+        reason: `AI returned malformed JSON: ${content.substring(0, 120)}`,
+      };
+    }
     return {
       isValid: parsed.isValid === true,
-      reason: parsed.reason || "No reason provided",
+      reason: typeof parsed.reason === "string" ? parsed.reason : "No reason provided",
     };
   } catch (error) {
     console.error("Error calling AI:", error);
@@ -4105,10 +4543,19 @@ RESPONSE FORMAT:
         return { isValid: false, reason: "Empty response from AI service", toolMeta };
       }
 
-      const result = JSON.parse(content);
+      // Tolerant parse — agentic loop can't use response_format because tools are active,
+      // so the model is more likely to wrap the final JSON in prose or markdown.
+      const result = parseAIJson(content);
+      if (!result) {
+        return {
+          isValid: false,
+          reason: `AI returned malformed JSON after ${round} round(s): ${content.substring(0, 120)}`,
+          toolMeta,
+        };
+      }
       return {
         isValid: result.isValid === true,
-        reason: result.reason || "No reason provided",
+        reason: typeof result.reason === "string" ? result.reason : "No reason provided",
         toolMeta,
       };
     } catch (error) {
@@ -4148,10 +4595,38 @@ const formatValueForField = (value, fieldMeta) => {
   if (!fieldMeta || !fieldMeta.schema) return value;
   const schemaType = fieldMeta.schema.type;
 
-  // If value is already an object/array, assume the AI got it right
+  // If value is already an object/array, assume the AI (or a prior step) got it right
   if (typeof value !== "string") return value;
 
   switch (schemaType) {
+    case "doc": {
+      // Atlassian Document Format — required by Jira for description, environment, and
+      // any rich-text custom field. The AI almost always returns plain text here, so we
+      // convert it to a minimal ADF document. Without this conversion, Jira 400s every
+      // update to a doc field.
+      const trimmed = value.trim();
+      // If the AI happened to emit ADF JSON directly, accept it.
+      if (trimmed.startsWith("{") && trimmed.includes('"type"')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (parsed && parsed.type === "doc" && Array.isArray(parsed.content)) {
+            return parsed;
+          }
+        } catch { /* fall through to plain-text wrapping */ }
+      }
+      // Split on blank lines so multi-paragraph output renders as separate paragraphs.
+      const paragraphs = trimmed.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+      return {
+        type: "doc",
+        version: 1,
+        content: paragraphs.length > 0
+          ? paragraphs.map((text) => ({
+              type: "paragraph",
+              content: [{ type: "text", text }],
+            }))
+          : [{ type: "paragraph", content: [] }],
+      };
+    }
     case "option":
       // Single select/radio — wrap string in {value: "..."} if not already an object
       return { value };
@@ -4165,13 +4640,29 @@ const formatValueForField = (value, fieldMeta) => {
         // Labels: array of strings
         return value.split(",").map((v) => v.trim()).filter(Boolean);
       }
+      // Components, fixVersions, versions, groups — Jira accepts {name: "..."}.
+      // Single string → one-element array; comma-separated → multi-element.
+      if (["component", "version", "group"].includes(fieldMeta.schema.items)) {
+        return value.split(",").map((v) => ({ name: v.trim() })).filter((v) => v.name);
+      }
       return value;
-    case "number":
+    case "number": {
       // Number fields
       const num = Number(value);
       return isNaN(num) ? value : num;
+    }
+    case "priority":
+    case "issuetype":
+    case "resolution":
+    case "version":
+    case "component":
+    case "group":
+    case "project":
+      // Single-value reference fields — Jira accepts {name: "..."}
+      return { name: value };
     default:
-      // string, date, datetime, etc. — plain string is correct
+      // string, date, datetime, user (needs accountId — can't auto-derive from name)
+      // — plain string is either correct or will be rejected by Jira with a clear error.
       return value;
   }
 };
@@ -4466,16 +4957,19 @@ const executeSemanticPostFunction = async (issueKey, config) => {
   const trace = []; // Execution trace for detailed logging
   const sourceFieldId = fieldId || "description";
 
-  // Fast path: if condition is "always run" / "run every time", skip AI evaluation
-  const alwaysRun = /^(run\s*(every\s*time|always)|always\s*run|every\s*time|true|yes)\s*[.!]?\s*$/i.test((conditionPrompt || "").trim());
-
-  // Steps 1+2 in parallel: fetch field value + context docs + credentials simultaneously
+  // Steps 1+2 in parallel: source field + context docs + credentials + editmeta.
+  // editmeta is fetched UPFRONT (was previously after the AI call) so we can:
+  //   1. Pass the target field's schema/allowedValues into the AI prompt → AI generates valid values
+  //   2. Fail fast on non-editable fields BEFORE wasting an AI call
   trace.push(`Reading field "${sourceFieldId}" from ${issueKey}`);
-  const [fieldValue, contextDocsText, apiKey, model] = await Promise.all([
+  const [fieldValue, contextDocsText, apiKey, model, editMetaResp] = await Promise.all([
     getFieldValue(issueKey, sourceFieldId, null),
     fetchContextDocs(config.selectedDocIds),
     getOpenAIKey(),
     getOpenAIModel(),
+    actionFieldId
+      ? api.asApp().requestJira(route`/rest/api/3/issue/${issueKey}/editmeta`, { headers: { Accept: "application/json" } })
+      : Promise.resolve(null),
   ]);
   const fieldLen = fieldValue ? fieldValue.length : 0;
   trace.push(fieldLen > 0
@@ -4485,19 +4979,40 @@ const executeSemanticPostFunction = async (issueKey, config) => {
   const docCount = config.selectedDocIds?.length || 0;
   if (docCount > 0) trace.push(`Loaded ${docCount} reference document(s) (${contextDocsText.length} chars)`);
 
-  // Step 3: Build prompts — shorter for always-run conditions
-  let systemPrompt, userContent;
-  if (alwaysRun) {
-    trace.push("Condition is always-run — skipping AI condition check");
-    systemPrompt = `Generate a new value for a Jira field. Respond with ONLY valid JSON: {"decision":"UPDATE","value":"the new value","reason":"brief reason"}`;
-    userContent = `Current field value:\n${fieldValue || "(empty)"}\n\nACTION: ${actionPrompt || "Generate an appropriate value."}`;
-  } else {
-    systemPrompt = `Evaluate a condition and optionally generate a new field value. Respond with ONLY valid JSON: {"decision":"UPDATE" or "SKIP","value":"new value (only if UPDATE)","reason":"brief reason"}`;
-    userContent = `Field value:\n${fieldValue || "(empty)"}\n\nCONDITION: ${conditionPrompt}\n\nACTION: ${actionPrompt || "Generate an appropriate value."}`;
+  // Resolve target field metadata (schema, allowedValues) — fail fast if not editable.
+  let targetFieldMeta = null;
+  if (actionFieldId && editMetaResp && editMetaResp.ok) {
+    const editMeta = await editMetaResp.json();
+    const editableFields = editMeta.fields || {};
+    if (!editableFields[actionFieldId]) {
+      const availableFields = Object.keys(editableFields).slice(0, 10).join(", ");
+      trace.push(`ERROR: Field "${actionFieldId}" is not editable on ${issueKey}`);
+      return { success: false, decision: "SKIP", reason: `Field "${actionFieldId}" is not editable`, trace,
+        recommendation: `The field "${actionFieldId}" cannot be edited on issue ${issueKey}. This could mean:\n`
+          + `- The field is not on the issue's edit screen\n`
+          + `- The field is read-only (e.g. created, updated, status, resolution)\n`
+          + `- The field does not exist on this issue type\n\n`
+          + `Editable fields on this issue include: ${availableFields}${Object.keys(editableFields).length > 10 ? "..." : ""}.\n`
+          + `Change the Target Field in your post-function configuration to one of these.` };
+    }
+    targetFieldMeta = editableFields[actionFieldId];
+    const schemaType = targetFieldMeta.schema?.type || "unknown";
+    const schemaSystem = targetFieldMeta.schema?.system || "";
+    trace.push(`Field "${actionFieldId}" is editable (type: ${schemaType}${schemaSystem ? `, system: ${schemaSystem}` : ""})`);
+  } else if (actionFieldId && editMetaResp && !editMetaResp.ok) {
+    trace.push(`Warning: Could not check editmeta (HTTP ${editMetaResp.status}) — proceeding without schema hints`);
   }
-  if (contextDocsText) {
-    systemPrompt += `\n\nReference docs:\n${contextDocsText.substring(0, 30000)}`;
-  }
+
+  // Step 3: Build prompts via the SHARED helper. Same prompts as the dry-run resolver,
+  // so test-run results faithfully predict production behavior.
+  const { systemPrompt, userContent, alwaysRun } = buildSemanticAIRequest({
+    conditionPrompt,
+    actionPrompt,
+    fieldValue,
+    contextDocsText,
+    targetFieldMeta,
+  });
+  if (alwaysRun) trace.push("Condition is always-run — skipping AI condition check");
 
   try {
     // Credentials already fetched in parallel above
@@ -4508,11 +5023,13 @@ const executeSemanticPostFunction = async (issueKey, config) => {
     }
     trace.push(`Using model: ${model}`);
 
-    // Step 5: Call AI
+    // Step 5: Call AI — jsonMode forces response_format on providers that support it
+    // (OpenAI/Azure/LM Studio). Matches the dry-run resolver's call exactly.
     trace.push("Evaluating condition with AI...");
     const aiStart = Date.now();
     const aiResult = await callAIChat({
       apiKey, model,
+      jsonMode: true,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userContent },
@@ -4549,56 +5066,53 @@ const executeSemanticPostFunction = async (issueKey, config) => {
         recommendation: "The AI did not generate a response. Try simplifying your condition prompt or making the action prompt more specific." };
     }
 
-    let result;
-    try {
-      result = JSON.parse(content);
-    } catch (parseErr) {
+    const result = parseAIJson(content);
+    if (!result) {
       trace.push(`ERROR: AI response is not valid JSON: ${content.substring(0, 100)}`);
       return { success: false, decision: "SKIP", reason: "Invalid JSON from AI", trace,
         recommendation: "The AI generated text that isn't valid JSON. Simplify your prompts — avoid asking for complex formatting. The AI should return only {decision, value, reason}." };
     }
+    // Clamp to known shape so downstream logic can trust it.
+    const allowedDecisions = new Set(["UPDATE", "SKIP"]);
+    if (!allowedDecisions.has(result.decision)) {
+      trace.push(`Unexpected decision "${result.decision}" — treating as SKIP`);
+      result.decision = "SKIP";
+    }
+    if (typeof result.reason !== "string") result.reason = "(no reason given)";
+    if (result.decision === "UPDATE" && result.value === undefined) {
+      trace.push(`AI said UPDATE but returned no value — treating as SKIP`);
+      result.decision = "SKIP";
+      result.reason = `AI said UPDATE but did not provide a value. Original reason: ${result.reason}`;
+    }
 
     trace.push(`Decision: ${result.decision} — ${result.reason || "no reason"}`);
 
-    // Step 7: Execute update if decision is UPDATE
+    // Step 7: Execute update if decision is UPDATE.
+    // editmeta + targetFieldMeta were fetched upfront — no second editmeta call here.
     if (result.decision === "UPDATE" && actionFieldId && result.value !== undefined) {
-      // Step 7a: Check if the target field is editable on this issue
-      trace.push(`Checking if "${actionFieldId}" is editable on ${issueKey}...`);
-      try {
-        const editMetaResp = await api.asApp().requestJira(
-          route`/rest/api/3/issue/${issueKey}/editmeta`,
-          { headers: { Accept: "application/json" } },
-        );
-        if (editMetaResp.ok) {
-          const editMeta = await editMetaResp.json();
-          const editableFields = editMeta.fields || {};
-          if (!editableFields[actionFieldId]) {
-            const availableFields = Object.keys(editableFields).slice(0, 10).join(", ");
-            trace.push(`ERROR: Field "${actionFieldId}" is not editable on ${issueKey}`);
-            return { success: false, decision: "UPDATE", reason: `Field "${actionFieldId}" is not editable`, trace,
-              recommendation: `The field "${actionFieldId}" cannot be edited on issue ${issueKey}. This could mean:\n`
-                + `- The field is not on the issue's edit screen\n`
-                + `- The field is read-only (e.g. created, updated, status, resolution)\n`
-                + `- The field does not exist on this issue type\n\n`
-                + `Editable fields on this issue include: ${availableFields}${Object.keys(editableFields).length > 10 ? "..." : ""}.\n`
-                + `Change the Target Field in your post-function configuration to one of these.`,
-              aiTimeMs, tokens };
-          }
-          // Log the field schema so we know what format Jira expects
-          const fieldMeta = editableFields[actionFieldId];
-          const schemaType = fieldMeta.schema?.type || "unknown";
-          const schemaSystem = fieldMeta.schema?.system || "";
-          trace.push(`Field "${actionFieldId}" is editable (type: ${schemaType}${schemaSystem ? `, system: ${schemaSystem}` : ""})`);
-
-          // Auto-format the value based on field schema
-          const formattedValue = formatValueForField(result.value, fieldMeta);
-          if (formattedValue !== result.value) {
-            trace.push(`Auto-formatted value for ${schemaType} field`);
-          }
-          result.value = formattedValue;
+      // Auto-format the value based on field schema (ADF, allowed values, etc.)
+      const rawValue = result.value;
+      if (targetFieldMeta) {
+        const formattedValue = formatValueForField(rawValue, targetFieldMeta);
+        if (formattedValue !== rawValue) {
+          trace.push(`Auto-formatted value for ${targetFieldMeta.schema?.type || "unknown"} field`);
         }
-      } catch (editMetaErr) {
-        trace.push(`Warning: Could not check editmeta — proceeding with update anyway`);
+        result.value = formattedValue;
+      }
+
+      // No-op detection — when source field == target field and the formatted value is
+      // a string equal to the current value, skip the write. Avoids triggering Jira's
+      // "updated" timestamp + webhooks for a value that wouldn't change anything.
+      // (Skipped for non-string values: ADF byte-equality is fragile; let those through.)
+      if (
+        sourceFieldId === actionFieldId
+        && typeof result.value === "string"
+        && typeof fieldValue === "string"
+        && result.value === fieldValue
+      ) {
+        trace.push(`No-op: AI's value is identical to the current "${actionFieldId}" — skipping write`);
+        return { success: true, decision: "SKIP", reason: `No change needed (AI's value matched current). ${result.reason}`, trace, aiTimeMs, tokens,
+          sourceFieldId, sourceFieldLength: fieldLen, docCount };
       }
 
       trace.push(`Updating field "${actionFieldId}" on ${issueKey}...`);
@@ -4696,9 +5210,22 @@ const executeStaticPostFunction = async (issueKey, config) => {
       return { success: true };
     },
     searchJql: async (jql) => {
+      // Use the new /rest/api/3/search/jql endpoint (legacy /rest/api/3/search was
+      // fully shut down by Atlassian on 2025-10-31). The response shape is similar
+      // (issues array) but `total` is NOT returned — pagination is via nextPageToken.
+      // Always request `summary` + `status` so user code has something to work with;
+      // otherwise the new endpoint returns minimal fields by default.
       const res = await api.asApp().requestJira(
-        route`/rest/api/3/search`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jql, maxResults: 20 }) },
+        route`/rest/api/3/search/jql`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({
+            jql,
+            maxResults: 20,
+            fields: ["summary", "status", "issuetype", "priority", "assignee"],
+          }),
+        },
       );
       if (!res.ok) throw new Error(`searchJql failed: ${res.status}`);
       return res.json();
@@ -4918,8 +5445,28 @@ export const executePostFunction = async (args) => {
       };
       if (result.decision === "UPDATE" && result.success) {
         logEntry.reason = `Updated "${config.actionFieldId}": ${result.reason}`;
+        // Persist the actual value written to Jira so audits don't have to
+        // reconstruct it from the trace. Truncate large objects to keep KVS small.
+        if (result.value !== undefined) {
+          const serialized = typeof result.value === "string"
+            ? result.value
+            : JSON.stringify(result.value);
+          logEntry.updatedValue = serialized.length > 500
+            ? serialized.substring(0, 500) + "…"
+            : serialized;
+        }
       } else if (result.decision === "UPDATE" && !result.success) {
         logEntry.reason = `Tried to update "${config.actionFieldId}" but failed: ${result.reason}`;
+        // Capture the value the AI proposed even on failure — useful for diagnosing
+        // format mismatches (e.g. plain text to a doc field, missing accountId).
+        if (result.value !== undefined) {
+          const serialized = typeof result.value === "string"
+            ? result.value
+            : JSON.stringify(result.value);
+          logEntry.attemptedValue = serialized.length > 500
+            ? serialized.substring(0, 500) + "…"
+            : serialized;
+        }
       } else {
         logEntry.reason = `Skipped: ${result.reason}`;
       }

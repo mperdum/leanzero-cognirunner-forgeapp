@@ -63,6 +63,7 @@ const PROVIDERS = {
   azure: { baseUrl: null },
   openrouter: { baseUrl: "https://openrouter.ai/api/v1" },
   anthropic: { baseUrl: "https://api.anthropic.com" },
+  lmstudio: { baseUrl: null }, // user-supplied tunnel root (no /v1)
 };
 
 const getProviderConfig = async () => {
@@ -78,8 +79,14 @@ const getProviderConfig = async () => {
 
 /**
  * Simple AI chat call with Anthropic support (no tools/attachments needed here).
+ *
+ * @param {object} opts
+ * @param {boolean} [opts.jsonMode] — for OpenAI/Azure/LM Studio, sends
+ *   `response_format: { type: "json_object" }` to constrain output. Silently
+ *   skipped for providers that don't support it (Anthropic uses its system
+ *   prompt; OpenRouter passes through and not all upstream models accept it).
  */
-const callAIChatSimple = async ({ apiKey, model, systemPrompt, userMessage }) => {
+const callAIChatSimple = async ({ apiKey, model, systemPrompt, userMessage, jsonMode }) => {
   const { provider, baseUrl } = await getProviderConfig();
 
   if (provider === "anthropic") {
@@ -107,22 +114,40 @@ const callAIChatSimple = async ({ apiKey, model, systemPrompt, userMessage }) =>
     return { ok: true, content: text, tokens };
   }
 
-  // OpenAI-compatible
-  const openaiHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
+  // OpenAI-compatible (OpenAI, Azure, OpenRouter, LM Studio)
+  const openaiHeaders = { "Content-Type": "application/json" };
+  if (provider === "azure") {
+    openaiHeaders["api-key"] = apiKey;
+  } else if (provider === "lmstudio") {
+    // LM Studio: auth is optional. Sending `Bearer ` with empty token can 401 on some builds.
+    if (apiKey) openaiHeaders["Authorization"] = `Bearer ${apiKey}`;
+  } else {
+    openaiHeaders["Authorization"] = `Bearer ${apiKey}`;
+  }
   if (provider === "openrouter") {
     openaiHeaders["HTTP-Referer"] = "https://leanzero.atlascrafted.com";
     openaiHeaders["X-OpenRouter-Title"] = "CogniRunner";
   }
-  const response = await fetch(`${baseUrl}/chat/completions`, {
+  // LM Studio's baseUrl is the tunnel root (no /v1) — append the OpenAI-compat path here.
+  const inferenceUrl = provider === "lmstudio"
+    ? `${baseUrl}/v1/chat/completions`
+    : `${baseUrl}/chat/completions`;
+  const requestBody = {
+    model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userMessage },
+    ],
+  };
+  // Constrain to JSON only on providers that reliably honor response_format.
+  // Skip for openrouter (passes through; many upstream models reject the field).
+  if (jsonMode && (provider === "openai" || provider === "azure" || provider === "lmstudio")) {
+    requestBody.response_format = { type: "json_object" };
+  }
+  const response = await fetch(inferenceUrl, {
     method: "POST",
     headers: openaiHeaders,
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userMessage },
-      ],
-    }),
+    body: JSON.stringify(requestBody),
   });
   if (!response.ok) {
     const errBody = await response.text().catch(() => "");
@@ -200,6 +225,7 @@ Respond with ONLY valid JSON:
   const result = await callAIChatSimple({
     apiKey, model, systemPrompt,
     userMessage: `Review this configuration:\n\n${configDescription}`,
+    jsonMode: true,
   });
 
   if (!result.ok) {
@@ -208,12 +234,50 @@ Respond with ONLY valid JSON:
 
   if (!result.content) return { success: false, error: "Empty response from AI" };
 
-  try {
-    const review = JSON.parse(result.content.replace(/^```json\s*\n?/i, "").replace(/\n?```\s*$/i, ""));
-    return { success: true, review, tokens: result.tokens };
-  } catch {
-    return { success: true, review: { verdict: "good", summary: content.substring(0, 200), items: [] }, tokens: data.usage?.total_tokens };
+  // Tolerant JSON parse: handles ```json, ```js, plain ```, and prose wrapping.
+  let parsed = null;
+  let cleaned = String(result.content).trim()
+    .replace(/^```(?:json|javascript|js)?\s*\n?/i, "")
+    .replace(/\n?```\s*$/i, "")
+    .trim();
+  if (!cleaned.startsWith("{") && !cleaned.startsWith("[")) {
+    const firstBrace = cleaned.indexOf("{");
+    const lastBrace = cleaned.lastIndexOf("}");
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+    }
   }
+  try { parsed = JSON.parse(cleaned); } catch { /* fall through */ }
+
+  if (!parsed) {
+    // Graceful fallback — never crash. Surface the raw AI text in the summary so the user
+    // still sees something useful instead of a hard error.
+    return {
+      success: true,
+      review: {
+        verdict: "good",
+        summary: String(result.content).substring(0, 200) || "Could not parse review response.",
+        items: [],
+      },
+      tokens: result.tokens,
+    };
+  }
+
+  // Validate shape — clamp to known values so the frontend's VERDICT_STYLES lookup works.
+  const allowedVerdicts = new Set(["good", "needs_attention", "has_issues"]);
+  if (!allowedVerdicts.has(parsed.verdict)) parsed.verdict = "good";
+  if (typeof parsed.summary !== "string") parsed.summary = "Review complete.";
+  if (!Array.isArray(parsed.items)) parsed.items = [];
+  const allowedTypes = new Set(["success", "error", "warning", "tip"]);
+  parsed.items = parsed.items
+    .filter((item) => item && typeof item.message === "string")
+    .map((item) => ({
+      type: allowedTypes.has(item.type) ? item.type : "tip",
+      message: String(item.message).substring(0, 300),
+    }))
+    .slice(0, 6); // hard cap
+
+  return { success: true, review: parsed, tokens: result.tokens };
 };
 
 // === Task registry — add new async task types here ===

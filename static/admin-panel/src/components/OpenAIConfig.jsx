@@ -14,6 +14,7 @@ const PROVIDER_OPTIONS = [
   { value: "azure", label: "Azure OpenAI", icon: '<svg viewBox="0 0 96 96" fill="currentColor"><path d="M33.338 6.544h26.038l-27.03 80.087a4.152 4.152 0 0 1-3.933 2.824H8.149a4.145 4.145 0 0 1-3.928-5.47L29.404 9.368a4.152 4.152 0 0 1 3.934-2.825z" opacity="0.8"/><path d="M71.175 60.261h-41.29a1.911 1.911 0 0 0-1.305 3.309l26.532 24.764a4.171 4.171 0 0 0 2.846 1.121h23.38z" opacity="0.6"/><path d="M33.338 6.544a4.118 4.118 0 0 0-3.943 2.879L4.252 83.917a4.14 4.14 0 0 0 3.908 5.538h20.787a4.443 4.443 0 0 0 3.41-2.9l5.014-14.777 17.91 16.705a4.237 4.237 0 0 0 2.666.972H81.24L71.024 60.261l-29.781.007L59.47 6.544z" opacity="0.9"/></svg>' },
   { value: "openrouter", label: "OpenRouter", icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.778 1.844v1.919q-.569-.026-1.138-.032-.708-.008-1.415.037c-1.93.126-4.023.728-6.149 2.237-2.911 2.066-2.731 1.95-4.14 2.75-.396.223-1.342.574-2.185.798-.841.225-1.753.333-1.751.333v4.229s.768.108 1.61.333c.842.224 1.789.575 2.185.799 1.41.798 1.228.683 4.14 2.75 2.126 1.509 4.22 2.11 6.148 2.236.88.058 1.716.041 2.555.005v1.918l7.222-4.168-7.222-4.17v2.176c-.86.038-1.611.065-2.278.021-1.364-.09-2.417-.357-3.979-1.465-2.244-1.593-2.866-2.027-3.68-2.508.889-.518 1.449-.906 3.822-2.59 1.56-1.109 2.614-1.377 3.978-1.466.667-.044 1.418-.017 2.278.02v2.176L24 6.014Z"/></svg>' },
   { value: "anthropic", label: "Anthropic", icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z"/></svg>' },
+  { value: "lmstudio", label: "LM Studio", icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M7 8h2v3H7zM11 8h2v3h-2zM15 8h2v3h-2z"/></svg>' },
 ];
 
 const PROVIDER_HELP = {
@@ -21,6 +22,13 @@ const PROVIDER_HELP = {
   azure: { keyPlaceholder: "Enter your Azure OpenAI API key...", keyLabel: "Azure API Key", endpointNeeded: true, endpointPlaceholder: "https://myresource.openai.azure.com/openai/v1" },
   openrouter: { keyPlaceholder: "sk-or-...", keyLabel: "OpenRouter API Key", endpointNeeded: false },
   anthropic: { keyPlaceholder: "sk-ant-...", keyLabel: "Anthropic API Key", endpointNeeded: false },
+  lmstudio: {
+    keyPlaceholder: "Optional: Bearer token from LM Studio Developer page",
+    keyLabel: "API Token (optional)",
+    endpointNeeded: true,
+    endpointPlaceholder: "https://your-tunnel.ngrok-free.app",
+    keyOptional: true,
+  },
 };
 
 export default function OpenAIConfig({ invoke }) {
@@ -32,6 +40,7 @@ export default function OpenAIConfig({ invoke }) {
   const [keyInput, setKeyInput] = useState("");
   const [endpointInput, setEndpointInput] = useState("");
   const [models, setModels] = useState([]);
+  const [modelDetails, setModelDetails] = useState([]); // LM Studio enriched metadata
   const [currentModel, setCurrentModel] = useState(null);
   const [selectedModel, setSelectedModel] = useState("");
   const [factoryModel, setFactoryModel] = useState("");
@@ -42,8 +51,20 @@ export default function OpenAIConfig({ invoke }) {
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  // LM Studio: connection test + model load
+  const [pinging, setPinging] = useState(false);
+  const [pingResult, setPingResult] = useState(null); // { ok, modelCount, authOk, message } | { error }
+  const [loadingLmModel, setLoadingLmModel] = useState(false);
 
   const pHelp = PROVIDER_HELP[provider] || PROVIDER_HELP.openai;
+  const isLmStudio = provider === "lmstudio";
+  const isLmStudioSaved = savedProvider === "lmstudio";
+
+  // For LM Studio, find metadata for the currently-selected model so we can show
+  // "Loaded" / "Cold" badge + enable/disable the Load button.
+  const selectedModelMeta = isLmStudio && selectedModel
+    ? modelDetails.find((m) => m.id === selectedModel)
+    : null;
 
   const loadStatus = async () => {
     if (!invoke) return;
@@ -60,7 +81,12 @@ export default function OpenAIConfig({ invoke }) {
         setProvider(p);
         setSavedProvider(p);
         setBaseUrl(providerResult.baseUrl || "");
-        setEndpointInput(providerResult.provider === "azure" ? (providerResult.baseUrl || "") : "");
+        // Both Azure and LM Studio use a user-supplied base URL — show it in the input.
+        setEndpointInput(
+          (providerResult.provider === "azure" || providerResult.provider === "lmstudio")
+            ? (providerResult.baseUrl || "")
+            : ""
+        );
       }
       if (keyResult.success) {
         setHasKey(keyResult.hasKey);
@@ -68,6 +94,7 @@ export default function OpenAIConfig({ invoke }) {
       }
       if (modelsResult.success) {
         setModels(modelsResult.models || []);
+        setModelDetails(modelsResult.modelDetails || []);
         if (!modelsResult.isByok) {
           setFactoryModel(modelsResult.currentModel || "");
         }
@@ -95,9 +122,11 @@ export default function OpenAIConfig({ invoke }) {
     setSavingProvider(true);
     setError(null);
     setSuccess(null);
+    setPingResult(null);
     try {
       const payload = { provider };
-      if (provider === "azure" && endpointInput.trim()) {
+      // Both Azure and LM Studio require a user-supplied base URL.
+      if ((provider === "azure" || provider === "lmstudio") && endpointInput.trim()) {
         payload.baseUrl = endpointInput.trim();
       }
       const result = await invoke("saveProvider", payload);
@@ -121,10 +150,11 @@ export default function OpenAIConfig({ invoke }) {
     setSavingProvider(true);
     setError(null);
     setSuccess(null);
+    setPingResult(null);
     try {
-      const result = await invoke("saveProvider", { provider: "azure", baseUrl: endpointInput.trim() });
+      const result = await invoke("saveProvider", { provider, baseUrl: endpointInput.trim() });
       if (result.success) {
-        setSuccess("Azure endpoint saved");
+        setSuccess(`${PROVIDER_OPTIONS.find((p) => p.value === provider)?.label || provider} endpoint saved`);
         await loadStatus();
       } else {
         setError(result.error || "Failed to save endpoint");
@@ -133,6 +163,54 @@ export default function OpenAIConfig({ invoke }) {
       setError("Failed to save endpoint: " + e.message);
     }
     setSavingProvider(false);
+  };
+
+  // LM Studio: ping the user's tunnel to verify reachability + auth.
+  const handleTestConnection = async () => {
+    if (!endpointInput.trim()) return;
+    setPinging(true);
+    setError(null);
+    setSuccess(null);
+    setPingResult(null);
+    try {
+      const result = await invoke("pingLmStudio", {
+        baseUrl: endpointInput.trim(),
+        apiKey: keyInput.trim(), // use the unsaved input if present, else server falls back to none
+      });
+      if (result.success && result.ok) {
+        setPingResult(result);
+        if (!result.authOk) {
+          setError(`Reachable, but inference failed: ${result.pingError || "unknown"}. Check your token.`);
+        }
+      } else {
+        setPingResult({ ok: false });
+        setError(result.error || "Connection test failed");
+      }
+    } catch (e) {
+      setError("Test failed: " + e.message);
+    }
+    setPinging(false);
+  };
+
+  // LM Studio: preload the chosen model so first inference doesn't pay JIT cold-start.
+  const handleLoadLmModel = async () => {
+    if (!selectedModel) return;
+    setLoadingLmModel(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await invoke("loadLmStudioModel", { model: selectedModel });
+      if (result.success) {
+        setSuccess(result.message || `Loaded "${selectedModel}"`);
+        // Refresh model state so the badge updates.
+        await loadStatus();
+      } else {
+        setError(result.error || "Failed to load model");
+      }
+    } catch (e) {
+      setError("Failed to load model: " + e.message);
+    }
+    setLoadingLmModel(false);
   };
 
   const handleSaveKey = async () => {
@@ -329,6 +407,69 @@ export default function OpenAIConfig({ invoke }) {
             </div>
           )}
 
+          {/* LM Studio Endpoint — user-hosted public tunnel URL */}
+          {isLmStudio && isLmStudioSaved && (
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ display: "flex", alignItems: "center", fontSize: "12px", fontWeight: "600", color: "var(--text-secondary)", marginBottom: "6px" }}>
+                LM Studio Public URL
+                <Tooltip text={
+                  "How to expose LM Studio to Forge:\n\n" +
+                  "1. In LM Studio, open Settings → Developer and toggle 'Serve on Local Network' ON.\n" +
+                  "2. Start a public tunnel pointing at port 1234:\n" +
+                  "   • Cloudflare Tunnel (recommended): cloudflared tunnel --url http://localhost:1234\n" +
+                  "   • ngrok: ngrok http 1234\n" +
+                  "   • Tailscale Funnel: tailscale funnel 1234\n" +
+                  "3. Copy the public HTTPS URL the tunnel prints and paste it here.\n" +
+                  "4. (Recommended) In LM Studio's Developer page, enable authentication and create an API token. Paste it in the 'API Token' field below — exposing LM Studio publicly without a token is unsafe.\n\n" +
+                  "Allowed tunnel domains: *.ngrok-free.app, *.ngrok.app, *.ngrok.io, *.trycloudflare.com, *.ts.net.\n" +
+                  "Localhost URLs cannot work — Forge runs in Atlassian's cloud, not on your machine."
+                } />
+              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <input
+                  type="text"
+                  value={endpointInput}
+                  onChange={(e) => setEndpointInput(e.target.value)}
+                  placeholder={pHelp.endpointPlaceholder}
+                  style={{
+                    flex: 1,
+                    padding: "8px 12px",
+                    border: "1px solid var(--border-color)",
+                    borderRadius: "4px",
+                    background: "var(--input-bg)",
+                    color: "var(--text-color)",
+                    fontSize: "13px",
+                    fontFamily: "SFMono-Regular, Consolas, monospace",
+                  }}
+                  onKeyDown={(e) => e.key === "Enter" && handleSaveEndpoint()}
+                />
+                <button
+                  className="btn-small"
+                  onClick={handleTestConnection}
+                  disabled={pinging || !endpointInput.trim()}
+                  style={{ padding: "6px 10px" }}
+                >
+                  {pinging ? "Testing..." : "Test"}
+                </button>
+                <button className="btn-small btn-edit" onClick={handleSaveEndpoint} disabled={savingProvider || !endpointInput.trim()}>
+                  {savingProvider ? "Saving..." : "Save"}
+                </button>
+              </div>
+              <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
+                Tunnel root URL — the base, not a specific endpoint path. We'll append <code style={{ fontSize: "11px" }}>/v1</code> for inference and <code style={{ fontSize: "11px" }}>/api/v1</code> for model management.
+              </p>
+              {pingResult && pingResult.ok && (
+                <p style={{
+                  margin: "6px 0 0 0",
+                  fontSize: "11px",
+                  color: pingResult.authOk ? "var(--success-color)" : "var(--error-color)",
+                }}>
+                  {pingResult.authOk ? "✓ " : "⚠ "}{pingResult.message}
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Key/Model section — only show for the saved (active) provider */}
           {provider !== savedProvider ? (
             <div style={{ padding: "12px 0", textAlign: "center", color: "var(--text-muted)", fontSize: "13px" }}>
@@ -347,15 +488,21 @@ export default function OpenAIConfig({ invoke }) {
                 background: hasKey ? "var(--success-color)" : "var(--error-color)",
               }} />
               <strong style={{ fontSize: "13px" }}>
-                {isByok ? `Using your ${providerLabel} key` : "Using factory key"}
+                {isLmStudio
+                  ? (hasKey ? "Connected to your LM Studio server" : "LM Studio URL not set")
+                  : (isByok ? `Using your ${providerLabel} key` : "Using factory key")}
               </strong>
             </div>
             <p style={{ margin: 0, fontSize: "12px", color: "var(--text-secondary)" }}>
-              {isByok
-                ? `Connected to ${providerLabel}. You can select from available models. Remove the key to revert to the factory key.`
-                : hasKey
-                  ? `Factory model: ${factoryModel || "gpt-5.4-mini"}. Provide your own ${providerLabel} key to unlock model selection.`
-                  : `No API key configured. Provide your ${providerLabel} API key to get started.`
+              {isLmStudio
+                ? (hasKey
+                    ? "Inference and field data stay on your machine. Pick a model below — the API token is optional unless you've enabled authentication in LM Studio."
+                    : "Set the public URL above (Cloudflare Tunnel, ngrok, or Tailscale Funnel pointing at your LM Studio server) to get started.")
+                : isByok
+                  ? `Connected to ${providerLabel}. You can select from available models. Remove the key to revert to the factory key.`
+                  : hasKey
+                    ? `Factory model: ${factoryModel || "gpt-5.4-mini"}. Provide your own ${providerLabel} key to unlock model selection.`
+                    : `No API key configured. Provide your ${providerLabel} API key to get started.`
               }
             </p>
           </div>
@@ -391,6 +538,16 @@ export default function OpenAIConfig({ invoke }) {
                   "3. Click 'Create Key', give it a name, and copy it\n\n" +
                   "Anthropic keys start with 'sk-ant-'. You'll need credits or a billing plan to make API calls.\n\n" +
                   "Default model: Claude Haiku 4.5 (fastest, most affordable). You can switch to Sonnet or Opus for more capable models."
+                } />
+              )}
+              {isLmStudio && (
+                <Tooltip text={
+                  "How to set up LM Studio API authentication (optional but RECOMMENDED for public tunnels):\n\n" +
+                  "1. Open LM Studio's Developer page (left sidebar).\n" +
+                  "2. In Server Settings, toggle authentication ON.\n" +
+                  "3. Click 'Manage Tokens' → 'Create Token', name it (e.g. 'cognirunner'), copy it immediately (LM Studio only shows it once).\n" +
+                  "4. Paste it here.\n\n" +
+                  "Without a token, anyone who finds your tunnel URL can use your LM Studio server. Always set one when exposing to the public internet."
                 } />
               )}
             </label>
@@ -446,7 +603,9 @@ export default function OpenAIConfig({ invoke }) {
               </label>
               {models.length === 0 ? (
                 <p style={{ margin: 0, fontSize: "12px", color: "var(--text-muted)" }}>
-                  No chat models found. Check your API key and try again.
+                  {isLmStudio
+                    ? "No models found. Make sure LM Studio has at least one LLM downloaded, then click Test above to retry."
+                    : "No chat models found. Check your API key and try again."}
                 </p>
               ) : (
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -457,9 +616,29 @@ export default function OpenAIConfig({ invoke }) {
                       placeholder="Select a model..."
                       searchable
                       searchPlaceholder="Search models..."
-                      options={models.map((m) => ({ value: m, label: m }))}
+                      options={isLmStudio && modelDetails.length > 0
+                        ? modelDetails.map((m) => {
+                            const parts = [];
+                            if (m.state === "loaded") parts.push("loaded");
+                            else if (m.state === "not-loaded") parts.push("cold");
+                            if (m.quantization) parts.push(m.quantization);
+                            if (m.max_context_length) parts.push(`${Math.round(m.max_context_length / 1024)}K ctx`);
+                            const suffix = parts.length > 0 ? ` · ${parts.join(" · ")}` : "";
+                            return { value: m.id, label: `${m.id}${suffix}` };
+                          })
+                        : models.map((m) => ({ value: m, label: m }))}
                     />
                   </div>
+                  {isLmStudio && selectedModelMeta?.state === "not-loaded" && (
+                    <button
+                      className="btn-small"
+                      onClick={handleLoadLmModel}
+                      disabled={loadingLmModel || !selectedModel}
+                      style={{ padding: "6px 10px" }}
+                    >
+                      {loadingLmModel ? "Loading..." : "Load"}
+                    </button>
+                  )}
                   <button
                     className="btn-small btn-edit"
                     onClick={handleSaveModel}
@@ -468,6 +647,16 @@ export default function OpenAIConfig({ invoke }) {
                     {savingModel ? "Saving..." : "Save Model"}
                   </button>
                 </div>
+              )}
+              {isLmStudio && selectedModelMeta && (
+                <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
+                  {selectedModelMeta.state === "loaded"
+                    ? "✓ Model is loaded — first call will be fast."
+                    : selectedModelMeta.state === "not-loaded"
+                      ? "⚠ Model not loaded. First call will JIT-load it (10–60s cold start). Click Load to preload."
+                      : null}
+                  {selectedModelMeta.arch ? ` · ${selectedModelMeta.arch}` : ""}
+                </p>
               )}
               {currentModel && (
                 <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>

@@ -1959,6 +1959,9 @@ let currentActionPrompt = "";
 let currentActionFieldId = "";
 let currentFunctions = [];
 let currentValidatorDocIds = [];
+// Stable rule id — loaded from existing config on edit so we don't generate a fresh one each time
+// (avoids orphan registry rows when Forge context lacks workflowName/transitionId).
+let currentExistingRuleId = null;
 
 function App() {
   const [fieldId, setFieldId] = useState("");
@@ -2178,6 +2181,10 @@ function App() {
             currentFieldId = existingFieldId;
             currentPrompt = config.prompt || "";
             currentEnableTools = config.enableTools ?? null;
+            // Capture the existing rule id so re-saves stay correlated with the same registry row.
+            // Without this, edits where Forge omits workflowName/transitionId would generate a
+            // fresh Date.now() id every save and orphan the previous registry entry.
+            if (config.id) currentExistingRuleId = config.id;
 
             // Load post-function-specific config
             if (config.conditionPrompt) {
@@ -2246,27 +2253,85 @@ function App() {
       setAllFieldsLoading(false);
 
       // Register the onConfigure callback - this is called when user clicks Add/Update button
-      // The callback should return the current form state as JSON string
+      // The callback should return the current form state as JSON string. Returning undefined
+      // signals invalid; throwing surfaces a real error to Forge so the save is blocked.
       if (workflowRules) {
         try {
           await workflowRules.onConfigure(async () => {
             const ext = currentContext?.extension || {};
             const isPostFn = ext.type === "jira:workflowPostFunction";
 
-            // Build base config
+            // Compute workflow context FIRST so we can embed it in the config returned to Forge.
+            // (Previously this was computed only for the registry call, leaving config.workflow null
+            // at runtime → admin panel logs couldn't show which workflow/transition fired.)
+            const workflowContext = {};
+            if (ext.workflowId) workflowContext.workflowId = ext.workflowId;
+            if (ext.workflowName) workflowContext.workflowName = ext.workflowName;
+            if (ext.scopedProjectId) workflowContext.projectId = ext.scopedProjectId;
+            if (ext.transitionContext) {
+              workflowContext.transitionId = ext.transitionContext.id;
+              workflowContext.transitionFromName = ext.transitionContext.from?.name;
+              workflowContext.transitionToName = ext.transitionContext.to?.name;
+            }
+            if (currentContext?.siteUrl) workflowContext.siteUrl = currentContext.siteUrl;
+
+            // Resolve a stable ruleId. Order:
+            // 1. Existing config.id (loaded on edit) — most stable across re-saves
+            // 2. workflowName::transitionId — deterministic when Forge supplies both
+            // 3. ext.entryPoint / ext.key — Forge-provided per-instance identifier
+            // 4. Date.now() — last resort; warn so we can spot bad embeds in field reports
+            let ruleId = currentExistingRuleId;
+            if (!ruleId) {
+              if (workflowContext.workflowName && workflowContext.transitionId) {
+                ruleId = `${workflowContext.workflowName}::${workflowContext.transitionId}`;
+              } else if (ext.entryPoint || ext.key) {
+                ruleId = ext.entryPoint || ext.key;
+              } else {
+                ruleId = Date.now().toString();
+                console.warn("[CogniRunner] Falling back to timestamp ruleId — Forge context missing workflow/transition. Edits will create new registry entries.");
+              }
+            }
+
+            // Build base config — id and workflow MUST be embedded so the runtime executor
+            // can resolve them (disable check, log filtering, admin panel grouping).
             const config = {
+              id: ruleId,
+              workflow: workflowContext,
               fieldId: currentFieldId.trim(),
               prompt: currentPrompt.trim(),
             };
 
-            // Validate based on module type
+            // Validate based on module type. Return undefined to signal "invalid" — Forge then
+            // shows its built-in field-error UI and the save is blocked.
             if (isPostFn && currentPostFunctionType === "semantic") {
-              if (!currentConditionPrompt.trim()) return undefined;
+              if (!currentConditionPrompt.trim()) {
+                console.warn("[CogniRunner] Save blocked: semantic PF requires a condition prompt");
+                setError("Add a Condition before saving.");
+                return undefined;
+              }
+              if (!currentActionFieldId || !currentActionFieldId.trim()) {
+                console.warn("[CogniRunner] Save blocked: semantic PF requires a target field");
+                setError("Pick a Target Field before saving.");
+                return undefined;
+              }
+              if (!currentActionPrompt.trim()) {
+                console.warn("[CogniRunner] Save blocked: semantic PF requires an action prompt");
+                setError("Add an Action prompt before saving.");
+                return undefined;
+              }
               config.type = "postfunction-semantic";
               config.conditionPrompt = currentConditionPrompt.trim();
               config.actionPrompt = currentActionPrompt.trim();
               config.actionFieldId = currentActionFieldId;
             } else if (isPostFn && currentPostFunctionType === "static") {
+              const populatedSteps = (currentFunctions || []).filter(
+                (fn) => fn && fn.code && fn.code.trim().length > 0
+              );
+              if (populatedSteps.length === 0) {
+                console.warn("[CogniRunner] Save blocked: static PF needs at least one step with code");
+                setError("Add at least one step with code before saving (use Generate Code if you only have a description).");
+                return undefined;
+              }
               config.type = "postfunction-static";
               config.functions = currentFunctions;
             } else {
@@ -2284,28 +2349,15 @@ function App() {
 
             console.log("Saving configuration:", config);
 
-            // Register in admin registry with workflow context
+            // Register in admin registry. CRITICAL: if the registry write fails, throw — partial
+            // state (Forge has the config but the registry doesn't) silently breaks disable,
+            // log filtering, and admin panel history. Better to fail the save than pretend success.
+            let registryResult;
             try {
-              const workflowContext = {};
-              if (ext.workflowId) workflowContext.workflowId = ext.workflowId;
-              if (ext.workflowName) workflowContext.workflowName = ext.workflowName;
-              if (ext.scopedProjectId) workflowContext.projectId = ext.scopedProjectId;
-              if (ext.transitionContext) {
-                workflowContext.transitionId = ext.transitionContext.id;
-                workflowContext.transitionFromName = ext.transitionContext.from?.name;
-                workflowContext.transitionToName = ext.transitionContext.to?.name;
-              }
-              if (currentContext?.siteUrl) workflowContext.siteUrl = currentContext.siteUrl;
-
-              const ruleId = (workflowContext.workflowName && workflowContext.transitionId)
-                ? `${workflowContext.workflowName}::${workflowContext.transitionId}`
-                : ext.entryPoint || ext.key || Date.now().toString();
-
               if (isPostFn) {
-                // Post-function: use registerPostFunction
                 const moduleType = currentPostFunctionType === "static"
                   ? "postfunction-static" : "postfunction-semantic";
-                await invoke("registerPostFunction", {
+                registryResult = await invoke("registerPostFunction", {
                   id: ruleId,
                   type: moduleType,
                   fieldId: config.fieldId,
@@ -2317,9 +2369,8 @@ function App() {
                   workflow: workflowContext,
                 });
               } else {
-                // Validator/condition: use registerConfig
                 const moduleType = ext.type === "jira:workflowCondition" ? "condition" : "validator";
-                await invoke("registerConfig", {
+                registryResult = await invoke("registerConfig", {
                   id: ruleId,
                   type: moduleType,
                   fieldId: config.fieldId,
@@ -2327,10 +2378,21 @@ function App() {
                   workflow: workflowContext,
                 });
               }
-            } catch (e) {
-              console.log("Could not register config:", e);
+            } catch (netErr) {
+              console.error("[CogniRunner] Registry write failed (network/transport):", netErr);
+              setError("Couldn't save: " + (netErr.message || "registry unreachable"));
+              throw netErr;
             }
 
+            if (registryResult && registryResult.success === false) {
+              const msg = "Couldn't save: " + (registryResult.error || "registry rejected");
+              console.error("[CogniRunner] Registry returned failure:", registryResult);
+              setError(msg);
+              throw new Error(msg);
+            }
+
+            // Track the id so a subsequent re-save in the same session reuses the same row.
+            currentExistingRuleId = ruleId;
             return JSON.stringify(config);
           });
           console.log("onConfigure callback registered successfully");
@@ -2488,6 +2550,7 @@ function App() {
             actionFieldId={actionFieldId}
             setActionFieldId={setActionFieldId}
             fieldId={fieldId}
+            setFieldId={setFieldId}
             fields={allFields.length > 0 ? allFields : fields}
             loadingFields={allFieldsLoading && fieldsLoading}
             errorFields={fieldsError}

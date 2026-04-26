@@ -7,6 +7,13 @@
 
 import React, { useState, useEffect } from "react";
 import CustomSelect from "./CustomSelect";
+// Shared components — these are the SAME ones used by config-ui (the workflow-menu
+// flow). Keeping them in one place ensures rule-creation options + logic are
+// identical across both entry points.
+import DocRepository from "./DocRepository";
+import ReviewPanel from "./ReviewPanel";
+import SemanticConfig from "./SemanticConfig";
+import FunctionBuilder from "./FunctionBuilder";
 
 const RULE_TYPE_OPTIONS = [
   { value: "validator", label: "Validator", desc: "Block transition if validation fails" },
@@ -46,9 +53,25 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
   const [actionPrompt, setActionPrompt] = useState("");
   const [actionFieldId, setActionFieldId] = useState("");
   const [enableTools, setEnableTools] = useState(null); // null = auto, true = on, false = off
-  // Static PF state
-  const [functions, setFunctions] = useState([{ id: Date.now().toString(), name: "", prompt: "", code: "", variableName: "result1", operationType: "work_item_query", includeBackoff: false }]);
-  const [generatingCode, setGeneratingCode] = useState(null); // step id being generated
+  // Doc library: selected reference docs that get fed into the AI prompt.
+  // Used for validators/conditions and semantic post-functions.
+  // (Static PF docs are stored per-step inside `functions[].selectedDocIds`.)
+  const [selectedDocIds, setSelectedDocIds] = useState([]);
+  // Static PF state — must match the shape FunctionBuilder/FunctionBlock expects
+  // (operationPrompt, conditionPrompt, endpoint, method, etc.) so the shared
+  // component can drive the form identically to config-ui.
+  const [functions, setFunctions] = useState([{
+    id: `func_${Date.now()}_initial`,
+    name: "",
+    conditionPrompt: "",
+    operationType: "work_item_query",
+    operationPrompt: "",
+    endpoint: "",
+    method: "GET",
+    variableName: "result1",
+    code: "",
+    includeBackoff: false,
+  }]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [testIssue, setTestIssue] = useState("");
@@ -159,9 +182,9 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
       let result;
       const configPayload = isPostFunction
         ? ruleType === "postfunction-static"
-          ? { fieldId: "static-code", prompt: functions[0]?.prompt || "" }
-          : { fieldId: fieldId || "description", prompt: prompt || conditionPrompt, conditionPrompt, actionPrompt, actionFieldId }
-        : { fieldId: fieldId || "description", prompt, enableTools };
+          ? { fieldId: "static-code", prompt: functions[0]?.operationPrompt || "" }
+          : { fieldId: fieldId || "description", prompt: prompt || conditionPrompt, conditionPrompt, actionPrompt, actionFieldId, selectedDocIds }
+        : { fieldId: fieldId || "description", prompt, enableTools, selectedDocIds };
 
       if (isPostFunction) {
         result = await invoke("registerPostFunction", {
@@ -248,8 +271,20 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
               setCreated(false); setStep(1); setSubmitted(false);
               setSelectedProject(null); setSelectedWorkflow(null); setSelectedTransition(null); setRuleType(null);
               setFieldId(""); setPrompt(""); setConditionPrompt(""); setActionPrompt(""); setActionFieldId("");
+              setSelectedDocIds([]);
               setTestResult(null); setTestIssue("");
-              setFunctions([{ id: Date.now().toString(), name: "", prompt: "", code: "", variableName: "result1", operationType: "work_item_query", includeBackoff: false }]);
+              setFunctions([{
+                id: `func_${Date.now()}_initial`,
+                name: "",
+                conditionPrompt: "",
+                operationType: "work_item_query",
+                operationPrompt: "",
+                endpoint: "",
+                method: "GET",
+                variableName: "result1",
+                code: "",
+                includeBackoff: false,
+              }]);
             }}>Add Another Rule</button>
           </div>
         </div>
@@ -624,6 +659,20 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
                   </p>
                 </div>
 
+                {/* Documentation Library — same component config-ui uses, lets the AI
+                    reference user-uploaded reference docs during validation. */}
+                <DocRepository
+                  selectedDocs={selectedDocIds}
+                  onSelectionChange={setSelectedDocIds}
+                />
+
+                {/* AI Review — same component config-ui uses. Critiques the configured
+                    rule (prompt + field + selected docs) before the user saves. */}
+                <ReviewPanel
+                  configType={ruleType}
+                  config={{ fieldId, prompt, enableTools, selectedDocIds }}
+                />
+
                 {/* Test Run */}
                 <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: "12px", marginBottom: "14px" }}>
                   <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px" }}>
@@ -650,6 +699,7 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
                             fieldId,
                             prompt,
                             enableTools,
+                            selectedDocIds,
                           });
                           setTestResult(result);
                         } catch (e) {
@@ -700,522 +750,41 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
               </>
             )}
 
-            {/* Semantic PF config */}
+            {/* Semantic PF config — uses the same SemanticConfig component as config-ui.
+                The component itself includes: source-field selector, condition + action
+                prompts, target-field selector, doc library, AI review, and a test panel.
+                Anything that exists in the workflow-menu flow exists here too. */}
             {ruleType === "postfunction-semantic" && (
-              <>
-                {/* How it works */}
-                <div style={{
-                  padding: "10px 14px", marginBottom: "14px", borderRadius: "8px",
-                  border: "1px solid var(--border-color)", background: "var(--input-bg)",
-                }}>
-                  <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px" }}>How it works</div>
-                  <ol style={{ margin: 0, paddingLeft: "18px", fontSize: "12px", color: "var(--text-secondary)", lineHeight: 1.6 }}>
-                    <li><strong style={{ color: "var(--primary-color)" }}>Condition</strong> — AI checks if this rule should fire</li>
-                    <li><strong style={{ color: "var(--success-color)" }}>Action</strong> — If yes, AI generates a new value for the target field</li>
-                    <li>The target field is updated automatically after each transition</li>
-                  </ol>
-                </div>
-
-                {/* Condition Prompt */}
-                <div style={{ marginBottom: "14px" }}>
-                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px" }}>
-                    Condition <span style={{ color: "var(--error-color)" }}>*</span>
-                  </label>
-                  <textarea
-                    value={conditionPrompt}
-                    onChange={(e) => setConditionPrompt(e.target.value)}
-                    placeholder='E.g. "Run every time" or "Run when the description mentions a bug or defect"'
-                    rows={4}
-                    className={`wiz-textarea${submitted && !conditionPrompt.trim() ? " wiz-error" : ""}`}
-                  />
-                  <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
-                    The AI reads the source field and evaluates this condition. If met, the action runs. If not, the post-function is skipped.
-                  </p>
-                </div>
-
-                {/* Action Prompt */}
-                <div style={{ marginBottom: "14px" }}>
-                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px" }}>
-                    Action
-                  </label>
-                  <textarea
-                    value={actionPrompt}
-                    onChange={(e) => setActionPrompt(e.target.value)}
-                    placeholder='E.g. "Summarize the issue into 2-3 bullet points" or "Append a review checklist"'
-                    rows={5}
-                    className="wiz-textarea"
-                  />
-                  <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
-                    When the condition passes, the AI generates a new value for the target field based on this instruction. Leave empty for generic summarization.
-                  </p>
-                </div>
-
-                {/* Target Field */}
-                <div style={{ marginBottom: "14px" }}>
-                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px" }}>
-                    Target Field <span style={{ color: "var(--error-color)" }}>*</span>
-                  </label>
-                  {loadingFields ? <div className="sk sk-block" style={{ height: 36 }} /> : (
-                    <CustomSelect value={actionFieldId} onChange={setActionFieldId} placeholder="Select target field..." searchable searchPlaceholder="Search fields..." error={submitted && !actionFieldId} options={fieldOptions} />
-                  )}
-                  <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
-                    The AI will update this field when the condition is met. Works best with text-based fields.
-                  </p>
-                </div>
-
-                {/* Test Run */}
-                <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: "12px", marginBottom: "14px" }}>
-                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px" }}>
-                    Test Run
-                  </label>
-                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                    <input
-                      type="text"
-                      value={testIssue}
-                      onChange={(e) => setTestIssue(e.target.value.toUpperCase())}
-                      placeholder="Issue key (e.g. WFH-36)"
-                      className="wiz-input wiz-input-mono"
-                      style={{ flex: 1 }}
-                    />
-                    <button
-                      className="btn-small btn-edit"
-                      disabled={testRunning || !testIssue.trim() || !conditionPrompt.trim()}
-                      onClick={async () => {
-                        setTestRunning(true);
-                        setTestResult(null);
-                        try {
-                          const result = await invoke("testSemanticPostFunction", {
-                            issueKey: testIssue.trim(),
-                            fieldId: fieldId || "description",
-                            conditionPrompt,
-                            actionPrompt,
-                            actionFieldId,
-                          });
-                          setTestResult(result);
-                        } catch (e) {
-                          setTestResult({ success: false, error: e.message });
-                        }
-                        setTestRunning(false);
-                      }}
-                    >
-                      {testRunning ? "Running..." : "Run Test"}
-                    </button>
-                  </div>
-                  <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
-                    Dry run — the field is NOT updated. Tests the AI decision against a real issue.
-                  </p>
-
-                  {testResult && (
-                    <div style={{
-                      marginTop: "8px", padding: "10px 12px", borderRadius: "8px",
-                      border: `1px solid ${testResult.success ? (testResult.decision === "UPDATE" ? "var(--success-color)" : "var(--primary-color)") : "var(--error-color)"}`,
-                      background: testResult.success ? (testResult.decision === "UPDATE" ? "rgba(22,163,106,0.06)" : "rgba(37,99,235,0.06)") : "rgba(220,38,38,0.06)",
-                    }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-                        <span className={`type-badge ${testResult.success ? (testResult.decision === "UPDATE" ? "type-condition" : "type-validator") : "type-validator"}`} style={{ fontSize: "9px" }}>
-                          {testResult.success ? testResult.decision : "ERROR"}
-                        </span>
-                        {testResult.issueKey && <span style={{ fontSize: "12px", fontWeight: 600 }}>{testResult.issueKey}</span>}
-                        {testResult.executionTimeMs && <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{testResult.executionTimeMs}ms</span>}
-                        {testResult.tokensUsed && <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{testResult.tokensUsed} tokens</span>}
-                        <button style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "16px" }} onClick={() => setTestResult(null)}>&times;</button>
-                      </div>
-
-                      {testResult.error && !testResult.success && (
-                        <div style={{ fontSize: "12px", color: "var(--error-color)", marginBottom: "4px" }}>{testResult.error}</div>
-                      )}
-
-                      {testResult.reason && (
-                        <div style={{ fontSize: "12px", color: "var(--text-color)", marginBottom: "6px" }}>
-                          <span style={{ fontWeight: 600, fontSize: "10px", color: "var(--text-muted)", textTransform: "uppercase" }}>AI Reasoning</span>
-                          <div style={{ marginTop: "2px" }}>{testResult.reason}</div>
-                        </div>
-                      )}
-
-                      {testResult.sourceValue && (
-                        <div style={{ marginBottom: "6px" }}>
-                          <span style={{ fontWeight: 600, fontSize: "10px", color: "var(--text-muted)", textTransform: "uppercase" }}>Source Field ({testResult.sourceField})</span>
-                          <pre style={{ margin: "2px 0 0 0", fontSize: "11px", padding: "6px 8px", background: "var(--code-bg)", borderRadius: "4px", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: "80px", overflow: "auto" }}>{testResult.sourceValue}</pre>
-                        </div>
-                      )}
-
-                      {testResult.decision === "UPDATE" && testResult.proposedValue !== undefined && (
-                        <div style={{ marginBottom: "6px" }}>
-                          <span style={{ fontWeight: 600, fontSize: "10px", color: "var(--text-muted)", textTransform: "uppercase" }}>Proposed Value for {testResult.targetField}</span>
-                          <pre style={{ margin: "2px 0 0 0", fontSize: "11px", padding: "6px 8px", background: "var(--code-bg)", borderRadius: "4px", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: "100px", overflow: "auto" }}>{typeof testResult.proposedValue === "string" ? testResult.proposedValue : JSON.stringify(testResult.proposedValue, null, 2)}</pre>
-                          <p style={{ margin: "2px 0 0 0", fontSize: "10px", color: "var(--text-muted)", fontStyle: "italic" }}>Dry run — field was NOT updated</p>
-                        </div>
-                      )}
-
-                      {testResult.logs && testResult.logs.length > 0 && (
-                        <details style={{ marginTop: "4px" }}>
-                          <summary style={{ fontSize: "10px", color: "var(--text-muted)", cursor: "pointer" }}>Execution log ({testResult.logs.length} entries)</summary>
-                          <div style={{ marginTop: "4px", maxHeight: "120px", overflow: "auto" }}>
-                            {testResult.logs.map((log, i) => (
-                              <div key={i} style={{ fontSize: "10px", fontFamily: "SFMono-Regular, Consolas, monospace", color: "var(--text-secondary)", padding: "1px 0" }}>{log}</div>
-                            ))}
-                          </div>
-                        </details>
-                      )}
-
-                      {testResult.recommendation && (
-                        <div style={{ marginTop: "6px", padding: "6px 8px", borderRadius: "4px", borderLeft: "3px solid var(--primary-color)", background: "rgba(37,99,235,0.06)", fontSize: "11px", whiteSpace: "pre-line" }}>
-                          {testResult.recommendation}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </>
+              <SemanticConfig
+                conditionPrompt={conditionPrompt}
+                setConditionPrompt={setConditionPrompt}
+                actionPrompt={actionPrompt}
+                setActionPrompt={setActionPrompt}
+                actionFieldId={actionFieldId}
+                setActionFieldId={setActionFieldId}
+                fieldId={fieldId}
+                setFieldId={setFieldId}
+                fields={fields}
+                loadingFields={loadingFields}
+                errorFields={null}
+                selectedDocIds={selectedDocIds}
+                onDocSelectionChange={setSelectedDocIds}
+              />
             )}
 
-            {/* Static PF — function builder */}
+            {/* Static PF — uses the same FunctionBuilder component as config-ui.
+                FunctionBuilder renders a FunctionBlock per step with: prior-vars bar,
+                operation-type auto-detection, endpoint suggestion, doc library per
+                step, AI code generation with doc context, code editor, generation
+                fallback notice, and per-step test runs. AI Review of the whole chain
+                is included at the bottom of FunctionBuilder. Identical to config-ui. */}
             {ruleType === "postfunction-static" && (
-              <>
-                {/* How it works */}
-                <div style={{
-                  padding: "10px 14px", marginBottom: "14px", borderRadius: "8px",
-                  border: "1px solid var(--border-color)", background: "var(--input-bg)",
-                }}>
-                  <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px" }}>How it works</div>
-                  <ol style={{ margin: 0, paddingLeft: "18px", fontSize: "12px", color: "var(--text-secondary)", lineHeight: 1.6 }}>
-                    <li>Describe what each step should do in plain English</li>
-                    <li>AI generates the JavaScript code for each step</li>
-                    <li>Code runs on every transition — <strong>no AI cost at runtime</strong></li>
-                  </ol>
-                </div>
-
-                {/* Function steps */}
-                {functions.map((fn, idx) => {
-                  const priorSteps = functions.slice(0, idx).filter((f) => f.variableName).map((f, i) => ({
-                    step: i + 1, variable: f.variableName, name: f.name || `Step ${i + 1}`, description: f.prompt || "",
-                  }));
-                  return (
-                    <div key={fn.id} className="wiz-step-card">
-                      {/* Step header */}
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px", borderBottom: "1px solid var(--border-color)" }}>
-                        <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--primary-color)", background: "rgba(37,99,235,0.1)", padding: "2px 8px", borderRadius: "4px" }}>#{idx + 1}</span>
-                        <input
-                          type="text"
-                          value={fn.name}
-                          onChange={(e) => { const u = [...functions]; u[idx] = { ...fn, name: e.target.value }; setFunctions(u); }}
-                          placeholder={`Step ${idx + 1} name (optional)`}
-                          style={{ flex: 1, padding: "4px 8px", border: "1px solid transparent", borderRadius: "4px", background: "transparent", color: "var(--text-color)", fontSize: "13px", fontWeight: 600 }}
-                          onFocus={(e) => { e.target.style.borderColor = "var(--border-color)"; e.target.style.background = "var(--input-bg)"; }}
-                          onBlur={(e) => { e.target.style.borderColor = "transparent"; e.target.style.background = "transparent"; }}
-                        />
-                        {functions.length > 1 && (
-                          <button
-                            style={{ background: "none", border: "none", color: "var(--error-color)", cursor: "pointer", fontSize: "16px", padding: "2px 6px" }}
-                            onClick={() => setFunctions(functions.filter((_, i) => i !== idx))}
-                            title="Remove step"
-                          >&times;</button>
-                        )}
-                      </div>
-
-                      <div style={{ padding: "12px 14px" }}>
-                        {/* Prior variables */}
-                        {priorSteps.length > 0 && (
-                          <div style={{ marginBottom: "10px", padding: "6px 10px", borderRadius: "6px", background: "rgba(37,99,235,0.04)", border: "1px solid rgba(37,99,235,0.1)" }}>
-                            <span style={{ fontSize: "10px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" }}>Available from prior steps</span>
-                            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "4px" }}>
-                              {priorSteps.map((ps) => (
-                                <code key={ps.variable} style={{ fontSize: "11px", padding: "2px 6px", borderRadius: "3px", background: "var(--code-bg)", color: "var(--primary-color)" }}>
-                                  {"${" + ps.variable + "}"}
-                                </code>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Description */}
-                        <div style={{ marginBottom: "10px" }}>
-                          <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "4px" }}>
-                            What should this step do?
-                          </label>
-                          <textarea
-                            value={fn.prompt}
-                            onChange={(e) => { const u = [...functions]; u[idx] = { ...fn, prompt: e.target.value }; setFunctions(u); }}
-                            placeholder="E.g. 'Find all issues in this project with the same summary and add a comment linking to them'"
-                            rows={3}
-                            style={{ width: "100%", fontSize: "12px", padding: "8px 10px", border: "1px solid var(--border-color)", borderRadius: "6px", background: "var(--input-bg)", color: "var(--text-color)", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
-                          />
-                        </div>
-
-                        {/* Operation type */}
-                        <div style={{ marginBottom: "10px" }}>
-                          <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "4px" }}>
-                            Operation Type
-                          </label>
-                          <div style={{ maxWidth: "240px" }}>
-                            <CustomSelect
-                              value={fn.operationType}
-                              onChange={(v) => { const u = [...functions]; u[idx] = { ...fn, operationType: v }; setFunctions(u); }}
-                              options={[
-                                { value: "work_item_query", label: "JQL Search", meta: "Search Jira issues" },
-                                { value: "rest_api_internal", label: "Jira REST API", meta: "Call any Jira endpoint" },
-                                { value: "rest_api_external", label: "External API", meta: "Call external HTTP" },
-                                { value: "confluence_api", label: "Confluence API", meta: "Read/write pages" },
-                                { value: "log_function", label: "Debug Log", meta: "Log for troubleshooting" },
-                              ]}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Operation-specific fields */}
-                        {fn.operationType === "rest_api_internal" && (
-                          <div style={{ marginBottom: "10px" }}>
-                            <label className="wiz-label" style={{ fontSize: "11px" }}>HTTP Method</label>
-                            <div style={{ maxWidth: "160px" }}>
-                              <CustomSelect
-                                value={fn.method || "GET"}
-                                onChange={(v) => { const u = [...functions]; u[idx] = { ...fn, method: v }; setFunctions(u); }}
-                                options={[
-                                  { value: "GET", label: "GET" },
-                                  { value: "POST", label: "POST" },
-                                  { value: "PUT", label: "PUT" },
-                                  { value: "DELETE", label: "DELETE" },
-                                  { value: "PATCH", label: "PATCH" },
-                                ]}
-                              />
-                            </div>
-                            <div style={{ marginTop: "6px" }}>
-                              <label className="wiz-label" style={{ fontSize: "11px" }}>Endpoint Path</label>
-                              <input
-                                type="text"
-                                className="wiz-input"
-                                value={fn.endpoint || ""}
-                                onChange={(e) => { const u = [...functions]; u[idx] = { ...fn, endpoint: e.target.value }; setFunctions(u); }}
-                                placeholder="/rest/api/3/issue/{issueIdOrKey}"
-                                style={{ width: "100%" }}
-                              />
-                            </div>
-                          </div>
-                        )}
-                        {fn.operationType === "rest_api_external" && (
-                          <div style={{ marginBottom: "10px" }}>
-                            <label className="wiz-label" style={{ fontSize: "11px" }}>External URL</label>
-                            <input
-                              type="text"
-                              className="wiz-input"
-                              value={fn.endpoint || ""}
-                              onChange={(e) => { const u = [...functions]; u[idx] = { ...fn, endpoint: e.target.value }; setFunctions(u); }}
-                              placeholder="https://api.example.com/webhook"
-                              style={{ width: "100%" }}
-                            />
-                            <p className="wiz-hint">The domain must be whitelisted in manifest.yml</p>
-                          </div>
-                        )}
-                        {fn.operationType === "confluence_api" && (
-                          <div style={{ marginBottom: "10px" }}>
-                            <label className="wiz-label" style={{ fontSize: "11px" }}>Confluence Operation</label>
-                            <div style={{ maxWidth: "200px" }}>
-                              <CustomSelect
-                                value={fn.confluenceOp || "GET_PAGE"}
-                                onChange={(v) => { const u = [...functions]; u[idx] = { ...fn, confluenceOp: v }; setFunctions(u); }}
-                                options={[
-                                  { value: "GET_PAGE", label: "Get Page" },
-                                  { value: "UPDATE_PAGE", label: "Update Page" },
-                                  { value: "CREATE_PAGE", label: "Create Page" },
-                                  { value: "DELETE_PAGE", label: "Delete Page" },
-                                  { value: "ADD_COMMENT", label: "Add Comment" },
-                                ]}
-                              />
-                            </div>
-                            <div style={{ marginTop: "6px" }}>
-                              <label className="wiz-label" style={{ fontSize: "11px" }}>Space Key</label>
-                              <input
-                                type="text"
-                                className="wiz-input"
-                                value={fn.spaceKey || ""}
-                                onChange={(e) => { const u = [...functions]; u[idx] = { ...fn, spaceKey: e.target.value }; setFunctions(u); }}
-                                placeholder="e.g. ENG"
-                                style={{ width: "120px" }}
-                              />
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Variable name (hidden for log_function) */}
-                        {fn.operationType !== "log_function" && (
-                          <div style={{ marginBottom: "10px" }}>
-                            <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "4px" }}>
-                              Result Variable
-                            </label>
-                            <input
-                              type="text"
-                              value={fn.variableName}
-                              onChange={(e) => { const u = [...functions]; u[idx] = { ...fn, variableName: e.target.value.replace(/[^a-zA-Z0-9_]/g, "") }; setFunctions(u); }}
-                              placeholder={`result${idx + 1}`}
-                              style={{ width: "160px", padding: "6px 10px", border: "1px solid var(--border-color)", borderRadius: "6px", background: "var(--input-bg)", color: "var(--text-color)", fontSize: "12px", fontFamily: "SFMono-Regular, Consolas, monospace" }}
-                            />
-                            <span style={{ fontSize: "10px", color: "var(--text-muted)", marginLeft: "8px" }}>
-                              Next steps can use {"${" + (fn.variableName || `result${idx + 1}`) + "}"}
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Backoff toggle */}
-                        <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--text-secondary)", cursor: "pointer", marginBottom: "10px" }}>
-                          <input
-                            type="checkbox"
-                            checked={fn.includeBackoff}
-                            onChange={(e) => { const u = [...functions]; u[idx] = { ...fn, includeBackoff: e.target.checked }; setFunctions(u); }}
-                          />
-                          Exponential backoff with jitter (up to 3 retries)
-                        </label>
-
-                        {/* Generate code button */}
-                        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                          <button
-                            className="btn-small btn-edit"
-                            disabled={!fn.prompt.trim() || generatingCode === fn.id}
-                            onClick={async () => {
-                              setGeneratingCode(fn.id);
-                              try {
-                                const result = await invoke("generatePostFunctionCode", {
-                                  prompt: fn.prompt,
-                                  operationType: fn.operationType,
-                                  endpoint: fn.endpoint || "",
-                                  method: fn.method || "GET",
-                                  includeBackoff: fn.includeBackoff,
-                                  priorSteps,
-                                });
-                                if (result.success && result.code) {
-                                  const u = [...functions]; u[idx] = { ...fn, code: result.code }; setFunctions(u);
-                                } else {
-                                  setError(result.error || "Code generation failed");
-                                }
-                              } catch (e) {
-                                setError("Code generation failed: " + e.message);
-                              }
-                              setGeneratingCode(null);
-                            }}
-                          >
-                            {generatingCode === fn.id ? "Generating..." : fn.code ? "Regenerate Code" : "Generate Code"}
-                          </button>
-                          {!fn.prompt.trim() && (
-                            <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>Describe what this step does first</span>
-                          )}
-                        </div>
-
-                        {/* Generated code display */}
-                        {fn.code && (
-                          <div style={{ marginTop: "10px" }}>
-                            <label style={{ display: "block", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "4px" }}>
-                              Generated Code
-                            </label>
-                            <textarea
-                              value={fn.code}
-                              onChange={(e) => { const u = [...functions]; u[idx] = { ...fn, code: e.target.value }; setFunctions(u); }}
-                              rows={12}
-                              style={{
-                                width: "100%", padding: "10px 12px", border: "1px solid var(--border-color)", borderRadius: "6px",
-                                background: "var(--code-bg)", color: "var(--text-color)", fontSize: "12px", lineHeight: 1.5,
-                                fontFamily: "SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace", resize: "vertical", tabSize: 2,
-                              }}
-                              spellCheck={false}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {/* Add step button */}
-                <button
-                  className="btn-small"
-                  disabled={functions.length >= 50}
-                  onClick={() => {
-                    const nextNum = functions.length + 1;
-                    setFunctions([...functions, {
-                      id: `${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-                      name: "", prompt: "", code: "", variableName: `result${nextNum}`,
-                      operationType: "work_item_query", includeBackoff: false,
-                    }]);
-                  }}
-                  style={{ width: "100%", padding: "8px", marginBottom: "14px" }}
-                >
-                  + Add Another Step {functions.length >= 50 && "(max 50)"}
-                </button>
-
-                {/* Test Run */}
-                <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: "12px", marginBottom: "14px" }}>
-                  <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px" }}>
-                    Test Run
-                  </label>
-                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                    <input
-                      type="text"
-                      value={testIssue}
-                      onChange={(e) => setTestIssue(e.target.value.toUpperCase())}
-                      placeholder="Issue key (optional for static PF)"
-                      className="wiz-input wiz-input-mono"
-                      style={{ flex: 1 }}
-                    />
-                    <button
-                      className="btn-small btn-edit"
-                      disabled={testRunning || !functions.some((f) => f.code)}
-                      onClick={async () => {
-                        setTestRunning(true);
-                        setTestResult(null);
-                        try {
-                          // Combine all function code blocks
-                          const allCode = functions.filter((f) => f.code).map((f) => f.code).join("\n\n// --- Next Step ---\n\n");
-                          const result = await invoke("testPostFunction", {
-                            code: allCode,
-                            issueKey: testIssue.trim() || undefined,
-                          });
-                          setTestResult(result);
-                        } catch (e) {
-                          setTestResult({ success: false, logs: [`Error: ${e.message}`] });
-                        }
-                        setTestRunning(false);
-                      }}
-                    >
-                      {testRunning ? "Running..." : "Run Test"}
-                    </button>
-                  </div>
-                  <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
-                    Dry run — reads are real, writes are simulated. Generate code first.
-                  </p>
-
-                  {testResult && (
-                    <div style={{
-                      marginTop: "8px", padding: "10px 12px", borderRadius: "8px",
-                      border: `1px solid ${testResult.success ? "var(--success-color)" : "var(--error-color)"}`,
-                      background: testResult.success ? "rgba(22,163,106,0.06)" : "rgba(220,38,38,0.06)",
-                    }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-                        <span className={`type-badge ${testResult.success ? "type-condition" : "type-validator"}`} style={{ fontSize: "9px" }}>
-                          {testResult.success ? "PASS" : "ERROR"}
-                        </span>
-                        {testResult.executionTimeMs && <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{testResult.executionTimeMs}ms</span>}
-                        <button style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "16px" }} onClick={() => setTestResult(null)}>&times;</button>
-                      </div>
-                      {testResult.logs && testResult.logs.length > 0 && (
-                        <div style={{ maxHeight: "200px", overflow: "auto" }}>
-                          {testResult.logs.map((log, i) => (
-                            <div key={i} style={{ fontSize: "11px", fontFamily: "SFMono-Regular, Consolas, monospace", color: "var(--text-secondary)", padding: "1px 0" }}>{log}</div>
-                          ))}
-                        </div>
-                      )}
-                      {testResult.changes && testResult.changes.length > 0 && (
-                        <div style={{ marginTop: "6px" }}>
-                          <span style={{ fontWeight: 600, fontSize: "10px", color: "var(--text-muted)", textTransform: "uppercase" }}>Simulated Changes (not applied)</span>
-                          {testResult.changes.map((c, i) => (
-                            <div key={i} style={{ fontSize: "11px", fontFamily: "SFMono-Regular, Consolas, monospace", color: "var(--text-secondary)", padding: "1px 0" }}>
-                              {c.action}({c.key}{c.fields ? `, ${JSON.stringify(c.fields)}` : ""})
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </>
+              <FunctionBuilder
+                functions={functions}
+                setFunctions={setFunctions}
+              />
             )}
+
 
           </div>
         )}
