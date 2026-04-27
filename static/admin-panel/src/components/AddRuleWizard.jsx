@@ -180,11 +180,17 @@ export default function AddRuleWizard({ invoke, onClose, onCreated }) {
     try {
       // Step A: Register config in CogniRunner KVS
       let result;
+      // CRITICAL: include `type` in the config payload that gets injected into the
+      // workflow XML. Without it, the saved config has no signal of whether it was
+      // semantic or static — config-ui falls back to detection heuristics and
+      // executePostFunction has to infer from the Forge module key. Embedding type
+      // here makes the saved config self-identifying and removes a class of bugs
+      // (e.g. workflow editor labeling the rule wrong, runtime dispatch confusion).
       const configPayload = isPostFunction
         ? ruleType === "postfunction-static"
-          ? { fieldId: "static-code", prompt: functions[0]?.operationPrompt || "" }
-          : { fieldId: fieldId || "description", prompt: prompt || conditionPrompt, conditionPrompt, actionPrompt, actionFieldId, selectedDocIds }
-        : { fieldId: fieldId || "description", prompt, enableTools, selectedDocIds };
+          ? { type: ruleType, fieldId: "static-code", prompt: functions[0]?.operationPrompt || "", functions, workflow: workflowData }
+          : { type: ruleType, fieldId: fieldId || "description", prompt: prompt || conditionPrompt, conditionPrompt, actionPrompt, actionFieldId, selectedDocIds, workflow: workflowData }
+        : { type: ruleType, fieldId: fieldId || "description", prompt, enableTools, selectedDocIds, workflow: workflowData };
 
       if (isPostFunction) {
         result = await invoke("registerPostFunction", {

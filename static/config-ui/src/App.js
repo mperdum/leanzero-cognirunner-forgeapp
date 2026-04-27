@@ -2155,16 +2155,20 @@ function App() {
           }
           if (extType === "jira:workflowPostFunction") {
             setIsPostFunction(true);
-            // Determine sub-type from saved config OR from the module key
+            // Determine sub-type. The Forge MODULE KEY is the ground truth — it tells
+            // us which slot Jira actually wired the rule to. config.type can drift
+            // (older saves had no type, or a stale fallback got persisted), so it's
+            // only a last-resort fallback for rules where the extension key is
+            // somehow unavailable.
             const extKey = context?.extension?.key || "";
             let pfType;
-            if (config?.type?.includes("static")) {
-              pfType = "static";
-            } else if (config?.type?.includes("semantic")) {
-              pfType = "semantic";
-            } else if (extKey.includes("static")) {
+            if (extKey.includes("static")) {
               pfType = "static";
             } else if (extKey.includes("semantic")) {
+              pfType = "semantic";
+            } else if (config?.type?.includes("static")) {
+              pfType = "static";
+            } else if (config?.type?.includes("semantic")) {
               pfType = "semantic";
             } else {
               pfType = "semantic"; // absolute fallback
