@@ -1742,6 +1742,8 @@ resolver.define("getOpenAIKey", async () => {
     if (provider === "lmstudio") {
       // LM Studio: "configured" once a baseUrl is set; auth is optional.
       // Always BYOK semantics (never falls back to factory env var).
+      // hasToken vs isByok: isByok gates the model picker (true once URL is set);
+      // hasToken gates the token input vs masked-display (true only when a token is saved).
       const lmBaseUrl = await storage.get("COGNIRUNNER_AI_BASE_URL");
       return {
         success: true,
@@ -1916,11 +1918,14 @@ resolver.define("getOpenAIModels", async () => {
         };
       }
 
-      // Filter to LLMs (drop embeddings/vision-only for the chat picker).
-      // Items lacking `type` are treated as LLMs (older builds don't return type).
-      const items = (data.data || []).filter((m) => !m.type || m.type === "llm");
+      // Filter to chat-capable models — keep BOTH llm and vlm (Vision Language Models).
+      // VLMs are required for the validator's attachment processing (image_url content
+      // blocks). Drop embeddings-only models. Items lacking `type` are treated as LLMs
+      // (older LM Studio builds don't return the type field).
+      const items = (data.data || []).filter((m) => !m.type || m.type === "llm" || m.type === "vlm");
       const enriched = items.map((m) => ({
         id: m.id,
+        type: m.type || "llm",
         state: m.state || null,                       // "loaded" | "not-loaded" | null
         quantization: m.quantization || null,
         max_context_length: m.max_context_length || null,

@@ -37,6 +37,10 @@ export default function OpenAIConfig({ invoke }) {
   const [baseUrl, setBaseUrl] = useState("");
   const [isByok, setIsByok] = useState(false);
   const [hasKey, setHasKey] = useState(false);
+  // LM Studio: token is OPTIONAL; isByok is true once the baseUrl is set, but we need
+  // a separate flag to know whether a Bearer token has actually been saved — otherwise
+  // the UI would mask a non-existent key and hide the input.
+  const [hasToken, setHasToken] = useState(false);
   const [keyInput, setKeyInput] = useState("");
   const [endpointInput, setEndpointInput] = useState("");
   const [models, setModels] = useState([]);
@@ -91,6 +95,9 @@ export default function OpenAIConfig({ invoke }) {
       if (keyResult.success) {
         setHasKey(keyResult.hasKey);
         setIsByok(keyResult.isByok);
+        // For LM Studio, hasToken reflects whether a Bearer token is actually saved
+        // (separate from isByok which just means "URL is configured").
+        setHasToken(!!keyResult.hasToken);
       }
       if (modelsResult.success) {
         setModels(modelsResult.models || []);
@@ -550,7 +557,11 @@ export default function OpenAIConfig({ invoke }) {
                 } />
               )}
             </label>
-            {isByok ? (
+            {/* For LM Studio the token is optional — gate the masked-vs-input render on
+                whether a token has actually been saved (hasToken), NOT on isByok which
+                is true the moment the baseUrl is set. Other providers keep the original
+                isByok-based gate since their key is required. */}
+            {(isLmStudio ? hasToken : isByok) ? (
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 <span style={{
                   flex: 1,
@@ -618,6 +629,9 @@ export default function OpenAIConfig({ invoke }) {
                       options={isLmStudio && modelDetails.length > 0
                         ? modelDetails.map((m) => {
                             const parts = [];
+                            // VLM badge — these are the ONLY LM Studio models that can
+                            // process attachments (validator's image_url content blocks).
+                            if (m.type === "vlm") parts.push("👁 vision");
                             if (m.state === "loaded") parts.push("loaded");
                             else if (m.state === "not-loaded") parts.push("cold");
                             if (m.quantization) parts.push(m.quantization);
@@ -655,6 +669,9 @@ export default function OpenAIConfig({ invoke }) {
                       ? "⚠ Model not loaded. First call will JIT-load it (10–60s cold start). Click Load to preload."
                       : null}
                   {selectedModelMeta.arch ? ` · ${selectedModelMeta.arch}` : ""}
+                  {selectedModelMeta.type === "vlm"
+                    ? " · Vision-capable (can process Jira attachment images in validators)."
+                    : " · Text-only — Jira attachments will be ignored. Pick a 👁 vision model to process attachments."}
                 </p>
               )}
               {currentModel && (
