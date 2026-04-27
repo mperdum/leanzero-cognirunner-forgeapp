@@ -148,22 +148,14 @@ permissions:
         - address: "*.openai.azure.com"
         - address: https://openrouter.ai
         - address: https://api.anthropic.com
-        # LM Studio: user-hosted servers exposed via common public tunnels
-        - address: "*.ngrok-free.app"
-        - address: "*.ngrok.app"
-        - address: "*.ngrok.io"
-        - address: "*.trycloudflare.com"
+        # LM Studio: user-hosted servers exposed via Tailscale Funnel
         - address: "*.ts.net"
       backend:
         - address: https://api.openai.com
         - address: "*.openai.azure.com"
         - address: https://openrouter.ai
         - address: https://api.anthropic.com
-        # LM Studio: user-hosted servers exposed via common public tunnels
-        - address: "*.ngrok-free.app"
-        - address: "*.ngrok.app"
-        - address: "*.ngrok.io"
-        - address: "*.trycloudflare.com"
+        # LM Studio: user-hosted servers exposed via Tailscale Funnel
         - address: "*.ts.net"
 
 app:

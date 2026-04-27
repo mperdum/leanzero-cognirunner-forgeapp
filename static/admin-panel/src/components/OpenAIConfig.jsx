@@ -26,7 +26,7 @@ const PROVIDER_HELP = {
     keyPlaceholder: "Optional: Bearer token from LM Studio Developer page",
     keyLabel: "API Token (optional)",
     endpointNeeded: true,
-    endpointPlaceholder: "https://your-tunnel.ngrok-free.app",
+    endpointPlaceholder: "https://your-machine.tailXXXX.ts.net",
     keyOptional: true,
   },
 };
@@ -413,16 +413,15 @@ export default function OpenAIConfig({ invoke }) {
               <label style={{ display: "flex", alignItems: "center", fontSize: "12px", fontWeight: "600", color: "var(--text-secondary)", marginBottom: "6px" }}>
                 LM Studio Public URL
                 <Tooltip text={
-                  "How to expose LM Studio to Forge:\n\n" +
+                  "How to expose LM Studio to Forge via Tailscale Funnel:\n\n" +
                   "1. In LM Studio, open Settings → Developer and toggle 'Serve on Local Network' ON.\n" +
-                  "2. Start a public tunnel pointing at port 1234:\n" +
-                  "   • Cloudflare Tunnel (recommended): cloudflared tunnel --url http://localhost:1234\n" +
-                  "   • ngrok: ngrok http 1234\n" +
-                  "   • Tailscale Funnel: tailscale funnel 1234\n" +
-                  "3. Copy the public HTTPS URL the tunnel prints and paste it here.\n" +
-                  "4. (Recommended) In LM Studio's Developer page, enable authentication and create an API token. Paste it in the 'API Token' field below — exposing LM Studio publicly without a token is unsafe.\n\n" +
-                  "Allowed tunnel domains: *.ngrok-free.app, *.ngrok.app, *.ngrok.io, *.trycloudflare.com, *.ts.net.\n" +
-                  "Localhost URLs cannot work — Forge runs in Atlassian's cloud, not on your machine."
+                  "2. Install Tailscale on the machine running LM Studio and join your tailnet.\n" +
+                  "3. Enable Funnel for port 1234:\n" +
+                  "   sudo tailscale funnel 1234\n" +
+                  "   (or use the GUI: Tailscale menu → Serve & Funnel)\n" +
+                  "4. Copy the public HTTPS URL Tailscale prints (looks like https://your-machine.tailXXXX.ts.net) and paste it here.\n" +
+                  "5. REQUIRED for safety: in LM Studio's Developer page, enable authentication and create an API token. Paste it in the 'API Token' field below — without a token, anyone who finds your URL can use your LM Studio server.\n\n" +
+                  "Only *.ts.net (Tailscale Funnel) is allowlisted in the app's egress. Other tunnel providers (ngrok, Cloudflare Tunnel) will not work — requests would be blocked by Forge before leaving the cloud."
                 } />
               </label>
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -497,7 +496,7 @@ export default function OpenAIConfig({ invoke }) {
               {isLmStudio
                 ? (hasKey
                     ? "Inference and field data stay on your machine. Pick a model below — the API token is optional unless you've enabled authentication in LM Studio."
-                    : "Set the public URL above (Cloudflare Tunnel, ngrok, or Tailscale Funnel pointing at your LM Studio server) to get started.")
+                    : "Set the Tailscale Funnel URL above (https://*.ts.net pointing at your LM Studio server) to get started.")
                 : isByok
                   ? `Connected to ${providerLabel}. You can select from available models. Remove the key to revert to the factory key.`
                   : hasKey
@@ -542,12 +541,12 @@ export default function OpenAIConfig({ invoke }) {
               )}
               {isLmStudio && (
                 <Tooltip text={
-                  "How to set up LM Studio API authentication (optional but RECOMMENDED for public tunnels):\n\n" +
+                  "How to set up LM Studio API authentication (REQUIRED when exposing via Tailscale Funnel):\n\n" +
                   "1. Open LM Studio's Developer page (left sidebar).\n" +
                   "2. In Server Settings, toggle authentication ON.\n" +
                   "3. Click 'Manage Tokens' → 'Create Token', name it (e.g. 'cognirunner'), copy it immediately (LM Studio only shows it once).\n" +
                   "4. Paste it here.\n\n" +
-                  "Without a token, anyone who finds your tunnel URL can use your LM Studio server. Always set one when exposing to the public internet."
+                  "Without a token, anyone who discovers your *.ts.net URL can use your LM Studio server."
                 } />
               )}
             </label>

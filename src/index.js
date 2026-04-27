@@ -1801,14 +1801,17 @@ resolver.define("saveProvider", async ({ payload, context }) => {
     let normalizedBaseUrl = baseUrl;
     if (provider === "lmstudio") {
       if (!baseUrl || !String(baseUrl).trim()) {
-        return { success: false, error: "LM Studio requires a public base URL (e.g. https://your-tunnel.ngrok-free.app). Expose your LM Studio server via Cloudflare Tunnel, ngrok, or Tailscale Funnel." };
+        return { success: false, error: "LM Studio requires a public base URL (e.g. https://your-machine.tailXXXX.ts.net). Expose your LM Studio server via Tailscale Funnel." };
       }
       const trimmed = String(baseUrl).trim();
       if (!/^https:\/\//i.test(trimmed)) {
         return { success: false, error: "LM Studio URL must use https:// — Forge cannot reach plain HTTP endpoints from the cloud." };
       }
       if (/(localhost|127\.0\.0\.1|0\.0\.0\.0)/i.test(trimmed)) {
-        return { success: false, error: "LM Studio URL cannot point to localhost. Use a public tunnel URL (Cloudflare Tunnel, ngrok, Tailscale Funnel)." };
+        return { success: false, error: "LM Studio URL cannot point to localhost. Use a Tailscale Funnel URL (https://*.ts.net)." };
+      }
+      if (!/\.ts\.net(:|\/|$)/i.test(trimmed)) {
+        return { success: false, error: "LM Studio URL must be on the *.ts.net domain (Tailscale Funnel). Other tunnel providers are not allowlisted in the app's egress." };
       }
       // Strip trailing slash and a trailing /v1 — we append the path ourselves at call time.
       normalizedBaseUrl = trimmed.replace(/\/+$/, "").replace(/\/v1$/i, "");
@@ -3461,8 +3464,9 @@ const PROVIDERS = {
   azure: { label: "Azure OpenAI", baseUrl: null, defaultModel: "gpt-5.4-mini" }, // user must provide URL
   openrouter: { label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", defaultModel: "openai/gpt-4o-mini" },
   anthropic: { label: "Anthropic", baseUrl: "https://api.anthropic.com", defaultModel: "claude-haiku-4-5-20251001" },
-  // LM Studio: user-hosted OpenAI-compatible server. baseUrl is the user's public tunnel root
-  // (e.g. https://abc.ngrok-free.app); we append /v1 for inference and /api/v1 for model lifecycle.
+  // LM Studio: user-hosted OpenAI-compatible server. baseUrl is the user's Tailscale Funnel
+  // root (e.g. https://your-machine.tailXXXX.ts.net); we append /v1 for inference and /api/v1
+  // for model lifecycle. Tailscale Funnel is the only tunnel provider allowlisted in manifest.
   lmstudio: { label: "LM Studio", baseUrl: null, defaultModel: null },
 };
 
