@@ -2090,12 +2090,18 @@ resolver.define("pingLmStudio", async ({ payload, context }) => {
     }
     if (!modelsResp.ok) {
       const body = await modelsResp.text().catch(() => "");
-      const hint = modelsResp.status === 401 || modelsResp.status === 403
-        ? "The API token is invalid. Generate a new token in LM Studio's Developer page."
-        : modelsResp.status === 404
-          ? "Endpoint not found. Make sure LM Studio's API server is running and 'Serve on Local Network' is enabled."
-          : `HTTP ${modelsResp.status}: ${body.substring(0, 150)}`;
-      return { success: false, error: hint };
+      // Distinguish "token required but none sent" from "wrong/expired token" so the UI
+      // can highlight the right action (add token vs fix existing token).
+      const tokenRequired = (modelsResp.status === 401 || modelsResp.status === 403) && !apiKey;
+      const tokenInvalid = (modelsResp.status === 401 || modelsResp.status === 403) && !!apiKey;
+      const hint = tokenRequired
+        ? "Your LM Studio server requires an API token. Open LM Studio → Developer page → Manage Tokens, create one, and paste it in the API Token field below."
+        : tokenInvalid
+          ? "The API token you provided was rejected. Generate a new one in LM Studio's Developer page → Manage Tokens, then update it below."
+          : modelsResp.status === 404
+            ? "Endpoint not found. Make sure LM Studio's API server is running and 'Serve on Local Network' is enabled."
+            : `HTTP ${modelsResp.status}: ${body.substring(0, 150)}`;
+      return { success: false, error: hint, tokenRequired, tokenInvalid, status: modelsResp.status };
     }
     const modelsData = await modelsResp.json();
     const modelCount = (modelsData.data || []).length;

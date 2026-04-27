@@ -107,8 +107,11 @@ export default function OpenAIConfig({ invoke }) {
       }
       if (modelKvs.success) {
         setCurrentModel(modelKvs.model);
+        // Always reset selectedModel to the saved value (or empty) — without an else
+        // branch, a stale value from a previous provider would persist after switching.
+        setSelectedModel(modelKvs.model || "");
         if (modelKvs.model) {
-          setSelectedModel(modelKvs.model);
+          /* keep parity with the unconditional set above */
         }
         if (!modelKvs.isByok) {
           setFactoryModel(modelKvs.model || "");
@@ -138,10 +141,28 @@ export default function OpenAIConfig({ invoke }) {
       const result = await invoke("saveProvider", payload);
       if (result.success) {
         setSavedProvider(provider);
-        setSuccess(`Switched to ${PROVIDER_OPTIONS.find((p) => p.value === provider)?.label || provider}`);
         setKeyInput("");
         await new Promise((r) => setTimeout(r, 500));
         await loadStatus();
+        // For LM Studio: auto-ping right after switch so the user sees actual
+        // connection state (including 401 → "token required") instead of a
+        // misleading "Switched successfully" message followed by a broken UI.
+        if (provider === "lmstudio") {
+          const ping = await runLmStudioPing({ silent: true });
+          if (ping?.success && ping.ok && ping.authOk) {
+            setSuccess(`Switched to LM Studio — connected, ${ping.modelCount || 0} model(s) found.`);
+          } else if (ping?.tokenRequired) {
+            setError(ping.error);
+          } else if (ping?.tokenInvalid) {
+            setError(ping.error);
+          } else if (ping && !ping.success) {
+            setError(ping.error || "Switched to LM Studio but connection test failed.");
+          } else {
+            setSuccess("Switched to LM Studio.");
+          }
+        } else {
+          setSuccess(`Switched to ${PROVIDER_OPTIONS.find((p) => p.value === provider)?.label || provider}`);
+        }
       } else {
         setError(result.error || "Failed to save provider");
       }
@@ -160,8 +181,26 @@ export default function OpenAIConfig({ invoke }) {
     try {
       const result = await invoke("saveProvider", { provider, baseUrl: endpointInput.trim() });
       if (result.success) {
-        setSuccess(`${PROVIDER_OPTIONS.find((p) => p.value === provider)?.label || provider} endpoint saved`);
         await loadStatus();
+        // For LM Studio, immediately verify connectivity so the user knows whether
+        // their token (or lack of one) is accepted. The status block + token field
+        // both react to the ping result.
+        if (provider === "lmstudio") {
+          const ping = await runLmStudioPing({ silent: true });
+          if (ping?.success && ping.ok && ping.authOk) {
+            setSuccess(`Endpoint saved — connected, ${ping.modelCount || 0} model(s) found.`);
+          } else if (ping?.tokenRequired) {
+            setError(ping.error);
+          } else if (ping?.tokenInvalid) {
+            setError(ping.error);
+          } else if (ping && !ping.success) {
+            setError(ping.error || "Endpoint saved but connection test failed.");
+          } else {
+            setSuccess("Endpoint saved.");
+          }
+        } else {
+          setSuccess(`${PROVIDER_OPTIONS.find((p) => p.value === provider)?.label || provider} endpoint saved`);
+        }
       } else {
         setError(result.error || "Failed to save endpoint");
       }
@@ -172,31 +211,48 @@ export default function OpenAIConfig({ invoke }) {
   };
 
   // LM Studio: ping the user's tunnel to verify reachability + auth.
-  const handleTestConnection = async () => {
-    if (!endpointInput.trim()) return;
-    setPinging(true);
-    setError(null);
-    setSuccess(null);
+  // Used by both the explicit "Test" button and the auto-ping after save flows.
+  // The `silent` flag suppresses success/error toasts when called automatically
+  // after Save (we don't want to spam the user with "Test passed" on every save).
+  const runLmStudioPing = async ({ baseUrlOverride, tokenOverride, silent } = {}) => {
+    const url = (baseUrlOverride ?? endpointInput).trim();
+    if (!url) return null;
+    if (!silent) {
+      setPinging(true);
+      setError(null);
+      setSuccess(null);
+    }
     setPingResult(null);
     try {
       const result = await invoke("pingLmStudio", {
-        baseUrl: endpointInput.trim(),
-        apiKey: keyInput.trim(), // use the unsaved input if present, else server falls back to none
+        baseUrl: url,
+        apiKey: (tokenOverride ?? keyInput).trim(),
       });
-      if (result.success && result.ok) {
-        setPingResult(result);
-        if (!result.authOk) {
+      // Always store the ping result so the UI status block can reflect actual state.
+      setPingResult(result);
+      if (!silent) {
+        if (result.success && result.ok && result.authOk) {
+          setSuccess(result.message || `Connected — ${result.modelCount || 0} model(s) found.`);
+        } else if (result.tokenRequired) {
+          setError(result.error);
+        } else if (result.tokenInvalid) {
+          setError(result.error);
+        } else if (!result.success) {
+          setError(result.error || "Connection test failed");
+        } else if (!result.authOk) {
           setError(`Reachable, but inference failed: ${result.pingError || "unknown"}. Check your token.`);
         }
-      } else {
-        setPingResult({ ok: false });
-        setError(result.error || "Connection test failed");
       }
+      return result;
     } catch (e) {
-      setError("Test failed: " + e.message);
+      if (!silent) setError("Test failed: " + e.message);
+      return null;
+    } finally {
+      if (!silent) setPinging(false);
     }
-    setPinging(false);
   };
+
+  const handleTestConnection = () => runLmStudioPing();
 
   // LM Studio: preload the chosen model so first inference doesn't pay JIT cold-start.
   const handleLoadLmModel = async () => {
@@ -225,13 +281,30 @@ export default function OpenAIConfig({ invoke }) {
     setError(null);
     setSuccess(null);
     try {
-      const result = await invoke("saveOpenAIKey", { key: keyInput.trim() });
+      const tokenJustSaved = keyInput.trim();
+      const result = await invoke("saveOpenAIKey", { key: tokenJustSaved });
       if (result.success) {
         setKeyInput("");
-        setSuccess("API key saved successfully");
         // Brief delay to let KVS propagate, then reload status + models
         await new Promise((r) => setTimeout(r, 500));
         await loadStatus();
+        // For LM Studio, re-ping with the just-saved token to confirm it works
+        // and surface the actual model count. Using tokenOverride because keyInput
+        // was just cleared above.
+        if (isLmStudio) {
+          const ping = await runLmStudioPing({ tokenOverride: tokenJustSaved, silent: true });
+          if (ping?.success && ping.ok && ping.authOk) {
+            setSuccess(`Token saved — connected, ${ping.modelCount || 0} model(s) found.`);
+          } else if (ping?.tokenInvalid) {
+            setError(ping.error);
+          } else if (ping && !ping.success) {
+            setError(ping.error || "Token saved but connection test failed.");
+          } else {
+            setSuccess("Token saved.");
+          }
+        } else {
+          setSuccess("API key saved successfully");
+        }
       } else {
         setError(result.error || "Failed to save key");
       }
@@ -495,35 +568,70 @@ export default function OpenAIConfig({ invoke }) {
             </div>
           ) : (<>
 
-          {/* Status */}
-          <div className="openai-status" style={{ marginBottom: "16px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-              <span style={{
-                display: "inline-block",
-                width: "8px",
-                height: "8px",
-                borderRadius: "50%",
-                background: hasKey ? "var(--success-color)" : "var(--error-color)",
-              }} />
-              <strong style={{ fontSize: "13px" }}>
-                {isLmStudio
-                  ? (hasKey ? "Connected to your LM Studio server" : "LM Studio URL not set")
-                  : (isByok ? `Using your ${providerLabel} key` : "Using factory key")}
-              </strong>
-            </div>
-            <p style={{ margin: 0, fontSize: "12px", color: "var(--text-secondary)" }}>
-              {isLmStudio
-                ? (hasKey
-                    ? "Inference and field data stay on your machine. Pick a model below — the API token is optional unless you've enabled authentication in LM Studio."
-                    : "Set the Tailscale Funnel URL above (https://*.ts.net pointing at your LM Studio server) to get started.")
-                : isByok
-                  ? `Connected to ${providerLabel}. You can select from available models. Remove the key to revert to the factory key.`
-                  : hasKey
-                    ? `Factory model: ${factoryModel || "gpt-5.4-mini"}. Provide your own ${providerLabel} key to unlock model selection.`
-                    : `No API key configured. Provide your ${providerLabel} API key to get started.`
+          {/* Status — for LM Studio, reflect ACTUAL ping result instead of just
+              "URL is set". A green dot only when we've confirmed the server responds
+              and accepts our auth (or has no auth requirement). */}
+          {(() => {
+            // Compute LM Studio status from pingResult
+            let lmStatusColor = "var(--text-muted)";
+            let lmStatusTitle = "LM Studio URL not set";
+            let lmStatusBody = "Set the Tailscale Funnel URL above (https://*.ts.net pointing at your LM Studio server) to get started.";
+            if (isLmStudio && hasKey) {
+              if (!pingResult) {
+                lmStatusColor = "var(--text-muted)";
+                lmStatusTitle = "URL saved — not yet tested";
+                lmStatusBody = "Click Test (above) or Save again to verify the connection.";
+              } else if (pingResult.tokenRequired) {
+                lmStatusColor = "var(--error-color)";
+                lmStatusTitle = "Reachable, but token required";
+                lmStatusBody = "Your LM Studio server requires an API token. Paste it in the field below.";
+              } else if (pingResult.tokenInvalid) {
+                lmStatusColor = "var(--error-color)";
+                lmStatusTitle = "Reachable, but token rejected";
+                lmStatusBody = "The token below is invalid or expired. Generate a new one in LM Studio's Developer page and update it.";
+              } else if (!pingResult.success || !pingResult.ok) {
+                lmStatusColor = "var(--error-color)";
+                lmStatusTitle = "Cannot reach your LM Studio server";
+                lmStatusBody = pingResult.error || "Check that the tunnel is up and the URL is correct.";
+              } else if (!pingResult.authOk) {
+                lmStatusColor = "#d97706";
+                lmStatusTitle = "Reachable, but inference test failed";
+                lmStatusBody = `Models list returned, but a test chat call failed: ${pingResult.pingError || "unknown"}.`;
+              } else {
+                lmStatusColor = "var(--success-color)";
+                lmStatusTitle = `Connected — ${pingResult.modelCount || 0} model(s) available`;
+                lmStatusBody = "Inference and field data stay on your machine. Pick a model below.";
               }
-            </p>
-          </div>
+            }
+            return (
+              <div className="openai-status" style={{ marginBottom: "16px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                  <span style={{
+                    display: "inline-block",
+                    width: "8px",
+                    height: "8px",
+                    borderRadius: "50%",
+                    background: isLmStudio ? lmStatusColor : (hasKey ? "var(--success-color)" : "var(--error-color)"),
+                  }} />
+                  <strong style={{ fontSize: "13px" }}>
+                    {isLmStudio
+                      ? lmStatusTitle
+                      : (isByok ? `Using your ${providerLabel} key` : "Using factory key")}
+                  </strong>
+                </div>
+                <p style={{ margin: 0, fontSize: "12px", color: "var(--text-secondary)" }}>
+                  {isLmStudio
+                    ? lmStatusBody
+                    : isByok
+                      ? `Connected to ${providerLabel}. You can select from available models. Remove the key to revert to the factory key.`
+                      : hasKey
+                        ? `Factory model: ${factoryModel || "gpt-5.4-mini"}. Provide your own ${providerLabel} key to unlock model selection.`
+                        : `No API key configured. Provide your ${providerLabel} API key to get started.`
+                  }
+                </p>
+              </div>
+            );
+          })()}
 
           {/* API Key Input */}
           <div style={{ marginBottom: "16px" }}>
