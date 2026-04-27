@@ -88,6 +88,58 @@ const getProviderConfig = async () => {
  *   skipped for providers that don't support it (Anthropic uses its system
  *   prompt; OpenRouter passes through and not all upstream models accept it).
  */
+// Send a one-shot request to LM Studio's NATIVE /api/v1/chat endpoint.
+// Mirror of callLmStudioNative in src/index.js but specialized for the simple
+// system+user shape callAIChatSimple uses (no multimodal, no tools possible).
+// Always preferred for LM Studio since callAIChatSimple never sends tools.
+const callLmStudioNativeSimple = async ({ apiKey, model, systemPrompt, userMessage, jsonMode, baseUrl }) => {
+  let prompt = systemPrompt || "";
+  if (jsonMode) {
+    prompt = (prompt ? prompt + "\n\n" : "")
+      + "Respond with ONLY a valid JSON object. No markdown fences, no surrounding prose, no explanation outside the JSON.";
+  }
+
+  const body = {
+    model,
+    input: userMessage,
+    store: false,
+    reasoning: "off",
+  };
+  if (prompt) body.system_prompt = prompt;
+
+  const headers = { "Content-Type": "application/json", Accept: "application/json" };
+  if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+
+  const url = `${baseUrl}/api/v1/chat`;
+  let response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+  // Retry without `reasoning` if the model rejects it (per LM Studio docs).
+  if (response.status === 400) {
+    const errText = await response.text().catch(() => "");
+    if (/reasoning/i.test(errText)) {
+      delete body.reasoning;
+      response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+    } else {
+      return { ok: false, status: 400, error: errText };
+    }
+  }
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => "");
+    return { ok: false, status: response.status, error: errBody };
+  }
+
+  const native = await response.json();
+  const blocks = Array.isArray(native.output) ? native.output : [];
+  const messageBlocks = blocks.filter((b) => b?.type === "message" && typeof b.content === "string");
+  const reasoningBlocks = blocks.filter((b) => b?.type === "reasoning" && typeof b.content === "string");
+  let content = messageBlocks.map((b) => b.content).join("");
+  if (!content && reasoningBlocks.length > 0) {
+    content = reasoningBlocks.map((b) => b.content).join("");
+  }
+  const stats = native.stats || {};
+  const tokens = (stats.input_tokens || 0) + (stats.total_output_tokens || stats.output_tokens || 0);
+  return { ok: true, content, tokens };
+};
+
 const callAIChatSimple = async ({ apiKey, model, systemPrompt, userMessage, jsonMode }) => {
   const { provider, baseUrl } = await getProviderConfig();
 
@@ -116,13 +168,16 @@ const callAIChatSimple = async ({ apiKey, model, systemPrompt, userMessage, json
     return { ok: true, content: text, tokens };
   }
 
-  // OpenAI-compatible (OpenAI, Azure, OpenRouter, LM Studio)
+  // LM Studio: route to native /api/v1/chat (this resolver never sends tools, so the
+  // native endpoint is always available — gives us real reasoning control).
+  if (provider === "lmstudio") {
+    return callLmStudioNativeSimple({ apiKey, model, systemPrompt, userMessage, jsonMode, baseUrl });
+  }
+
+  // OpenAI-compatible (OpenAI, Azure, OpenRouter)
   const openaiHeaders = { "Content-Type": "application/json" };
   if (provider === "azure") {
     openaiHeaders["api-key"] = apiKey;
-  } else if (provider === "lmstudio") {
-    // LM Studio: auth is optional. Sending `Bearer ` with empty token can 401 on some builds.
-    if (apiKey) openaiHeaders["Authorization"] = `Bearer ${apiKey}`;
   } else {
     openaiHeaders["Authorization"] = `Bearer ${apiKey}`;
   }
@@ -130,10 +185,8 @@ const callAIChatSimple = async ({ apiKey, model, systemPrompt, userMessage, json
     openaiHeaders["HTTP-Referer"] = "https://leanzero.atlascrafted.com";
     openaiHeaders["X-OpenRouter-Title"] = "CogniRunner";
   }
-  // LM Studio's baseUrl is the tunnel root (no /v1) — append the OpenAI-compat path here.
-  const inferenceUrl = provider === "lmstudio"
-    ? `${baseUrl}/v1/chat/completions`
-    : `${baseUrl}/chat/completions`;
+  // OpenAI/Azure/OpenRouter all expect baseUrl ending in /v1 (PROVIDERS already
+  // configured that way). LM Studio is handled by the native path above.
   const requestBody = {
     model,
     messages: [
@@ -141,12 +194,9 @@ const callAIChatSimple = async ({ apiKey, model, systemPrompt, userMessage, json
       { role: "user", content: userMessage },
     ],
   };
-  // Constrain to JSON only on providers that reliably honor response_format.
+  // Constrain to JSON on providers that reliably honor response_format.
   // Skip for openrouter (passes through; many upstream models reject the field).
-  // Use json_schema form, not json_object — LM Studio rejects json_object with
-  // "'response_format.type' must be 'json_schema' or 'text'". Permissive schema
-  // so reasoning models don't get rejected and we don't need per-call-site schemas.
-  if (jsonMode && (provider === "openai" || provider === "azure" || provider === "lmstudio")) {
+  if (jsonMode && (provider === "openai" || provider === "azure")) {
     requestBody.response_format = {
       type: "json_schema",
       json_schema: {
@@ -156,7 +206,7 @@ const callAIChatSimple = async ({ apiKey, model, systemPrompt, userMessage, json
       },
     };
   }
-  const response = await fetch(inferenceUrl, {
+  const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: openaiHeaders,
     body: JSON.stringify(requestBody),

@@ -2178,22 +2178,44 @@ resolver.define("pingLmStudio", async ({ payload, context }) => {
     const modelCount = (modelsData.data || []).length;
 
     // Step 2: tiny chat ping — proves auth actually works for inference.
-    // We pick the first model from the list; if the server has none downloaded, skip.
+    // Uses LM Studio's NATIVE /api/v1/chat (the same endpoint our inference
+    // path uses) so this verifies the actual production code path, not just the
+    // OpenAI-compat layer. store:false keeps it stateless; reasoning:"off"
+    // ensures we don't burn tokens on chain-of-thought; max_output_tokens:1
+    // makes the ping cheap.
     let authOk = true;
     let pingError = null;
     if (modelCount > 0) {
       const firstModel = modelsData.data[0]?.id;
       try {
-        const chatResp = await fetch(`${baseUrl}/v1/chat/completions`, {
+        const chatBody = {
+          model: firstModel,
+          input: "ping",
+          store: false,
+          reasoning: "off",
+          max_output_tokens: 1,
+        };
+        let chatResp = await fetch(`${baseUrl}/api/v1/chat`, {
           method: "POST",
           headers: { ...headers, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: firstModel,
-            messages: [{ role: "user", content: "ping" }],
-            max_tokens: 1,
-          }),
+          body: JSON.stringify(chatBody),
         });
-        if (!chatResp.ok) {
+        // Retry without `reasoning` if the model rejects it (per LM Studio docs).
+        if (chatResp.status === 400) {
+          const errText = await chatResp.text().catch(() => "");
+          if (/reasoning/i.test(errText)) {
+            delete chatBody.reasoning;
+            chatResp = await fetch(`${baseUrl}/api/v1/chat`, {
+              method: "POST",
+              headers: { ...headers, "Content-Type": "application/json" },
+              body: JSON.stringify(chatBody),
+            });
+          } else {
+            authOk = false;
+            pingError = `HTTP 400: ${errText.substring(0, 150)}`;
+          }
+        }
+        if (!chatResp.ok && authOk) {
           authOk = false;
           const body = await chatResp.text().catch(() => "");
           pingError = `HTTP ${chatResp.status}: ${body.substring(0, 150)}`;
@@ -3553,9 +3575,153 @@ const PROVIDERS = {
 };
 
 /**
+ * Send an inference request to LM Studio's NATIVE /api/v1/chat endpoint.
+ *
+ * Translates our internal OpenAI message shape to LM Studio's native request shape,
+ * then translates the response back to our OpenAI shape so downstream callers don't
+ * need to know which endpoint was used.
+ *
+ * Used for LM Studio inference when no custom tools are required — native /api/v1/chat
+ * has no custom-tool support (only MCP), so the agentic validator stays on the
+ * /v1/chat/completions path. Native is preferred otherwise because:
+ *   - `reasoning: "off"` actually takes effect (silently ignored on the compat layer)
+ *   - response includes a typed `output[]` array, no reasoning_content fallback needed
+ *   - stats block has explicit time-to-first-token / tokens-per-second
+ *   - aligns with LM Studio's documented "first-class" REST API as of 0.4.0
+ *
+ * Reference: https://lmstudio.ai/docs/developer/rest
+ */
+const callLmStudioNative = async ({ apiKey, model, messages, jsonMode, baseUrl }) => {
+  // 1. Strip file blocks (LM Studio's REST API doesn't accept type:"file" anywhere
+  //    — its document support is GUI-only via RAG).
+  const cleanMessages = (messages || []).map((msg) => {
+    if (!Array.isArray(msg.content)) return msg;
+    return { ...msg, content: msg.content.filter((p) => !p || p.type !== "file") };
+  });
+
+  // 2. Extract all system messages → single `system_prompt` field.
+  //    Native treats system instructions as a separate top-level field, not a message role.
+  const systemParts = [];
+  const nonSystemMessages = [];
+  for (const msg of cleanMessages) {
+    if (msg.role === "system") {
+      const text = typeof msg.content === "string"
+        ? msg.content
+        : (msg.content || []).filter((p) => p?.type === "text").map((p) => p.text).join("\n");
+      if (text) systemParts.push(text);
+    } else {
+      nonSystemMessages.push(msg);
+    }
+  }
+  let systemPrompt = systemParts.join("\n\n");
+  // 3. jsonMode: native has no `response_format` — enforce via system_prompt only.
+  //    Compensated by parseAIJson tolerance + per-callsite shape clamping.
+  if (jsonMode) {
+    systemPrompt = (systemPrompt ? systemPrompt + "\n\n" : "")
+      + "Respond with ONLY a valid JSON object. No markdown fences, no surrounding prose, no explanation outside the JSON.";
+  }
+
+  // 4. Convert non-system messages → native `input` array of typed blocks.
+  //    OpenAI text content → {type:"message", content}
+  //    OpenAI image_url    → {type:"image", data_url}   (native uses data_url, not nested image_url)
+  const inputBlocks = [];
+  for (const msg of nonSystemMessages) {
+    if (typeof msg.content === "string") {
+      inputBlocks.push({ type: "message", content: msg.content });
+    } else if (Array.isArray(msg.content)) {
+      for (const part of msg.content) {
+        if (!part) continue;
+        if (part.type === "text") {
+          inputBlocks.push({ type: "message", content: part.text || "" });
+        } else if (part.type === "image_url" && part.image_url?.url) {
+          inputBlocks.push({ type: "image", data_url: part.image_url.url });
+        }
+        // file blocks already stripped above
+      }
+    }
+  }
+  // Native accepts a plain string or an array; collapse the simple case.
+  const inputField = inputBlocks.length === 1 && inputBlocks[0].type === "message"
+    ? inputBlocks[0].content
+    : inputBlocks;
+
+  // 5. Build request body. Always stateless (`store: false`) — our use case is one-shot
+  //    validations, no thread continuation needed. `reasoning: "off"` because we want
+  //    the actual answer in `output[].type:"message"` blocks rather than buried in
+  //    reasoning blocks (especially important for JSON-mode callers).
+  const body = {
+    model,
+    input: inputField,
+    store: false,
+    reasoning: "off",
+  };
+  if (systemPrompt) body.system_prompt = systemPrompt;
+
+  const headers = { "Content-Type": "application/json", Accept: "application/json" };
+  if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+
+  // 6. Send. Per LM Studio docs the `reasoning` param errors if the model doesn't
+  //    support the requested option; on a 400 mentioning reasoning, retry without it.
+  const url = `${baseUrl}/api/v1/chat`;
+  let response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+  if (response.status === 400) {
+    const errText = await response.text().catch(() => "");
+    if (/reasoning/i.test(errText)) {
+      console.log(`LM Studio native: model "${model}" does not support reasoning param — retrying without`);
+      delete body.reasoning;
+      response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+    } else {
+      return { ok: false, status: 400, data: null, error: errText };
+    }
+  }
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    return { ok: false, status: response.status, data: null, error: errText };
+  }
+
+  // 7. Translate native response → OpenAI shape. output[] is an array of typed blocks
+  //    ({type:"message"|"reasoning"|"tool_call"|"invalid_tool_call"}); we're not
+  //    requesting tools so message + reasoning are the only expected types here.
+  const native = await response.json();
+  const blocks = Array.isArray(native.output) ? native.output : [];
+  const messageBlocks = blocks.filter((b) => b?.type === "message" && typeof b.content === "string");
+  const reasoningBlocks = blocks.filter((b) => b?.type === "reasoning" && typeof b.content === "string");
+
+  let content = messageBlocks.map((b) => b.content).join("");
+  // Fallback: if the model only emitted reasoning blocks (rare with reasoning:"off"
+  // but possible if the retry-without-reasoning path was taken on a reasoning model),
+  // surface the reasoning content. Same semantics as our compat-layer fallback.
+  if (!content && reasoningBlocks.length > 0) {
+    content = reasoningBlocks.map((b) => b.content).join("");
+  }
+
+  const stats = native.stats || {};
+  const promptTokens = stats.input_tokens || 0;
+  const completionTokens = stats.total_output_tokens || stats.output_tokens || 0;
+
+  return {
+    ok: true,
+    status: 200,
+    data: {
+      choices: [{
+        index: 0,
+        message: { role: "assistant", content },
+        finish_reason: "stop",
+      }],
+      usage: {
+        prompt_tokens: promptTokens,
+        completion_tokens: completionTokens,
+        total_tokens: promptTokens + completionTokens,
+      },
+    },
+  };
+};
+
+/**
  * Unified AI API adapter. Translates between OpenAI format (used internally)
  * and Anthropic Messages API format when the provider is Anthropic.
  * For OpenAI/Azure/OpenRouter, it's a pass-through.
+ * For LM Studio: routes to native /api/v1/chat unless custom tools are needed.
  *
  * @param {object} opts
  * @param {string} opts.apiKey - API key
@@ -3571,6 +3737,17 @@ const callAIChat = async (opts) => {
 
   if (provider === "anthropic") {
     return callAnthropicChat({ apiKey, model, messages, tools, tool_choice, baseUrl });
+  }
+
+  // LM Studio: prefer native /api/v1/chat when no custom tools are needed.
+  // Native gives us real `reasoning: "off"` control and cleaner image handling, but
+  // doesn't support custom tools (only MCP). When tools are present, fall through to
+  // the OpenAI-compat /v1/chat/completions path below.
+  if (provider === "lmstudio" && (!tools || tools.length === 0)) {
+    return callLmStudioNative({ apiKey, model, messages, jsonMode, baseUrl });
+  }
+  if (provider === "lmstudio" && tools && tools.length > 0) {
+    console.log("LM Studio: tools requested → using OpenAI-compat /v1/chat/completions instead of native /api/v1/chat (native does not support custom tools, only MCP)");
   }
 
   // OpenAI-compatible providers (OpenAI, Azure, OpenRouter, LM Studio)
