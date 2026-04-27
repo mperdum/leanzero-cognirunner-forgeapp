@@ -3606,8 +3606,21 @@ const callAIChat = async (opts) => {
   // Constrain to JSON only on providers that reliably honor response_format.
   // Skip openrouter (passes through; many upstream models reject the field).
   // For Anthropic we already returned above — its JSON mode is via system prompt only.
+  //
+  // Use the json_schema form rather than json_object: LM Studio rejects json_object
+  // outright ('response_format.type must be json_schema or text') and the json_schema
+  // form is also supported on OpenAI/Azure. Permissive schema (no required keys,
+  // strict: false) so reasoning models (Qwen3, etc.) don't get rejected for emitting
+  // extra fields and so we don't have to thread per-call-site schemas through here.
   if (jsonMode && (provider === "openai" || provider === "azure" || provider === "lmstudio")) {
-    requestBody.response_format = { type: "json_object" };
+    requestBody.response_format = {
+      type: "json_schema",
+      json_schema: {
+        name: "response",
+        strict: false,
+        schema: { type: "object" },
+      },
+    };
   }
 
   const headers = { "Content-Type": "application/json" };

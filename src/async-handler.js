@@ -143,8 +143,18 @@ const callAIChatSimple = async ({ apiKey, model, systemPrompt, userMessage, json
   };
   // Constrain to JSON only on providers that reliably honor response_format.
   // Skip for openrouter (passes through; many upstream models reject the field).
+  // Use json_schema form, not json_object — LM Studio rejects json_object with
+  // "'response_format.type' must be 'json_schema' or 'text'". Permissive schema
+  // so reasoning models don't get rejected and we don't need per-call-site schemas.
   if (jsonMode && (provider === "openai" || provider === "azure" || provider === "lmstudio")) {
-    requestBody.response_format = { type: "json_object" };
+    requestBody.response_format = {
+      type: "json_schema",
+      json_schema: {
+        name: "response",
+        strict: false,
+        schema: { type: "object" },
+      },
+    };
   }
   const response = await fetch(inferenceUrl, {
     method: "POST",
