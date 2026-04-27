@@ -2491,37 +2491,43 @@ function App() {
         </div>
       )}
 
-      {/* Post-function type selector */}
+      {/* Post-function type — LOCKED to whichever Forge module slot Jira wired
+          this rule to. Used to be a clickable picker that let the user flip
+          between Semantic and Static after creation, but the workflow XML's
+          slot is fixed (it's the module key), so flipping the type in the form
+          made the saved config drift from what the workflow editor labels the
+          rule as. Type is now derived from extKey at load time and rendered
+          read-only. To change a rule's type, delete it and re-add via the
+          other slot in the workflow editor. */}
       {isPostFunction && (
         <div className="pf-type-selector">
-          <div
-            className={`pf-type-card ${postFunctionType === "semantic" ? "pf-type-active" : ""}`}
-            onClick={() => setPostFunctionType("semantic")}
-          >
+          <div className="pf-type-card pf-type-active" style={{ cursor: "default" }}>
             <div className="pf-type-header">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="10" />
-                <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" />
-                <line x1="12" y1="17" x2="12.01" y2="17" />
-              </svg>
-              <strong>Semantic</strong>
+              {postFunctionType === "semantic" ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="16 18 22 12 16 6" />
+                  <polyline points="8 6 2 12 8 18" />
+                </svg>
+              )}
+              <strong>{postFunctionType === "semantic" ? "Semantic Post Function" : "Static Post Function"}</strong>
             </div>
-            <p className="pf-type-desc">AI runs on every transition to evaluate and act. Best for decisions requiring judgment.</p>
-            {isByok && <span className="pf-type-tag pf-tag-semantic">AI cost per run</span>}
-          </div>
-          <div
-            className={`pf-type-card ${postFunctionType === "static" ? "pf-type-active" : ""}`}
-            onClick={() => setPostFunctionType("static")}
-          >
-            <div className="pf-type-header">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="16 18 22 12 16 6" />
-                <polyline points="8 6 2 12 8 18" />
-              </svg>
-              <strong>Static</strong>
-            </div>
-            <p className="pf-type-desc">AI generates code once during setup. That code runs on every transition with zero AI cost.</p>
-            {isByok && <span className="pf-type-tag pf-tag-static">No AI cost at runtime</span>}
+            <p className="pf-type-desc">
+              {postFunctionType === "semantic"
+                ? "AI runs on every transition to evaluate a condition and update a target field. Best for decisions requiring judgment."
+                : "AI generates code once during setup. That code runs on every transition with zero AI cost at runtime."}
+              {" "}This rule's type is determined by the workflow slot it's installed in — to switch types, remove this rule and add the other variant from the workflow editor.
+            </p>
+            {isByok && (
+              <span className={`pf-type-tag ${postFunctionType === "semantic" ? "pf-tag-semantic" : "pf-tag-static"}`}>
+                {postFunctionType === "semantic" ? "AI cost per run" : "No AI cost at runtime"}
+              </span>
+            )}
           </div>
         </div>
       )}
