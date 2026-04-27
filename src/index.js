@@ -3658,6 +3658,19 @@ const callAIChat = async (opts) => {
   }
 
   const data = await response.json();
+  // Reasoning-model fallback: some models (Qwen3 family, DeepSeek-R1, etc.) emit
+  // their entire output into `message.reasoning_content` and leave `message.content`
+  // empty — even when response_format.type=json_schema is set. LM Studio passes this
+  // through verbatim. Patch the data object so downstream callers (which all read
+  // `choices[0].message.content`) get the actual text without needing to know about
+  // reasoning models. Tested: passing reasoning:"off" / enable_thinking:false in the
+  // request did NOT redirect output for qwen/qwen3.6-35b-a3b — must do this client-side.
+  try {
+    const msg = data?.choices?.[0]?.message;
+    if (msg && (!msg.content || !msg.content.trim()) && typeof msg.reasoning_content === "string" && msg.reasoning_content.trim()) {
+      msg.content = msg.reasoning_content;
+    }
+  } catch { /* leave data unchanged on any unexpected shape */ }
   return { ok: true, status: 200, data };
 };
 

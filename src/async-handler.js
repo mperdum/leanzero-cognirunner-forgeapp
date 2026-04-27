@@ -166,7 +166,16 @@ const callAIChatSimple = async ({ apiKey, model, systemPrompt, userMessage, json
     return { ok: false, status: response.status, error: errBody };
   }
   const data = await response.json();
-  return { ok: true, content: data.choices?.[0]?.message?.content, tokens: data.usage?.total_tokens };
+  // Reasoning-model fallback (Qwen3 / DeepSeek-R1 / etc. on LM Studio):
+  // these models sometimes emit the whole answer into reasoning_content and leave
+  // content empty. Use reasoning_content as a fallback so callers don't see "Empty
+  // response from AI" when the model actually responded.
+  const msg = data.choices?.[0]?.message;
+  let content = msg?.content;
+  if ((!content || !content.trim()) && typeof msg?.reasoning_content === "string" && msg.reasoning_content.trim()) {
+    content = msg.reasoning_content;
+  }
+  return { ok: true, content, tokens: data.usage?.total_tokens };
 };
 
 /**
