@@ -5693,16 +5693,51 @@ export const executePostFunction = async (args) => {
   console.log("Post-function called with args:", JSON.stringify(args, null, 2));
 
   const { issue, configuration } = args;
+  // Capture the Forge-side module key — needed both for the type fallback below
+  // and so every diagnostic log entry can identify which PF module fired.
+  const extensionKey = args?.context?.extension?.key || null;
 
-  // License check: skip silently if unlicensed
+  // Helper for skip-path observability. Old code returned silently from each skip
+  // path (license/no-key/parse-fail/no-config/disabled/unknown-type), so the admin
+  // Logs tab showed nothing and the user couldn't tell whether the PF ran at all.
+  // Now every skip writes a log entry tagged "postfunction-skipped" with the reason.
+  const logSkip = async (reason, recommendation, extra = {}) => {
+    try {
+      await storeLog({
+        type: "postfunction-skipped",
+        issueKey: issue?.key || "(no key)",
+        fieldId: extensionKey || "(unknown module)",
+        isValid: true,
+        reason,
+        recommendation,
+        executionTimeMs: 0,
+        ruleId: extra.ruleId || null,
+        ruleName: extra.ruleName || null,
+        ruleWorkflow: extra.ruleWorkflow || null,
+        moduleKey: extensionKey,
+      });
+    } catch (e) {
+      console.error("Failed to write skip log:", e);
+    }
+  };
+
+  // License check: skip silently if unlicensed (but log it).
   const license = args?.context?.license;
   if (license && license.isActive === false) {
     console.log("License inactive — skipping post-function");
+    await logSkip(
+      "Skipped: app license is inactive on this site.",
+      "Reactivate the CogniRunner license in Jira's Apps → Manage apps page, or contact your billing admin.",
+    );
     return { result: true };
   }
 
   if (!issue?.key) {
     console.log("No issue key — cannot execute post-function");
+    await logSkip(
+      "Skipped: Forge invoked the post-function but no issue.key was in the payload.",
+      "This is unusual — typically means the transition fired before the issue was committed. Check forge logs for the raw args.",
+    );
     return { result: true };
   }
 
@@ -5713,12 +5748,20 @@ export const executePostFunction = async (args) => {
       config = JSON.parse(configuration);
     } catch (e) {
       console.error("Failed to parse post-function configuration:", e);
+      await logSkip(
+        `Skipped: post-function configuration is not valid JSON (${e.message}).`,
+        "Edit the rule from the workflow editor and re-save it. The save will re-serialize the config in the current schema.",
+      );
       return { result: true };
     }
   }
 
   if (!config) {
     console.log("No configuration — skipping post-function");
+    await logSkip(
+      "Skipped: no configuration was attached to this post-function.",
+      "Open the workflow editor → click the rule → Edit, then Save. This will write a fresh config to the workflow.",
+    );
     return { result: true };
   }
 
@@ -5730,6 +5773,11 @@ export const executePostFunction = async (args) => {
       const match = configs.find((c) => c.id === ruleId);
       if (match?.disabled) {
         console.log(`Post-function "${ruleId}" is disabled — skipping`);
+        await logSkip(
+          `Skipped: rule "${ruleId}" is disabled in the admin panel.`,
+          "Enable the rule from the admin panel's Rules tab if you want it to run again.",
+          { ruleId, ruleName: match.workflow?.workflowName, ruleWorkflow: match.workflow },
+        );
         return { result: true };
       }
     }
@@ -5739,7 +5787,18 @@ export const executePostFunction = async (args) => {
 
   const pfStartTime = Date.now();
   try {
-    const type = config.type || "";
+    // Resolve the post-function type. Prefer config.type (set by recent onConfigure
+    // callbacks) but fall back to the Forge module key for OLD configs that pre-date
+    // the type-in-config change. Without this fallback, an old PF whose saved config
+    // doesn't include `type` would silently no-op with "Unknown post-function type".
+    let type = config.type || "";
+    if (!type && extensionKey) {
+      if (extensionKey.includes("semantic")) type = "postfunction-semantic";
+      else if (extensionKey.includes("static")) type = "postfunction-static";
+      if (type) {
+        console.log(`Inferred post-function type "${type}" from module key "${extensionKey}" (config.type was missing)`);
+      }
+    }
     if (type.includes("semantic")) {
       const result = await executeSemanticPostFunction(issue.key, config);
       console.log("Semantic PF result:", result);
@@ -5822,7 +5881,16 @@ export const executePostFunction = async (args) => {
       if (result.stepResults) logEntry.stepResults = result.stepResults;
       await storeLog(logEntry);
     } else {
-      console.log("Unknown post-function type:", type);
+      // Unknown / missing type — write a diagnostic log entry instead of silently
+      // returning. Most common cause: a PF saved by an old build whose onConfigure
+      // didn't include `type` and the Forge module key fallback above didn't match
+      // either (extension.key not containing "semantic" or "static").
+      console.log("Unknown post-function type:", type, "extension.key:", extensionKey);
+      await logSkip(
+        `Skipped: could not determine post-function type. config.type=${JSON.stringify(config.type)}, module.key=${JSON.stringify(extensionKey)}.`,
+        "This usually means the rule was saved by an older build of the app. Open the workflow editor → click the rule → Edit, then Save. The save will re-serialize the config in the current schema and the next transition will execute correctly.",
+        { ruleId: config.ruleId || config.id, ruleWorkflow: config.workflow },
+      );
     }
   } catch (error) {
     console.error("Post-function execution error:", error);
