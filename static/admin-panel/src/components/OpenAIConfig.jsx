@@ -749,9 +749,11 @@ export default function OpenAIConfig({ invoke }) {
                       options={isLmStudio && modelDetails.length > 0
                         ? modelDetails.map((m) => {
                             const parts = [];
-                            // VLM badge — these are the ONLY LM Studio models that can
-                            // process attachments (validator's image_url content blocks).
-                            if (m.type === "vlm") parts.push("👁 vision");
+                            // Capability badges — the parser normalizes vision/toolUse
+                            // from LM Studio's capabilities object so we can show them
+                            // regardless of which schema (api/v1, api/v0, v1) was used.
+                            if (m.vision) parts.push("👁 vision");
+                            if (m.toolUse) parts.push("🛠 tools");
                             if (m.state === "loaded") parts.push("loaded");
                             else if (m.state === "not-loaded") parts.push("cold");
                             if (m.quantization) parts.push(m.quantization);
@@ -789,9 +791,12 @@ export default function OpenAIConfig({ invoke }) {
                       ? "⚠ Model not loaded. First call will JIT-load it (10–60s cold start). Click Load to preload."
                       : null}
                   {selectedModelMeta.arch ? ` · ${selectedModelMeta.arch}` : ""}
-                  {selectedModelMeta.type === "vlm"
+                  {selectedModelMeta.vision
                     ? " · Vision-capable (can process Jira attachment images in validators)."
-                    : " · Text-only — Jira attachments will be ignored. Pick a 👁 vision model to process attachments."}
+                    : " · Text-only — Jira attachment images will be ignored. Pick a 👁 vision model to process them."}
+                  {!selectedModelMeta.toolUse && selectedModelMeta.toolUse !== undefined
+                    ? " · Not trained for tool use — JQL agentic search may produce malformed calls; pick a 🛠 model for that."
+                    : ""}
                 </p>
               )}
               {currentModel && (

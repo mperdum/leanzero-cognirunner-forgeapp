@@ -1873,6 +1873,9 @@ resolver.define("getOpenAIModels", async () => {
     // LM Studio: auth is optional, baseUrl is required. Always treated as BYOK.
     // Tries the native /api/v1/models (richest metadata) first, falls back to /api/v0/models,
     // then to OpenAI-compat /v1/models for older LM Studio builds.
+    //
+    // Critical: each endpoint returns a DIFFERENT JSON schema (verified against a live
+    // LM Studio 0.4+ server). The normalize step below converts all three to a common shape.
     if (activeProvider === "lmstudio") {
       const { baseUrl } = await getProviderConfig();
       if (!baseUrl) {
@@ -1918,20 +1921,79 @@ resolver.define("getOpenAIModels", async () => {
         };
       }
 
-      // Filter to chat-capable models — keep BOTH llm and vlm (Vision Language Models).
-      // VLMs are required for the validator's attachment processing (image_url content
-      // blocks). Drop embeddings-only models. Items lacking `type` are treated as LLMs
-      // (older LM Studio builds don't return the type field).
-      const items = (data.data || []).filter((m) => !m.type || m.type === "llm" || m.type === "vlm");
-      const enriched = items.map((m) => ({
-        id: m.id,
-        type: m.type || "llm",
-        state: m.state || null,                       // "loaded" | "not-loaded" | null
-        quantization: m.quantization || null,
-        max_context_length: m.max_context_length || null,
-        arch: m.arch || null,
-        publisher: m.publisher || null,
-      }));
+      // Normalize the three possible LM Studio schemas into one internal shape.
+      // Empirically verified against a live LM Studio 0.4+ server.
+      let rawItems;
+      let schemaSource;
+      if (Array.isArray(data.models)) {
+        // /api/v1/models — native, richest. Top-level is { models: [...] }.
+        // Each entry: { type, publisher, key, display_name, architecture,
+        //               quantization: {name,bits_per_weight}, loaded_instances: [...],
+        //               max_context_length, format, capabilities: {vision, trained_for_tool_use, ...} }
+        rawItems = data.models;
+        schemaSource = "api/v1";
+      } else if (Array.isArray(data.data)) {
+        // /api/v0/models or /v1/models — { object:"list", data:[...] }
+        // /api/v0 entry: { id, type, state:"loaded"|"not-loaded", quantization (string),
+        //                  max_context_length, arch, publisher }
+        // /v1 entry: { id, object, owned_by } — minimal
+        rawItems = data.data;
+        schemaSource = endpointUsed && endpointUsed.includes("/api/v0") ? "api/v0" : "v1";
+      } else {
+        rawItems = [];
+        schemaSource = "unknown";
+      }
+
+      const enriched = rawItems
+        .map((m) => {
+          if (schemaSource === "api/v1") {
+            return {
+              id: m.key || m.id,
+              type: m.type || "llm",
+              vision: !!(m.capabilities && m.capabilities.vision),
+              toolUse: !!(m.capabilities && m.capabilities.trained_for_tool_use),
+              state: Array.isArray(m.loaded_instances) && m.loaded_instances.length > 0 ? "loaded" : "not-loaded",
+              quantization: m.quantization && (m.quantization.name || m.quantization) || null,
+              max_context_length: m.max_context_length || null,
+              arch: m.architecture || m.arch || null,
+              publisher: m.publisher || null,
+              format: m.format || null,
+              displayName: m.display_name || null,
+            };
+          }
+          if (schemaSource === "api/v0") {
+            return {
+              id: m.id,
+              type: m.type || "llm",
+              vision: m.type === "vlm",
+              toolUse: false, // v0 doesn't expose this
+              state: m.state || null,
+              quantization: m.quantization || null,
+              max_context_length: m.max_context_length || null,
+              arch: m.arch || null,
+              publisher: m.publisher || null,
+              format: m.compatibility_type || null,
+              displayName: null,
+            };
+          }
+          // /v1/models — only id is reliable
+          return {
+            id: m.id,
+            type: "llm",
+            vision: false,
+            toolUse: false,
+            state: null,
+            quantization: null,
+            max_context_length: null,
+            arch: null,
+            publisher: m.owned_by || null,
+            format: null,
+            displayName: null,
+          };
+        })
+        // Drop embeddings, vision-only embedding models, and any unknown chat-incompatible types.
+        .filter((m) => m.id && m.type !== "embedding" && m.type !== "embeddings");
+
       // Sort: loaded models first (zero cold-start), then alphabetically.
       enriched.sort((a, b) => {
         if (a.state === "loaded" && b.state !== "loaded") return -1;
@@ -1945,6 +2007,7 @@ resolver.define("getOpenAIModels", async () => {
         models: enriched.map((m) => m.id),
         modelDetails: enriched.slice(0, 200),
         endpointUsed,
+        schemaSource,
       };
     }
 
@@ -2074,7 +2137,15 @@ resolver.define("pingLmStudio", async ({ payload, context }) => {
   }
   try {
     const baseUrl = String(payload?.baseUrl || "").trim().replace(/\/+$/, "").replace(/\/v1$/i, "");
-    const apiKey = payload?.apiKey ? String(payload.apiKey).trim() : "";
+    // If no apiKey was passed in the payload, fall back to the saved per-provider token
+    // in KVS. Without this, the Test button and auto-pings would 401 after the user has
+    // saved a token and cleared the input field — there'd be no way to verify the saved
+    // token works without re-typing it.
+    let apiKey = payload?.apiKey ? String(payload.apiKey).trim() : "";
+    if (!apiKey) {
+      const savedToken = await storage.get(providerKeySlot("lmstudio"));
+      if (savedToken) apiKey = String(savedToken);
+    }
     if (!baseUrl) return { success: false, error: "Base URL is required" };
     if (!/^https:\/\//i.test(baseUrl)) return { success: false, error: "Base URL must start with https://" };
 
