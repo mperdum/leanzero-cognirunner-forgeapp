@@ -3497,7 +3497,31 @@ const callAIChat = async (opts) => {
   }
 
   // OpenAI-compatible providers (OpenAI, Azure, OpenRouter, LM Studio)
-  const requestBody = { model, ...buildModelParams(), messages };
+  // For LM Studio: strip OpenAI's `type:"file"` content blocks (PDFs/DOCX/XLSX/etc.).
+  // LM Studio's REST API does NOT accept that content type — its document-RAG support is
+  // GUI-only. Vision (image_url blocks on a VLM) DOES work and is preserved. Without this
+  // filter, requests to LM Studio with PDF attachments fail with HTTP 400 / unknown content
+  // type errors.
+  let outboundMessages = messages;
+  if (provider === "lmstudio") {
+    let strippedFiles = 0;
+    outboundMessages = messages.map((msg) => {
+      if (!Array.isArray(msg.content)) return msg;
+      const filtered = msg.content.filter((part) => {
+        if (part && part.type === "file") {
+          strippedFiles++;
+          return false;
+        }
+        return true;
+      });
+      return filtered.length === msg.content.length ? msg : { ...msg, content: filtered };
+    });
+    if (strippedFiles > 0) {
+      console.warn(`LM Studio: stripped ${strippedFiles} file attachment block(s) — LM Studio's REST API does not support OpenAI's type:"file" content type. Use a VLM with image attachments instead, or process documents externally.`);
+    }
+  }
+
+  const requestBody = { model, ...buildModelParams(), messages: outboundMessages };
   if (tools && tools.length > 0) {
     requestBody.tools = tools;
     if (tool_choice) requestBody.tool_choice = tool_choice;
@@ -4058,7 +4082,10 @@ const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
 // Max total attachment size across all files (20MB) — protects Forge memory limits
 const MAX_TOTAL_ATTACHMENT_SIZE = 20 * 1024 * 1024;
 
-// MIME types that OpenAI can process natively via the file content type
+// MIME types that OpenAI can process natively via the file content type.
+// NOTE: LM Studio's REST API does NOT accept OpenAI's type:"file" content blocks.
+// callAIChat strips these for the lmstudio provider before sending — only image_url
+// blocks (on a VLM) work for attachment processing on LM Studio.
 const FILE_MIME_TYPES = new Set([
   // PDFs
   "application/pdf",
