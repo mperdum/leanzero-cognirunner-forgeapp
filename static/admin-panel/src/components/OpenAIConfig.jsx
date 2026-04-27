@@ -62,7 +62,6 @@ export default function OpenAIConfig({ invoke }) {
 
   const pHelp = PROVIDER_HELP[provider] || PROVIDER_HELP.openai;
   const isLmStudio = provider === "lmstudio";
-  const isLmStudioSaved = savedProvider === "lmstudio";
 
   // For LM Studio, find metadata for the currently-selected model so we can show
   // "Loaded" / "Cold" badge + enable/disable the Load button.
@@ -355,7 +354,17 @@ export default function OpenAIConfig({ invoke }) {
                 />
               </div>
               {provider !== savedProvider && (
-                <button className="btn-small btn-edit" onClick={handleSaveProvider} disabled={savingProvider}>
+                <button
+                  className="btn-small btn-edit"
+                  onClick={handleSaveProvider}
+                  // For LM Studio, the backend requires a baseUrl on switch — disable
+                  // the button until the user enters one so they don't get the
+                  // "LM Studio requires a public base URL" error after clicking.
+                  disabled={savingProvider || (provider === "lmstudio" && !endpointInput.trim())}
+                  title={provider === "lmstudio" && !endpointInput.trim()
+                    ? "Enter your Tailscale Funnel URL below first"
+                    : undefined}
+                >
                   {savingProvider ? "Switching..." : "Switch Provider"}
                 </button>
               )}
@@ -414,8 +423,11 @@ export default function OpenAIConfig({ invoke }) {
             </div>
           )}
 
-          {/* LM Studio Endpoint — user-hosted public tunnel URL */}
-          {isLmStudio && isLmStudioSaved && (
+          {/* LM Studio Endpoint — user-hosted public tunnel URL.
+              Shown whenever LM Studio is selected (not just when saved) so the user
+              can enter the URL BEFORE clicking "Switch Provider". Without this,
+              switching fails because the backend requires a baseUrl to validate. */}
+          {isLmStudio && (
             <div style={{ marginBottom: "16px" }}>
               <label style={{ display: "flex", alignItems: "center", fontSize: "12px", fontWeight: "600", color: "var(--text-secondary)", marginBottom: "6px" }}>
                 LM Studio Public URL
