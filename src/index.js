@@ -4906,6 +4906,89 @@ RESPONSE FORMAT:
  * - And more...
  */
 /**
+ * Validate a value as Atlassian Document Format. Returns true only when the value
+ * has the minimum structure Jira accepts for a doc-type field: a top-level object
+ * with type:"doc", version:1, and content array of typed blocks.
+ */
+const isValidAdf = (v) => {
+  if (!v || typeof v !== "object") return false;
+  if (v.type !== "doc") return false;
+  if (!Array.isArray(v.content)) return false;
+  if (typeof v.version !== "number" || v.version !== 1) return false;
+  return true;
+};
+
+/**
+ * Convert an arbitrary AI-emitted value into a valid ADF document. Handles three cases:
+ *   1. Already a valid ADF doc object → pass through unchanged.
+ *   2. A string (plain text or stringified JSON) → wrap as ADF paragraphs (parse first
+ *      if the string looks like ADF JSON; otherwise split on blank lines).
+ *   3. An object that isn't valid ADF (most common AI mistake — e.g. a single content
+ *      block with no doc wrapper, an object missing version, or a deeply-nested shape
+ *      with arrays/strings in wrong slots) → either lift a content block into a
+ *      proper doc wrapper, or stringify and wrap as a paragraph as a last resort.
+ *      Without this, Jira returns:
+ *        "Operation value must be an Atlassian Document"
+ *      and the entire post-function fails for description / environment / rich-text
+ *      custom fields. The semantic-PF prompt asks the AI for plain text, but reasoning
+ *      models (Qwen3, etc.) often emit a structured object anyway — coercion catches
+ *      those instead of letting them hit Jira and 400.
+ */
+const coerceToAdf = (value) => {
+  // Case 1: already valid ADF
+  if (isValidAdf(value)) return value;
+
+  // Case 2: string — try to parse as ADF JSON first, otherwise wrap as paragraphs
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.startsWith("{") && trimmed.includes('"type"')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (isValidAdf(parsed)) return parsed;
+        // Parsed but not valid ADF — fall through to text wrapping
+      } catch { /* not parseable JSON, treat as plain text */ }
+    }
+    const paragraphs = trimmed.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+    return {
+      type: "doc",
+      version: 1,
+      content: paragraphs.length > 0
+        ? paragraphs.map((text) => ({ type: "paragraph", content: [{ type: "text", text }] }))
+        : [{ type: "paragraph", content: [] }],
+    };
+  }
+
+  // Case 3: object that isn't valid ADF
+  if (value && typeof value === "object") {
+    // 3a: a single content block (paragraph, heading, codeBlock, etc.) → wrap in doc
+    if (typeof value.type === "string" && value.type !== "doc") {
+      return { type: "doc", version: 1, content: [value] };
+    }
+    // 3b: looks like a doc but missing version (common AI omission) → fix it up
+    if (value.type === "doc" && Array.isArray(value.content)) {
+      return { type: "doc", version: 1, content: value.content };
+    }
+    // 3c: an array of blocks with no wrapper
+    if (Array.isArray(value)) {
+      return { type: "doc", version: 1, content: value };
+    }
+    // 3d: arbitrary object → stringify and wrap as preformatted text paragraph.
+    // Better than letting Jira reject — surfaces the bad shape in the field for
+    // the operator to spot, rather than silently dropping the update.
+    let serialized;
+    try { serialized = JSON.stringify(value, null, 2); } catch { serialized = String(value); }
+    return {
+      type: "doc",
+      version: 1,
+      content: [{ type: "paragraph", content: [{ type: "text", text: serialized }] }],
+    };
+  }
+
+  // Fallback: empty doc
+  return { type: "doc", version: 1, content: [{ type: "paragraph", content: [] }] };
+};
+
+/**
  * Auto-format an AI-generated value to match the Jira field's expected schema.
  * Prevents common 400 errors by converting plain strings to the right structure.
  */
@@ -4913,38 +4996,18 @@ const formatValueForField = (value, fieldMeta) => {
   if (!fieldMeta || !fieldMeta.schema) return value;
   const schemaType = fieldMeta.schema.type;
 
-  // If value is already an object/array, assume the AI (or a prior step) got it right
+  // ADF (doc) fields need full validation regardless of the value's type — the AI
+  // sometimes returns an object that LOOKS like ADF but isn't structurally valid
+  // (missing version, content not an array, etc.). Always run the doc coercion path.
+  if (schemaType === "doc") {
+    return coerceToAdf(value);
+  }
+
+  // For all other field types: if the value is already an object/array, assume the
+  // AI (or a prior step) got it right — Jira will validate when we PUT.
   if (typeof value !== "string") return value;
 
   switch (schemaType) {
-    case "doc": {
-      // Atlassian Document Format — required by Jira for description, environment, and
-      // any rich-text custom field. The AI almost always returns plain text here, so we
-      // convert it to a minimal ADF document. Without this conversion, Jira 400s every
-      // update to a doc field.
-      const trimmed = value.trim();
-      // If the AI happened to emit ADF JSON directly, accept it.
-      if (trimmed.startsWith("{") && trimmed.includes('"type"')) {
-        try {
-          const parsed = JSON.parse(trimmed);
-          if (parsed && parsed.type === "doc" && Array.isArray(parsed.content)) {
-            return parsed;
-          }
-        } catch { /* fall through to plain-text wrapping */ }
-      }
-      // Split on blank lines so multi-paragraph output renders as separate paragraphs.
-      const paragraphs = trimmed.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
-      return {
-        type: "doc",
-        version: 1,
-        content: paragraphs.length > 0
-          ? paragraphs.map((text) => ({
-              type: "paragraph",
-              content: [{ type: "text", text }],
-            }))
-          : [{ type: "paragraph", content: [] }],
-      };
-    }
     case "option":
       // Single select/radio — wrap string in {value: "..."} if not already an object
       return { value };
