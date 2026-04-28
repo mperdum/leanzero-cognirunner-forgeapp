@@ -2035,7 +2035,7 @@ resolver.define("getOpenAIModels", async () => {
       }
       if (provider === "openrouter") {
         modelHeaders["HTTP-Referer"] = "https://leanzero.atlascrafted.com";
-        modelHeaders["X-OpenRouter-Title"] = "CogniRunner";
+        modelHeaders["X-Title"] = "CogniRunner";
       }
       response = await fetch(`${baseUrl}/models`, {
         method: "GET",
@@ -3778,7 +3778,13 @@ const callAIChat = async (opts) => {
   const requestBody = { model, ...buildModelParams(), messages: outboundMessages };
   if (tools && tools.length > 0) {
     requestBody.tools = tools;
-    if (tool_choice) requestBody.tool_choice = tool_choice;
+    // LM Studio's tools docs don't document tool_choice, so passing the OpenAI
+    // default ("auto") may behave inconsistently between Native-tool models and
+    // Default-fallback models. Omit when "auto" — that's the implicit default
+    // anywhere tools are accepted, so this is a no-op for OpenAI/Azure/OpenRouter
+    // (we still emit non-auto values like "required"/{type:"function",...}).
+    const omitToolChoice = provider === "lmstudio" && tool_choice === "auto";
+    if (tool_choice && !omitToolChoice) requestBody.tool_choice = tool_choice;
   }
   // Constrain to JSON only on providers that reliably honor response_format.
   // Skip openrouter (passes through; many upstream models reject the field).
@@ -3814,7 +3820,7 @@ const callAIChat = async (opts) => {
   // OpenRouter requires attribution headers
   if (provider === "openrouter") {
     headers["HTTP-Referer"] = "https://leanzero.atlascrafted.com";
-    headers["X-OpenRouter-Title"] = "CogniRunner";
+    headers["X-Title"] = "CogniRunner";
   }
 
   // LM Studio's baseUrl is the tunnel root (no /v1) so we append the OpenAI-compat path here.
@@ -3930,8 +3936,27 @@ const callAnthropicChat = async ({ apiKey, model, messages, tools, tool_choice, 
   if (systemText) body.system = systemText;
   if (anthropicTools) {
     body.tools = anthropicTools;
-    if (tool_choice === "auto") body.tool_choice = { type: "auto" };
-    else if (tool_choice === "none") body.tool_choice = { type: "none" };
+    // Translate OpenAI's tool_choice shape to Anthropic's. Per Anthropic docs:
+    //   {type:"auto"} — model decides whether to use any tool
+    //   {type:"any"}  — model MUST use one of the provided tools
+    //   {type:"tool", name:"X"} — model is forced to use a specific tool
+    //   {type:"none"} — model can't use tools
+    // OpenAI shapes:
+    //   "auto"                                       — same as Anthropic auto
+    //   "required" or "any"                          — same as Anthropic any
+    //   {type:"function", function:{name:"X"}}       — same as Anthropic tool
+    //   "none"                                       — same as Anthropic none
+    if (tool_choice === "auto") {
+      body.tool_choice = { type: "auto" };
+    } else if (tool_choice === "required" || tool_choice === "any") {
+      body.tool_choice = { type: "any" };
+    } else if (tool_choice && typeof tool_choice === "object" && tool_choice.type === "function" && tool_choice.function?.name) {
+      body.tool_choice = { type: "tool", name: tool_choice.function.name };
+    } else if (tool_choice === "none") {
+      body.tool_choice = { type: "none" };
+    }
+    // If tool_choice is undefined/null and tools were provided, omit the field —
+    // Anthropic defaults to "auto" when tools are present, matching OpenAI's behavior.
   }
 
   const response = await fetch(`${baseUrl}/v1/messages`, {
@@ -4133,6 +4158,41 @@ const getOpenAIModel = async () => {
   const model = (PROVIDERS[provider] && PROVIDERS[provider].defaultModel) || "gpt-5.4-mini";
   _cachedModel = model;
   return model;
+};
+
+/**
+ * Look up a single LM Studio model's capability metadata via /api/v1/models.
+ * Returns the normalized internal shape (id, type, vision, toolUse, ...) when found,
+ * or null on any error/miss. Used by the agentic capability gate to refuse running
+ * tool calls on models that aren't trained for tool use.
+ *
+ * Cheap to call — /api/v1/models is fast on a local LM Studio server. Not cached
+ * because tool-use capability rarely changes per model and gating only fires on
+ * agentic validations (which are themselves rare).
+ */
+const getLmStudioModelDetail = async (modelId) => {
+  if (!modelId) return null;
+  try {
+    const { provider, baseUrl } = await getProviderConfig();
+    if (provider !== "lmstudio" || !baseUrl) return null;
+    const apiKey = await storage.get(providerKeySlot("lmstudio"));
+    const headers = { Accept: "application/json" };
+    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+    const resp = await fetch(`${baseUrl}/api/v1/models`, { method: "GET", headers });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (!Array.isArray(data.models)) return null;
+    const m = data.models.find((entry) => (entry.key || entry.id) === modelId);
+    if (!m) return null;
+    return {
+      id: m.key || m.id,
+      type: m.type || "llm",
+      vision: !!(m.capabilities && m.capabilities.vision),
+      toolUse: !!(m.capabilities && m.capabilities.trained_for_tool_use),
+    };
+  } catch {
+    return null;
+  }
 };
 
 /**
@@ -4713,6 +4773,31 @@ const callOpenAIWithTools = async (fieldValue, validationPrompt, attachmentParts
   }
 
   const model = await getOpenAIModel();
+
+  // LM Studio capability gate: refuse the agentic loop when the chosen model
+  // wasn't trained for tool use. Per LM Studio docs, only "Native"-supported
+  // models (Qwen2.5-7B+, Llama-3.1+, Llama-3.2+, Ministral-8B+) reliably emit
+  // parseable tool_calls. Non-Native models fall back to a custom marker
+  // format ([TOOL_REQUEST]…[END_TOOL_REQUEST]) that LM Studio tries to parse
+  // but often fails on, leaving the agentic loop with no tool_calls and
+  // conversational text instead of structured JSON — which then fails JSON
+  // parse with a confusing error. Surface a clear failure instead. Fail-OPEN
+  // (allow transition) per our other "validation couldn't run" branches.
+  try {
+    const { provider } = await getProviderConfig();
+    if (provider === "lmstudio") {
+      const modelsResult = await getLmStudioModelDetail(model);
+      if (modelsResult && modelsResult.toolUse === false) {
+        const reason = `Cannot run agentic validation: LM Studio model "${model}" is not trained for tool use. Pick a Native-tool model (Qwen2.5-7B+, Llama-3.1+, Llama-3.2+, Ministral-8B+) in CogniRunner Settings, or remove duplicate-detection wording from your validation prompt to use standard validation instead.`;
+        console.warn(reason);
+        return { isValid: true, reason, toolMeta: { toolsUsed: false, skippedReason: "lmstudio-non-tool-model" } };
+      }
+    }
+  } catch (e) {
+    // Capability check is best-effort — if it fails (e.g. LM Studio unreachable),
+    // proceed anyway. The agentic loop will surface a real error if needed.
+    console.log("LM Studio capability gate skipped:", e.message);
+  }
   const hasAttachments = attachmentParts && attachmentParts.length > 0;
 
   // Build tool definitions from registry

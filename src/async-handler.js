@@ -183,7 +183,7 @@ const callAIChatSimple = async ({ apiKey, model, systemPrompt, userMessage, json
   }
   if (provider === "openrouter") {
     openaiHeaders["HTTP-Referer"] = "https://leanzero.atlascrafted.com";
-    openaiHeaders["X-OpenRouter-Title"] = "CogniRunner";
+    openaiHeaders["X-Title"] = "CogniRunner";
   }
   // OpenAI/Azure/OpenRouter all expect baseUrl ending in /v1 (PROVIDERS already
   // configured that way). LM Studio is handled by the native path above.
