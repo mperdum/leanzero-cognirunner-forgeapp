@@ -21,7 +21,7 @@ import api, { route, fetch, getAppContext, webTrigger } from "@forge/api";
 // Aliased back to `storage` so the existing get/set/delete call sites stay unchanged.
 import storage from "@forge/kvs";
 import Resolver from "@forge/resolver";
-import { randomUUID, randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 
 const resolver = new Resolver();
 
@@ -2514,26 +2514,50 @@ const getWebtriggerUrl = async () => {
 /**
  * Mint a single-use capability for one Jira attachment.
  * Returns { url, authHeader } intended for a model prompt. The token is stored
- * in KVS with an expiresAt of now+10min, and is deleted on first successful auth.
+ * in KVS with an expiresAt of now+10min and a real KVS TTL (so stale records
+ * auto-clean), and is deleted on first successful auth.
+ *
+ * Each mint emits a structured "MintAttachmentCapability" log line including
+ * issueKey, attachmentId, and actorAccountId — that's the audit trail tenants
+ * use via `forge logs` to trace which capabilities were issued for which
+ * attachment by which user.
+ *
  * Throws if the web trigger URL can't be resolved (caller should fall through
  * to the OpenAI-compat attachment path or skip the doc-reader hint).
  */
-const mintAttachmentToken = async ({ attachmentId, issueKey }) => {
+const mintAttachmentToken = async ({ attachmentId, issueKey, actorAccountId }) => {
   if (!attachmentId) throw new Error("mintAttachmentToken requires attachmentId");
   const baseUrl = await getWebtriggerUrl();
   if (!baseUrl) throw new Error("Could not resolve attachment-bridge web trigger URL");
-  const token = randomUUID();
-  const bearer = randomBytes(32).toString("hex");
+  // Token: 32 random bytes base64url-encoded (256 bits). Per the doc-processor
+  // spec the floor is ≥128 bits each for token and bearer; both at 256 keeps
+  // them comfortably above the bar.
+  const token = randomBytes(32).toString("base64url");
+  const bearer = randomBytes(32).toString("base64url");
+  const expiresAt = Date.now() + ATTACHMENT_TOKEN_TTL_MS;
   const record = {
     attachmentId: String(attachmentId),
     issueKey: issueKey ? String(issueKey) : null,
     bearer,
-    expiresAt: Date.now() + ATTACHMENT_TOKEN_TTL_MS,
+    expiresAt,
   };
-  await storage.set(ATTACHMENT_TOKEN_PREFIX + token, record);
+  // Real KVS TTL (seconds) so abandoned records auto-clean. The expiresAt
+  // field is kept on the record for a defense-in-depth soft check in the
+  // handler in case the KVS backend's TTL is fuzzy.
+  try {
+    await storage.set(ATTACHMENT_TOKEN_PREFIX + token, record, {
+      ttlSeconds: Math.ceil(ATTACHMENT_TOKEN_TTL_MS / 1000),
+    });
+  } catch {
+    // Older @forge/kvs without ttlSeconds support — fall back to plain set.
+    // The expiresAt soft check in serveAttachment still bounds replay.
+    await storage.set(ATTACHMENT_TOKEN_PREFIX + token, record);
+  }
+  // Structured single-line audit entry; greppable in `forge logs`.
   console.log(
-    `Minted attachment capability: issue=${issueKey || "?"} attachmentId=${attachmentId} ` +
-    `token=${redactSecret(token)} bearer=${redactSecret(bearer)}`,
+    `MintAttachmentCapability issue=${issueKey || "(none)"} attachmentId=${attachmentId} ` +
+    `actor=${actorAccountId || "(unknown)"} token=${redactSecret(token)} ` +
+    `bearer=${redactSecret(bearer)} expiresAt=${new Date(expiresAt).toISOString()}`,
   );
   return {
     url: `${baseUrl}?t=${token}`,
@@ -5782,12 +5806,18 @@ export const validate = async (args) => {
       console.log(`Downloaded ${successfulDownloads.length}/${toDownload.length} inline attachment(s)`);
 
       // Mint capability tokens for the URL bridge path. Tokens are single-use,
-      // 10-min TTL, gated by a separate Authorization bearer.
+      // 10-min TTL, gated by a separate Authorization bearer. The actor account
+      // id is forwarded so the mint log line carries who triggered the read.
       const urlMintBlocks = [];
       if (toMintUrlsFor.length > 0) {
+        const actorAccountId = args?.context?.accountId || args?.accountId || null;
         for (const att of toMintUrlsFor) {
           try {
-            const cap = await mintAttachmentToken({ attachmentId: att.id, issueKey: issue.key });
+            const cap = await mintAttachmentToken({
+              attachmentId: att.id,
+              issueKey: issue.key,
+              actorAccountId,
+            });
             urlMintBlocks.push({ att, cap });
           } catch (e) {
             console.error(`Failed to mint token for attachment ${att.id}:`, e?.message);
@@ -5812,8 +5842,11 @@ export const validate = async (args) => {
           "## Issue attachments (use doc-reader's URL variant)",
           "",
           `This issue has ${urlMintBlocks.length} attachment(s) reachable via doc-reader. ` +
-            "Call `read-doc` with the `url` and `authHeader` shown below to fetch each one. " +
-            "Each URL is single-use and expires in 10 minutes.",
+            "For each one, call the `read-doc` tool with the EXACT `url` and `authHeader` " +
+            "strings shown below — pass them through unchanged. Do NOT modify the URL, " +
+            "do NOT strip query parameters, do NOT \"clean up\" the format. Each URL is " +
+            "single-use and expires in 10 minutes; if `read-doc` returns a 404, do NOT " +
+            "retry — the capability has already been consumed.",
           "",
         ];
         for (const { att, cap } of urlMintBlocks) {
