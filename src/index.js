@@ -2304,17 +2304,17 @@ const SUPPORTED_MCPS = {
   context7: {
     label: "context7",
     allowedTools: ["resolve-library-id", "query-docs"],
-    guidance: "Use when reasoning about libraries, frameworks, SDKs, or APIs (e.g. \"is this React syntax current?\", \"how do I use the Jira REST attachments endpoint?\"). Call resolve-library-id first to get the canonical ID, then query-docs for current documentation.",
+    guidance: "Use when reasoning about a specific library, framework, SDK, API, CLI tool, or cloud service (e.g. \"is this React syntax current?\", \"how does the Jira REST attachments endpoint work?\"). Always call `resolve-library-id` FIRST to get the canonical `/org/project` ID, then `query-docs` with that ID. Skip this MCP for: refactoring, debugging business logic, code review, general programming concepts, or anything you can answer without library-specific docs. Limit to one library per question.",
   },
   webSearch: {
     label: "web-search",
     allowedTools: ["get-web-search-summaries", "full-web-search", "get-single-web-page-content", "get-pdf-content"],
-    guidance: "Use to verify factual claims, look up current information, or fetch URL content. Prefer get-web-search-summaries for quick checks; full-web-search for comprehensive research; get-single-web-page-content to extract a known URL; get-pdf-content for PDF URLs.",
+    guidance: "Use to verify factual claims or fetch URL content the prompt explicitly references. Sub-tool priority (cheapest first): `get-web-search-summaries` for quick fact checks → `get-single-web-page-content` only when the prompt names a specific URL → `get-pdf-content` ONLY for `.pdf` URLs (not HTML pages that mention PDFs) → `full-web-search` only when summaries are insufficient. Web search is slow (30–90 s); budget at most 1 call per validation unless the prompt explicitly demands more.",
   },
   docReader: {
     label: "doc-reader",
     allowedTools: ["read-doc", "list-documents"],
-    guidance: "Use to read PDF, DOCX, or Excel files. Call read-doc with action='summary' for overview, 'indepth' for full extraction, 'focused' for query-specific answers. Two input variants: (a) `filePath` for files on the LM Studio host, or (b) `url` + `authHeader` for remote files (Jira attachments are exposed this way — when the user prompt lists attachment URLs, call read-doc with that url+authHeader). Each remote URL is single-use.",
+    guidance: "Use to read PDF, DOCX, or Excel content. Two input variants: (a) `filePath` for files on the LM Studio host, or (b) `url` + `authHeader` for remote files (Jira attachments come this way — the user prompt lists them). Use the URL variant EXACTLY as shown — don't modify it, don't retry on 404 (the capability is single-use). Action selection: `summary` for \"is this document about X?\" (cheapest); `focused` with a `query` when you need a specific fact; `indepth` ONLY when you need full extraction. The filename's extension determines which parser runs — don't override it. Hard cap of 50 MB per file on the doc-processor side.",
   },
 };
 const LMSTUDIO_MCPS_KVS_KEY = "COGNIRUNNER_LMSTUDIO_MCPS";
@@ -4024,6 +4024,7 @@ const buildMcpSystemPrompt = (integrations) => {
   }
   lines.push("");
   lines.push("Call these tools only when their use is genuinely warranted by the prompt — they cost extra round-trips and tokens. Skip them for self-contained tasks.");
+  lines.push("If a tool returns an error, do NOT retry it — note the failure in your reasoning and proceed with whatever information you already have.");
   return lines.join("\n");
 };
 

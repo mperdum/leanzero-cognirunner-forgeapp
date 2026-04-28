@@ -940,19 +940,21 @@ cd mcp-web-search
 npm install && npm run build`}
                   </pre>
                   <p style={{ margin: "0 0 8px", fontSize: "12px", color: "var(--text-secondary)" }}>
-                    Add to <code style={{ fontSize: "11px" }}>mcp.json</code> (entry name <strong>must</strong> be <code style={{ fontSize: "11px" }}>web-search</code>):
+                    Add to <code style={{ fontSize: "11px" }}>mcp.json</code> (entry name <strong>must</strong> be <code style={{ fontSize: "11px" }}>web-search</code>). The <code style={{ fontSize: "11px" }}>"args"</code> path <strong>must</strong> be absolute, and <code style={{ fontSize: "11px" }}>"timeout": 120000</code> is required — full searches take 30–90 s and LM Studio's default timeout will kill them otherwise.
                   </p>
                   <pre style={{ margin: 0, padding: "10px", background: "var(--code-bg)", borderRadius: "6px", fontSize: "11px", overflow: "auto", color: "var(--text-color)" }}>
 {`"web-search": {
   "command": "node",
   "args": ["/ABSOLUTE/PATH/TO/mcp-web-search/dist/index.js"],
+  "timeout": 120000,
   "env": {
     "SEARCH_ENGINE": "bing"
   }
 }`}
                   </pre>
                   <p style={{ margin: "8px 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
-                    Optional env: <code style={{ fontSize: "11px" }}>SERPER_API_KEY</code> (for the serper engine), <code style={{ fontSize: "11px" }}>GITHUB_TOKEN</code> (deeper GitHub repo access).{" "}
+                    Engines: <code style={{ fontSize: "11px" }}>bing</code> (default), <code style={{ fontSize: "11px" }}>brave</code>, and <code style={{ fontSize: "11px" }}>duckduckgo</code> all work without an API key.{" "}
+                    <code style={{ fontSize: "11px" }}>SEARCH_ENGINE=serper</code> requires <code style={{ fontSize: "11px" }}>SERPER_API_KEY</code>. Optional <code style={{ fontSize: "11px" }}>GITHUB_TOKEN</code> unlocks deeper GitHub repo crawls.{" "}
                     GitHub: <code style={{ fontSize: "11px" }}>github.com/leanzero-srl/mcp-web-search</code>
                   </p>
                 </>
