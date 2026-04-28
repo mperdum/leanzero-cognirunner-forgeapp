@@ -16,11 +16,12 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import api, { route, fetch, getAppContext } from "@forge/api";
+import api, { route, fetch, getAppContext, webTrigger } from "@forge/api";
 // `storage` was deprecated from @forge/api — migrated to @forge/kvs.
 // Aliased back to `storage` so the existing get/set/delete call sites stay unchanged.
 import storage from "@forge/kvs";
 import Resolver from "@forge/resolver";
+import { randomUUID, randomBytes, timingSafeEqual } from "node:crypto";
 
 const resolver = new Resolver();
 
@@ -2313,7 +2314,7 @@ const SUPPORTED_MCPS = {
   docReader: {
     label: "doc-reader",
     allowedTools: ["read-doc", "list-documents"],
-    guidance: "Use to read PDF, DOCX, or Excel files when you have a LOCAL FILE PATH on the LM Studio host. Call read-doc with action='summary' for overview, 'indepth' for full extraction, 'focused' for query-specific answers. NOTE: Cannot read Jira attachments — only files at local paths the LM Studio process can access.",
+    guidance: "Use to read PDF, DOCX, or Excel files. Call read-doc with action='summary' for overview, 'indepth' for full extraction, 'focused' for query-specific answers. Two input variants: (a) `filePath` for files on the LM Studio host, or (b) `url` + `authHeader` for remote files (Jira attachments are exposed this way — when the user prompt lists attachment URLs, call read-doc with that url+authHeader). Each remote URL is single-use.",
   },
 };
 const LMSTUDIO_MCPS_KVS_KEY = "COGNIRUNNER_LMSTUDIO_MCPS";
@@ -2451,6 +2452,210 @@ resolver.define("pingLmStudioMcp", async ({ payload, context }) => {
     return { success: false, error: error.message };
   }
 });
+
+// === Attachment bridge: serves Jira attachments to doc-reader (URL variant) ===
+//
+// When LM Studio is the active provider AND doc-reader MCP is enabled, the
+// validator mints a one-shot capability token for each Jira attachment and
+// embeds {url, authHeader} into the user prompt. doc-processor's URL variant
+// then GETs the URL with the Authorization header, and the serveAttachment
+// web trigger handler responds with {data:base64, filename, mimeType, size}.
+//
+// SECURITY MODEL — read this before changing anything:
+//
+//   - What we hand to the model is a capability token, NOT credentials. The
+//     actual Jira call inside serveAttachment uses api.asApp(), so Jira
+//     credentials never leave Atlassian's signed envelope.
+//   - Two-secret scheme: token (URL ?t=) + bearer (Authorization header).
+//     Leaking the URL alone in logs grants nothing.
+//   - Single-use: the token is deleted from KVS the first time auth succeeds,
+//     BEFORE the Jira fetch (so a stuck fetch can't lock the token open).
+//   - 401 (bearer mismatch) does NOT delete the KVS entry, so a probing
+//     attacker can't invalidate a legitimate token by guessing wrong once.
+//   - Constant-time bearer comparison via crypto.timingSafeEqual.
+//   - The attachmentId is held server-side in the KVS record. The request
+//     carries no parameter letting the caller pick which attachment to read,
+//     so the capability is strictly scope-of-one.
+//   - 10-minute TTL upper-bounds replay even if both secrets leak.
+//   - All logs redact the token/bearer to first 6 chars.
+//
+// Crypto: token = randomUUID() (122 bits, KVS key); bearer = randomBytes(32)
+// hex (256 bits, the actual auth secret).
+
+const ATTACHMENT_TOKEN_PREFIX = "att_token:";
+const ATTACHMENT_TOKEN_TTL_MS = 10 * 60 * 1000;
+const WEBTRIGGER_URL_KVS_KEY = "webtrigger_url:attachment-bridge";
+
+const redactSecret = (s) =>
+  typeof s === "string" && s.length > 6 ? `${s.substring(0, 6)}…` : "***";
+
+/**
+ * Get the public URL for the attachment-bridge web trigger. Per-installation,
+ * stable across invocations. Cached in KVS after first call.
+ */
+const getWebtriggerUrl = async () => {
+  try {
+    const cached = await storage.get(WEBTRIGGER_URL_KVS_KEY);
+    if (cached && typeof cached === "string") return cached;
+    const result = await webTrigger.getUrl("attachment-bridge");
+    // SDK historically returned a string directly; some versions return { url }.
+    const url = typeof result === "string" ? result : result?.url;
+    if (url && typeof url === "string") {
+      try { await storage.set(WEBTRIGGER_URL_KVS_KEY, url); } catch { /* cache best-effort */ }
+      return url;
+    }
+    return null;
+  } catch (error) {
+    console.error("Failed to get webtrigger URL:", error?.message);
+    return null;
+  }
+};
+
+/**
+ * Mint a single-use capability for one Jira attachment.
+ * Returns { url, authHeader } intended for a model prompt. The token is stored
+ * in KVS with an expiresAt of now+10min, and is deleted on first successful auth.
+ * Throws if the web trigger URL can't be resolved (caller should fall through
+ * to the OpenAI-compat attachment path or skip the doc-reader hint).
+ */
+const mintAttachmentToken = async ({ attachmentId, issueKey }) => {
+  if (!attachmentId) throw new Error("mintAttachmentToken requires attachmentId");
+  const baseUrl = await getWebtriggerUrl();
+  if (!baseUrl) throw new Error("Could not resolve attachment-bridge web trigger URL");
+  const token = randomUUID();
+  const bearer = randomBytes(32).toString("hex");
+  const record = {
+    attachmentId: String(attachmentId),
+    issueKey: issueKey ? String(issueKey) : null,
+    bearer,
+    expiresAt: Date.now() + ATTACHMENT_TOKEN_TTL_MS,
+  };
+  await storage.set(ATTACHMENT_TOKEN_PREFIX + token, record);
+  console.log(
+    `Minted attachment capability: issue=${issueKey || "?"} attachmentId=${attachmentId} ` +
+    `token=${redactSecret(token)} bearer=${redactSecret(bearer)}`,
+  );
+  return {
+    url: `${baseUrl}?t=${token}`,
+    authHeader: `Bearer ${bearer}`,
+  };
+};
+
+/**
+ * Forge web trigger handler: serves a single Jira attachment as base64 JSON,
+ * gated by the two-secret capability minted by mintAttachmentToken.
+ * See the SECURITY MODEL header above for the operation-order rationale.
+ *
+ * Response codes (bodies are deliberately terse — no info leaked):
+ *   200 — JSON {data, filename, mimeType, size}
+ *   401 — Authorization header missing/malformed/mismatch (KVS entry preserved)
+ *   404 — token missing/expired/already used
+ *   502 — Jira fetch failed (token already burned at this point)
+ *   500 — unexpected error
+ */
+export const serveAttachment = async (req) => {
+  try {
+    // 1. Token from query (Forge wraps query values as string[])
+    const tokenArr = req?.queryParameters?.t;
+    const token = Array.isArray(tokenArr) ? tokenArr[0] : tokenArr;
+    if (!token || typeof token !== "string") {
+      return { statusCode: 404, headers: { "Content-Type": ["text/plain"] }, body: "not found" };
+    }
+
+    // 2. Authorization header (also array-wrapped per Forge contract)
+    const headers = req?.headers || {};
+    const authArr = headers.authorization || headers.Authorization;
+    const authValue = Array.isArray(authArr) ? authArr[0] : authArr;
+    if (!authValue || typeof authValue !== "string" || !/^Bearer\s+/.test(authValue)) {
+      return { statusCode: 401, headers: { "Content-Type": ["text/plain"] }, body: "unauthorized" };
+    }
+    const provided = authValue.replace(/^Bearer\s+/, "").trim();
+
+    // 3. KVS lookup
+    const record = await storage.get(ATTACHMENT_TOKEN_PREFIX + token);
+    if (!record || !record.bearer || !record.attachmentId) {
+      return { statusCode: 404, headers: { "Content-Type": ["text/plain"] }, body: "not found" };
+    }
+    // Soft TTL guard (KVS may not auto-expire on every backend)
+    if (typeof record.expiresAt === "number" && Date.now() > record.expiresAt) {
+      try { await storage.delete(ATTACHMENT_TOKEN_PREFIX + token); } catch { /* best-effort */ }
+      return { statusCode: 404, headers: { "Content-Type": ["text/plain"] }, body: "not found" };
+    }
+
+    // 4. Constant-time bearer comparison
+    const a = Buffer.from(provided, "utf8");
+    const b = Buffer.from(String(record.bearer), "utf8");
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+      // Do NOT delete the KVS entry — protects legitimate tokens against probing.
+      console.warn(`serveAttachment: bearer mismatch for token=${redactSecret(token)}`);
+      return { statusCode: 401, headers: { "Content-Type": ["text/plain"] }, body: "unauthorized" };
+    }
+
+    // 5. Burn the token BEFORE the Jira fetch (see security header rationale)
+    try {
+      await storage.delete(ATTACHMENT_TOKEN_PREFIX + token);
+    } catch (e) {
+      console.error(
+        `serveAttachment: KVS delete failed for token=${redactSecret(token)} (continuing):`,
+        e?.message,
+      );
+    }
+
+    // 6. Fetch the attachment binary as the app
+    let jiraResp;
+    try {
+      jiraResp = await api.asApp().requestJira(
+        route`/rest/api/3/attachment/content/${record.attachmentId}`,
+      );
+    } catch (e) {
+      console.error(
+        `serveAttachment: Jira fetch threw for attachmentId=${record.attachmentId}:`,
+        e?.message,
+      );
+      return { statusCode: 502, headers: { "Content-Type": ["text/plain"] }, body: "upstream error" };
+    }
+    if (!jiraResp.ok) {
+      console.error(
+        `serveAttachment: Jira HTTP ${jiraResp.status} for attachmentId=${record.attachmentId}`,
+      );
+      return { statusCode: 502, headers: { "Content-Type": ["text/plain"] }, body: "upstream error" };
+    }
+
+    // 7. Best-effort metadata lookup so the doc-processor knows filename/mimeType.
+    let filename = `attachment-${record.attachmentId}.bin`;
+    let mimeType =
+      (jiraResp.headers && typeof jiraResp.headers.get === "function"
+        ? jiraResp.headers.get("content-type")
+        : null) || "application/octet-stream";
+    try {
+      const metaResp = await api.asApp().requestJira(
+        route`/rest/api/3/attachment/${record.attachmentId}`,
+      );
+      if (metaResp.ok) {
+        const meta = await metaResp.json();
+        if (meta?.filename) filename = String(meta.filename);
+        if (meta?.mimeType) mimeType = String(meta.mimeType);
+      }
+    } catch { /* metadata is nice-to-have */ }
+
+    const buffer = Buffer.from(await jiraResp.arrayBuffer());
+    const data = buffer.toString("base64");
+
+    console.log(
+      `serveAttachment: served attachmentId=${record.attachmentId} ` +
+      `filename="${filename}" size=${buffer.length} token=${redactSecret(token)}`,
+    );
+
+    return {
+      statusCode: 200,
+      headers: { "Content-Type": ["application/json"] },
+      body: JSON.stringify({ data, filename, mimeType, size: buffer.length }),
+    };
+  } catch (error) {
+    console.error("serveAttachment: unexpected error:", error?.message);
+    return { statusCode: 500, headers: { "Content-Type": ["text/plain"] }, body: "internal error" };
+  }
+};
 
 // === Post-Function Configuration Resolvers ===
 
@@ -5524,43 +5729,116 @@ export const validate = async (args) => {
       logFieldValue = summary;
       console.log(`Attachments: ${summary}`);
 
-      // Filter to processable attachments within total size budget
+      // Detect LM Studio + doc-reader: when both are on, document attachments are
+      // delivered to the model as one-shot URLs (consumed by doc-reader's URL
+      // variant via our serveAttachment web trigger) instead of as inline file
+      // blocks. LM Studio's REST API strips type:"file" content anyway, so the
+      // inline path is a dead-end on that provider — the URL bridge is the only
+      // way the model can reach a Jira PDF/DOCX/XLSX.
+      const { provider: aiProvider } = await getProviderConfig();
+      let docReaderEnabled = false;
+      if (aiProvider === "lmstudio") {
+        try {
+          const stored = (await storage.get(LMSTUDIO_MCPS_KVS_KEY)) || {};
+          docReaderEnabled = stored.docReader === true;
+        } catch { /* default to disabled on read error */ }
+      }
+      const useUrlBridge = aiProvider === "lmstudio" && docReaderEnabled;
+
+      // Filter + classify within size budget. Documents go to URL bridge (when
+      // enabled) or inline download; images always go to the inline vision path.
       let totalBudget = MAX_TOTAL_ATTACHMENT_SIZE;
-      const toDownload = [];
+      const toDownload = [];        // inline (image_url + file) path
+      const toMintUrlsFor = [];     // doc-reader URL bridge path
       for (const att of attachments) {
         const size = att.size || 0;
         if (size > MAX_ATTACHMENT_SIZE) continue;
         const mime = (att.mimeType || "").toLowerCase();
-        if (!FILE_MIME_TYPES.has(mime) && !IMAGE_MIME_TYPES.has(mime)) continue;
-        if (size > totalBudget) {
-          console.log(`Attachment "${att.filename}" (${Math.round(size / 1024)}KB) exceeds remaining budget, skipping`);
-          continue;
+        const isImage = IMAGE_MIME_TYPES.has(mime);
+        const isDoc = FILE_MIME_TYPES.has(mime);
+        if (!isImage && !isDoc) continue;
+        if (useUrlBridge && isDoc) {
+          // No download → no Forge memory pressure. The size budget still
+          // applies (a 50MB attachment is a 50MB serveAttachment response).
+          if (size > totalBudget) {
+            console.log(`Attachment "${att.filename}" (${Math.round(size / 1024)}KB) exceeds remaining budget, skipping`);
+            continue;
+          }
+          totalBudget -= size;
+          toMintUrlsFor.push(att);
+        } else {
+          if (size > totalBudget) {
+            console.log(`Attachment "${att.filename}" (${Math.round(size / 1024)}KB) exceeds remaining budget, skipping`);
+            continue;
+          }
+          totalBudget -= size;
+          toDownload.push(att);
         }
-        totalBudget -= size;
-        toDownload.push(att);
       }
 
-      // Download attachment contents in parallel
+      // Download attachment contents in parallel (inline path)
       const downloads = await Promise.all(toDownload.map(downloadAttachment));
       const successfulDownloads = downloads.filter(Boolean);
-      console.log(`Downloaded ${successfulDownloads.length}/${attachments.length} attachment(s)`);
+      console.log(`Downloaded ${successfulDownloads.length}/${toDownload.length} inline attachment(s)`);
 
-      // Build OpenAI content parts from downloaded files
+      // Mint capability tokens for the URL bridge path. Tokens are single-use,
+      // 10-min TTL, gated by a separate Authorization bearer.
+      const urlMintBlocks = [];
+      if (toMintUrlsFor.length > 0) {
+        for (const att of toMintUrlsFor) {
+          try {
+            const cap = await mintAttachmentToken({ attachmentId: att.id, issueKey: issue.key });
+            urlMintBlocks.push({ att, cap });
+          } catch (e) {
+            console.error(`Failed to mint token for attachment ${att.id}:`, e?.message);
+          }
+        }
+        console.log(`Minted ${urlMintBlocks.length}/${toMintUrlsFor.length} attachment URL capabilities`);
+      }
+
+      // Build OpenAI content parts from inline downloads
       const attachmentParts = buildAttachmentContentParts(successfulDownloads);
 
-      // Build text summary for attachments that couldn't be downloaded (unsupported types, too large, budget)
-      const downloadedSet = new Set(toDownload.filter((_a, i) => downloads[i]).map((a) => a.id));
-      const skippedAttachments = attachments.filter((a) => !downloadedSet.has(a.id));
-      let textContext = "";
+      // Build text context: skipped attachments + (when used) the URL bridge block.
+      const handledIds = new Set([
+        ...toDownload.filter((_a, i) => downloads[i]).map((a) => a.id),
+        ...urlMintBlocks.map((b) => b.att.id),
+      ]);
+      const skippedAttachments = attachments.filter((a) => !handledIds.has(a.id));
+
+      const textContextParts = [];
+      if (urlMintBlocks.length > 0) {
+        const lines = [
+          "## Issue attachments (use doc-reader's URL variant)",
+          "",
+          `This issue has ${urlMintBlocks.length} attachment(s) reachable via doc-reader. ` +
+            "Call `read-doc` with the `url` and `authHeader` shown below to fetch each one. " +
+            "Each URL is single-use and expires in 10 minutes.",
+          "",
+        ];
+        for (const { att, cap } of urlMintBlocks) {
+          const sizeKb = Math.round((att.size || 0) / 1024);
+          lines.push(`- "${att.filename}" (${att.mimeType}, ${sizeKb} KB)`);
+          lines.push(`    url: ${cap.url}`);
+          lines.push(`    authHeader: ${cap.authHeader}`);
+        }
+        textContextParts.push(lines.join("\n"));
+      }
       if (skippedAttachments.length > 0) {
-        textContext = "Attachments that could not be analyzed (unsupported format or too large):\n"
-          + skippedAttachments.map((a) => `- ${a.filename} (${a.mimeType}, ${Math.round((a.size || 0) / 1024)}KB)`).join("\n");
+        textContextParts.push(
+          "Attachments that could not be analyzed (unsupported format or too large):\n"
+            + skippedAttachments.map((a) => `- ${a.filename} (${a.mimeType}, ${Math.round((a.size || 0) / 1024)}KB)`).join("\n"),
+        );
       }
-      if (attachmentParts.length === 0 && skippedAttachments.length > 0) {
-        // All attachments were unsupported — validate based on metadata only
-        textContext = `Issue has ${attachments.length} attachment(s) but none could be analyzed:\n`
-          + attachments.map((a) => `- ${a.filename} (${a.mimeType}, ${Math.round((a.size || 0) / 1024)}KB)`).join("\n");
+      // If literally nothing was processable, fall back to metadata-only.
+      if (attachmentParts.length === 0 && urlMintBlocks.length === 0 && skippedAttachments.length > 0) {
+        textContextParts.length = 0;
+        textContextParts.push(
+          `Issue has ${attachments.length} attachment(s) but none could be analyzed:\n`
+            + attachments.map((a) => `- ${a.filename} (${a.mimeType}, ${Math.round((a.size || 0) / 1024)}KB)`).join("\n"),
+        );
       }
+      const textContext = textContextParts.join("\n\n");
 
       const attParts = attachmentParts.length > 0 ? attachmentParts : undefined;
       validationResult = useTools

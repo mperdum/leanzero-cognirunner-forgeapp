@@ -97,6 +97,16 @@ modules:
       queue: async-ai-queue
       function: async-ai-handler
 
+  # Web trigger: serves a single Jira attachment as base64 JSON behind a one-shot
+  # capability token (URL token + Authorization bearer). Used by leanzero-mcp-doc-processor
+  # so an LM Studio model can read Jira attachments via doc-reader's URL variant.
+  # Security model documented in src/index.js (serveAttachment + mintAttachmentToken).
+  webtrigger:
+    - key: attachment-bridge
+      function: serveAttachment
+      response:
+        type: dynamic
+
   # Lambda function for validation logic
   function:
     - key: validate
@@ -108,6 +118,8 @@ modules:
       timeoutSeconds: 120
     - key: resolver
       handler: index.handler
+    - key: serveAttachment
+      handler: index.serveAttachment
 
 resources:
   - key: config-ui-resource

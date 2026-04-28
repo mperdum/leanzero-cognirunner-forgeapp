@@ -963,7 +963,7 @@ npm install && npm run build`}
             <McpCard
               mcpKey="docReader"
               title="doc-reader"
-              subtitle="PDF / DOCX / Excel processing — local files only"
+              subtitle="PDF / DOCX / Excel processing — local files + Jira attachments (URL variant)"
               tools={["read-doc", "list-documents"]}
               enabled={mcpEnabled.docReader}
               saving={mcpSavingKey === "docReader"}
@@ -974,8 +974,8 @@ npm install && npm run build`}
               onPing={() => handleMcpPing("docReader")}
               setupBlock={(
                 <>
-                  <div style={{ padding: "8px 10px", marginBottom: "10px", background: "rgba(217, 119, 6, 0.08)", border: "1px solid rgba(217, 119, 6, 0.4)", borderRadius: "6px", fontSize: "11px" }}>
-                    <strong>Limitation:</strong> doc-reader's tools accept LOCAL FILE PATHS only. Jira attachments live on Atlassian's servers and can't be reached by this MCP today. doc-reader is most useful when you point it at files on the LM Studio host (project knowledge bases, downloaded docs).
+                  <div style={{ padding: "8px 10px", marginBottom: "10px", background: "rgba(37, 99, 235, 0.08)", border: "1px solid rgba(37, 99, 235, 0.4)", borderRadius: "6px", fontSize: "11px" }}>
+                    <strong>Jira attachments:</strong> when this MCP is on, the validator mints a one-shot URL + Bearer token for each attachment and feeds them to the model, so it can call <code style={{ fontSize: "11px" }}>read-doc</code> with <code style={{ fontSize: "11px" }}>url</code> + <code style={{ fontSize: "11px" }}>authHeader</code>. Requires the <strong>URL variant</strong> of <code style={{ fontSize: "11px" }}>read-doc</code> in <code style={{ fontSize: "11px" }}>leanzero-mcp-doc-processor</code> — see <code style={{ fontSize: "11px" }}>docs/doc-processor-extension-spec.md</code> in this repo for the spec to feed your maintainer or AI assistant. Until that variant ships, the model still receives the URLs but gets a clear MCP error from <code style={{ fontSize: "11px" }}>read-doc</code> ("unknown parameter url"); local file paths still work.
                   </div>
                   <p style={{ margin: "0 0 8px", fontSize: "12px", color: "var(--text-secondary)" }}>
                     Clone the repo on your LM Studio host:
