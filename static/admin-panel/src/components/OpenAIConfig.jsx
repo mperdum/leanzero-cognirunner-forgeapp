@@ -59,6 +59,12 @@ export default function OpenAIConfig({ invoke }) {
   const [pinging, setPinging] = useState(false);
   const [pingResult, setPingResult] = useState(null); // { ok, modelCount, authOk, message } | { error }
   const [loadingLmModel, setLoadingLmModel] = useState(false);
+  // LM Studio MCP integrations — fixed set of 3 (context7, web-search, doc-reader).
+  // Other MCPs in the user's mcp.json are NOT exposed by us per design.
+  const [mcpEnabled, setMcpEnabled] = useState({ context7: false, webSearch: false, docReader: false });
+  const [mcpSavingKey, setMcpSavingKey] = useState(null); // which key is currently saving
+  const [mcpExpanded, setMcpExpanded] = useState({}); // which setup panels are open
+  const [mcpPingState, setMcpPingState] = useState({}); // {[key]: {loading, ok, error}}
 
   const pHelp = PROVIDER_HELP[provider] || PROVIDER_HELP.openai;
   const isLmStudio = provider === "lmstudio";
@@ -72,11 +78,12 @@ export default function OpenAIConfig({ invoke }) {
   const loadStatus = async () => {
     if (!invoke) return;
     try {
-      const [keyResult, modelsResult, modelKvs, providerResult] = await Promise.all([
+      const [keyResult, modelsResult, modelKvs, providerResult, mcpsResult] = await Promise.all([
         invoke("getOpenAIKey"),
         invoke("getOpenAIModels"),
         invoke("getOpenAIModelFromKVS"),
         invoke("getProvider"),
+        invoke("getLmStudioMcps").catch(() => ({ success: false })),
       ]);
 
       if (providerResult.success) {
@@ -117,10 +124,57 @@ export default function OpenAIConfig({ invoke }) {
           setFactoryModel(modelKvs.model || "");
         }
       }
+      if (mcpsResult && mcpsResult.success) {
+        setMcpEnabled(mcpsResult.enabled || { context7: false, webSearch: false, docReader: false });
+      }
     } catch (e) {
       console.error("Failed to load AI config status:", e);
     }
     setLoading(false);
+  };
+
+  // Toggle one MCP — saves immediately so the user doesn't have to click an
+  // extra Save button. Optimistic UI: flip locally first, persist, revert on error.
+  const handleMcpToggle = async (mcpKey) => {
+    if (!invoke) return;
+    const next = { ...mcpEnabled, [mcpKey]: !mcpEnabled[mcpKey] };
+    setMcpEnabled(next);
+    setMcpSavingKey(mcpKey);
+    setError(null);
+    try {
+      const result = await invoke("saveLmStudioMcps", { enabled: next });
+      if (!result.success) {
+        // Revert on failure
+        setMcpEnabled(mcpEnabled);
+        setError(result.error || "Failed to save MCP setting");
+      }
+    } catch (e) {
+      setMcpEnabled(mcpEnabled);
+      setError("Failed to save MCP setting: " + e.message);
+    }
+    setMcpSavingKey(null);
+  };
+
+  const handleMcpPing = async (mcpKey) => {
+    if (!invoke) return;
+    setMcpPingState((prev) => ({ ...prev, [mcpKey]: { loading: true } }));
+    try {
+      const result = await invoke("pingLmStudioMcp", { mcpKey });
+      setMcpPingState((prev) => ({
+        ...prev,
+        [mcpKey]: {
+          loading: false,
+          ok: result.success && result.ok,
+          error: result.error,
+          message: result.message,
+        },
+      }));
+    } catch (e) {
+      setMcpPingState((prev) => ({
+        ...prev,
+        [mcpKey]: { loading: false, ok: false, error: e.message },
+      }));
+    }
   };
 
   useEffect(() => {
@@ -809,6 +863,237 @@ export default function OpenAIConfig({ invoke }) {
           </>)}
         </div>
       </div>
+
+      {/* MCP Integrations — only when LM Studio is the SAVED provider.
+          Three fixed MCPs (context7, web-search, doc-reader). The model gets
+          their tools as additional capabilities; agentic JQL search stays on
+          its own /v1/chat/completions path and is unaffected. */}
+      {isLmStudio && provider === savedProvider && (
+        <div className="card" style={{ marginTop: "16px" }}>
+          <div style={{ padding: "16px" }}>
+            <div style={{ marginBottom: "12px" }}>
+              <h3 style={{ margin: "0 0 4px 0", fontSize: "14px", fontWeight: 600, color: "var(--text-color)" }}>
+                MCP Integrations
+              </h3>
+              <p style={{ margin: 0, fontSize: "12px", color: "var(--text-secondary)" }}>
+                Extra tools the model can call via your LM Studio's <code style={{ fontSize: "11px" }}>mcp.json</code>. Enable each and follow the setup steps to add the matching entry on your LM Studio host. JQL agentic search is unaffected — it runs on a separate code path.
+              </p>
+            </div>
+
+            {/* context7 */}
+            <McpCard
+              mcpKey="context7"
+              title="context7"
+              subtitle="Up-to-date library / framework / SDK docs"
+              tools={["resolve-library-id", "query-docs"]}
+              enabled={mcpEnabled.context7}
+              saving={mcpSavingKey === "context7"}
+              expanded={!!mcpExpanded.context7}
+              ping={mcpPingState.context7}
+              onToggle={() => handleMcpToggle("context7")}
+              onExpand={() => setMcpExpanded((p) => ({ ...p, context7: !p.context7 }))}
+              onPing={() => handleMcpPing("context7")}
+              setupBlock={(
+                <>
+                  <p style={{ margin: "0 0 8px", fontSize: "12px", color: "var(--text-secondary)" }}>
+                    Get a free API key at <code style={{ fontSize: "11px" }}>context7.com/dashboard</code> (higher rate limits — works without one too).
+                  </p>
+                  <p style={{ margin: "0 0 8px", fontSize: "12px", color: "var(--text-secondary)" }}>
+                    Add this to your LM Studio <code style={{ fontSize: "11px" }}>mcp.json</code> (the entry name <strong>must</strong> be <code style={{ fontSize: "11px" }}>context7</code> so our app can find it):
+                  </p>
+                  <pre style={{ margin: 0, padding: "10px", background: "var(--code-bg)", borderRadius: "6px", fontSize: "11px", overflow: "auto", color: "var(--text-color)" }}>
+{`"context7": {
+  "url": "https://mcp.context7.com/mcp",
+  "headers": {
+    "CONTEXT7_API_KEY": "YOUR_API_KEY_HERE"
+  }
+}`}
+                  </pre>
+                  <p style={{ margin: "8px 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
+                    GitHub: <code style={{ fontSize: "11px" }}>github.com/upstash/context7</code>
+                  </p>
+                </>
+              )}
+            />
+
+            {/* web-search */}
+            <McpCard
+              mcpKey="webSearch"
+              title="web-search"
+              subtitle="Multi-engine web search & URL extraction (default Bing, no key required)"
+              tools={["get-web-search-summaries", "full-web-search", "get-single-web-page-content", "get-pdf-content"]}
+              enabled={mcpEnabled.webSearch}
+              saving={mcpSavingKey === "webSearch"}
+              expanded={!!mcpExpanded.webSearch}
+              ping={mcpPingState.webSearch}
+              onToggle={() => handleMcpToggle("webSearch")}
+              onExpand={() => setMcpExpanded((p) => ({ ...p, webSearch: !p.webSearch }))}
+              onPing={() => handleMcpPing("webSearch")}
+              setupBlock={(
+                <>
+                  <p style={{ margin: "0 0 8px", fontSize: "12px", color: "var(--text-secondary)" }}>
+                    Clone the repo on your LM Studio host:
+                  </p>
+                  <pre style={{ margin: "0 0 8px", padding: "10px", background: "var(--code-bg)", borderRadius: "6px", fontSize: "11px", overflow: "auto", color: "var(--text-color)" }}>
+{`git clone https://github.com/leanzero-srl/mcp-web-search
+cd mcp-web-search
+npm install && npm run build`}
+                  </pre>
+                  <p style={{ margin: "0 0 8px", fontSize: "12px", color: "var(--text-secondary)" }}>
+                    Add to <code style={{ fontSize: "11px" }}>mcp.json</code> (entry name <strong>must</strong> be <code style={{ fontSize: "11px" }}>web-search</code>):
+                  </p>
+                  <pre style={{ margin: 0, padding: "10px", background: "var(--code-bg)", borderRadius: "6px", fontSize: "11px", overflow: "auto", color: "var(--text-color)" }}>
+{`"web-search": {
+  "command": "node",
+  "args": ["/ABSOLUTE/PATH/TO/mcp-web-search/dist/index.js"],
+  "env": {
+    "SEARCH_ENGINE": "bing"
+  }
+}`}
+                  </pre>
+                  <p style={{ margin: "8px 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
+                    Optional env: <code style={{ fontSize: "11px" }}>SERPER_API_KEY</code> (for the serper engine), <code style={{ fontSize: "11px" }}>GITHUB_TOKEN</code> (deeper GitHub repo access).{" "}
+                    GitHub: <code style={{ fontSize: "11px" }}>github.com/leanzero-srl/mcp-web-search</code>
+                  </p>
+                </>
+              )}
+            />
+
+            {/* doc-reader */}
+            <McpCard
+              mcpKey="docReader"
+              title="doc-reader"
+              subtitle="PDF / DOCX / Excel processing — local files only"
+              tools={["read-doc", "list-documents"]}
+              enabled={mcpEnabled.docReader}
+              saving={mcpSavingKey === "docReader"}
+              expanded={!!mcpExpanded.docReader}
+              ping={mcpPingState.docReader}
+              onToggle={() => handleMcpToggle("docReader")}
+              onExpand={() => setMcpExpanded((p) => ({ ...p, docReader: !p.docReader }))}
+              onPing={() => handleMcpPing("docReader")}
+              setupBlock={(
+                <>
+                  <div style={{ padding: "8px 10px", marginBottom: "10px", background: "rgba(217, 119, 6, 0.08)", border: "1px solid rgba(217, 119, 6, 0.4)", borderRadius: "6px", fontSize: "11px" }}>
+                    <strong>Limitation:</strong> doc-reader's tools accept LOCAL FILE PATHS only. Jira attachments live on Atlassian's servers and can't be reached by this MCP today. doc-reader is most useful when you point it at files on the LM Studio host (project knowledge bases, downloaded docs).
+                  </div>
+                  <p style={{ margin: "0 0 8px", fontSize: "12px", color: "var(--text-secondary)" }}>
+                    Clone the repo on your LM Studio host:
+                  </p>
+                  <pre style={{ margin: "0 0 8px", padding: "10px", background: "var(--code-bg)", borderRadius: "6px", fontSize: "11px", overflow: "auto", color: "var(--text-color)" }}>
+{`git clone https://github.com/leanzero-srl/leanzero-mcp-doc-processor
+cd leanzero-mcp-doc-processor
+npm install`}
+                  </pre>
+                  <p style={{ margin: "0 0 8px", fontSize: "12px", color: "var(--text-secondary)" }}>
+                    Add to <code style={{ fontSize: "11px" }}>mcp.json</code> (entry name <strong>must</strong> be <code style={{ fontSize: "11px" }}>doc-reader</code>):
+                  </p>
+                  <pre style={{ margin: 0, padding: "10px", background: "var(--code-bg)", borderRadius: "6px", fontSize: "11px", overflow: "auto", color: "var(--text-color)" }}>
+{`"doc-reader": {
+  "command": "node",
+  "args": ["/ABSOLUTE/PATH/TO/leanzero-mcp-doc-processor/src/index.js"]
+}`}
+                  </pre>
+                  <p style={{ margin: "8px 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
+                    Optional env <code style={{ fontSize: "11px" }}>Z_AI_API_KEY</code> for vision OCR.{" "}
+                    GitHub: <code style={{ fontSize: "11px" }}>github.com/leanzero-srl/leanzero-mcp-doc-processor</code>
+                  </p>
+                </>
+              )}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Single MCP card — toggle, status pill, collapsible setup block, Test button.
+function McpCard({ mcpKey, title, subtitle, tools, enabled, saving, expanded, ping, onToggle, onExpand, onPing, setupBlock }) {
+  const pillStyle = enabled
+    ? { background: "rgba(22, 163, 106, 0.12)", color: "var(--success-color)", border: "1px solid rgba(22, 163, 106, 0.4)" }
+    : { background: "var(--input-bg)", color: "var(--text-muted)", border: "1px solid var(--border-color)" };
+  return (
+    <div style={{
+      border: "1px solid var(--border-color)",
+      borderRadius: "8px",
+      padding: "12px 14px",
+      marginBottom: "10px",
+      background: "var(--input-bg)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "2px" }}>
+            <strong style={{ fontSize: "13px", color: "var(--text-color)" }}>{title}</strong>
+            <span style={{ fontSize: "10px", padding: "1px 6px", borderRadius: "10px", ...pillStyle }}>
+              {enabled ? "ENABLED" : "DISABLED"}
+            </span>
+            {saving && <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>saving…</span>}
+          </div>
+          <p style={{ margin: "0 0 4px", fontSize: "11px", color: "var(--text-secondary)" }}>{subtitle}</p>
+          <p style={{ margin: 0, fontSize: "10px", color: "var(--text-muted)" }}>
+            Tools exposed: {tools.map((t) => <code key={t} style={{ fontSize: "10px", marginRight: "6px" }}>{t}</code>)}
+          </p>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-end" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "11px", color: "var(--text-secondary)" }}>
+            <input type="checkbox" checked={enabled} onChange={onToggle} disabled={saving} />
+            Enable
+          </label>
+          {enabled && (
+            <button
+              onClick={onPing}
+              disabled={ping?.loading}
+              style={{
+                fontSize: "10px",
+                padding: "3px 8px",
+                border: "1px solid var(--border-color)",
+                borderRadius: "4px",
+                background: "var(--input-bg)",
+                color: "var(--text-color)",
+                cursor: ping?.loading ? "default" : "pointer",
+              }}
+            >
+              {ping?.loading ? "Testing…" : "Test"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {ping && !ping.loading && (
+        <div style={{
+          marginTop: "8px",
+          padding: "6px 10px",
+          fontSize: "11px",
+          borderRadius: "4px",
+          background: ping.ok ? "rgba(22, 163, 106, 0.08)" : "rgba(220, 38, 38, 0.08)",
+          color: ping.ok ? "var(--success-color)" : "var(--error-color)",
+          border: `1px solid ${ping.ok ? "rgba(22, 163, 106, 0.3)" : "rgba(220, 38, 38, 0.3)"}`,
+        }}>
+          {ping.ok ? `✓ ${ping.message || "Reachable"}` : `✗ ${ping.error || "Test failed"}`}
+        </div>
+      )}
+
+      <button
+        onClick={onExpand}
+        style={{
+          marginTop: "10px",
+          fontSize: "11px",
+          padding: "0",
+          border: "none",
+          background: "transparent",
+          color: "var(--primary-color)",
+          cursor: "pointer",
+          textAlign: "left",
+        }}
+      >
+        {expanded ? "▾ Hide setup" : "▸ Show setup instructions"}
+      </button>
+      {expanded && (
+        <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid var(--border-color)" }}>
+          {setupBlock}
+        </div>
+      )}
     </div>
   );
 }

@@ -2285,6 +2285,173 @@ resolver.define("loadLmStudioModel", async ({ payload, context }) => {
   }
 });
 
+// === LM Studio MCP Integrations ===
+//
+// LM Studio's /api/v1/chat endpoint accepts an `integrations` array that lets the
+// model invoke MCP servers configured in the user's local mcp.json. We expose a
+// FIXED set of three MCPs (no other mcp.json entries leak into our app's surface):
+//
+//   - context7   (upstash)       — library/framework docs lookup
+//   - web-search (leanzero-srl)  — multi-engine web search (default Bing)
+//   - doc-reader (leanzero-srl)  — PDF/DOCX/Excel processing (local file paths only)
+//
+// allowed_tools is curated per-MCP so the model isn't drowned in tool defs.
+// Routing rule (set by callAIChat earlier): MCPs are sent ONLY on the native
+// /api/v1/chat path. The agentic JQL tool keeps its own /v1/chat/completions
+// path with no MCP integrations — JQL is never replaced or competed-with.
+const SUPPORTED_MCPS = {
+  context7: {
+    label: "context7",
+    allowedTools: ["resolve-library-id", "query-docs"],
+    guidance: "Use when reasoning about libraries, frameworks, SDKs, or APIs (e.g. \"is this React syntax current?\", \"how do I use the Jira REST attachments endpoint?\"). Call resolve-library-id first to get the canonical ID, then query-docs for current documentation.",
+  },
+  webSearch: {
+    label: "web-search",
+    allowedTools: ["get-web-search-summaries", "full-web-search", "get-single-web-page-content", "get-pdf-content"],
+    guidance: "Use to verify factual claims, look up current information, or fetch URL content. Prefer get-web-search-summaries for quick checks; full-web-search for comprehensive research; get-single-web-page-content to extract a known URL; get-pdf-content for PDF URLs.",
+  },
+  docReader: {
+    label: "doc-reader",
+    allowedTools: ["read-doc", "list-documents"],
+    guidance: "Use to read PDF, DOCX, or Excel files when you have a LOCAL FILE PATH on the LM Studio host. Call read-doc with action='summary' for overview, 'indepth' for full extraction, 'focused' for query-specific answers. NOTE: Cannot read Jira attachments — only files at local paths the LM Studio process can access.",
+  },
+};
+const LMSTUDIO_MCPS_KVS_KEY = "COGNIRUNNER_LMSTUDIO_MCPS";
+
+/**
+ * Get the user's MCP enable flags + the static catalog of supported MCPs.
+ * UI uses this to render the three cards with their current state.
+ */
+resolver.define("getLmStudioMcps", async () => {
+  try {
+    const stored = (await storage.get(LMSTUDIO_MCPS_KVS_KEY)) || {};
+    const enabled = {
+      context7: stored.context7 === true,
+      webSearch: stored.webSearch === true,
+      docReader: stored.docReader === true,
+    };
+    const supported = Object.entries(SUPPORTED_MCPS).map(([key, info]) => ({
+      key,
+      label: info.label,
+      tools: info.allowedTools,
+    }));
+    return { success: true, enabled, supported };
+  } catch (error) {
+    console.error("Failed to read LM Studio MCPs:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Persist which of the three supported MCPs are enabled. Admin-only.
+ * The `enabled` payload is sanitized — unknown keys are ignored.
+ */
+resolver.define("saveLmStudioMcps", async ({ payload, context }) => {
+  if (!(await requireAdmin(context.accountId))) {
+    return { success: false, error: "Admin access required" };
+  }
+  try {
+    const incoming = payload?.enabled || {};
+    const next = {
+      context7: incoming.context7 === true,
+      webSearch: incoming.webSearch === true,
+      docReader: incoming.docReader === true,
+    };
+    await storage.set(LMSTUDIO_MCPS_KVS_KEY, next);
+    return { success: true, enabled: next };
+  } catch (error) {
+    console.error("Failed to save LM Studio MCPs:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Probe a single MCP plugin via /api/v1/chat to confirm the user's mcp.json has
+ * an entry matching `mcp/<server_label>`. Catches LM Studio's "unknown plugin"
+ * style errors and surfaces them clearly so the user can fix their mcp.json
+ * BEFORE they discover it at runtime.
+ *
+ * Strategy: send a 1-token probe with the integration enabled. If LM Studio
+ * loads the plugin (success or any model response), the probe passes. If the
+ * plugin doesn't exist in mcp.json, LM Studio returns 4xx with an error
+ * mentioning the missing plugin.
+ */
+resolver.define("pingLmStudioMcp", async ({ payload, context }) => {
+  if (!(await requireAdmin(context.accountId))) {
+    return { success: false, error: "Admin access required" };
+  }
+  try {
+    const { mcpKey } = payload || {};
+    const mcp = SUPPORTED_MCPS[mcpKey];
+    if (!mcp) return { success: false, error: `Unknown MCP key: ${mcpKey}` };
+
+    const provider = (await storage.get("COGNIRUNNER_AI_PROVIDER")) || "openai";
+    if (provider !== "lmstudio") {
+      return { success: false, error: "Active provider is not LM Studio." };
+    }
+    const baseUrl = await storage.get("COGNIRUNNER_AI_BASE_URL");
+    if (!baseUrl) return { success: false, error: "LM Studio base URL not configured." };
+    const apiKey = await storage.get(providerKeySlot("lmstudio"));
+    const savedModel = await storage.get(providerModelSlot("lmstudio"));
+    if (!savedModel) return { success: false, error: "Pick and save a model first — the probe needs a model to address LM Studio." };
+
+    const headers = { "Content-Type": "application/json", Accept: "application/json" };
+    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+
+    const body = {
+      model: savedModel,
+      input: "ping",
+      store: false,
+      reasoning: "off",
+      max_output_tokens: 1,
+      integrations: [{
+        type: "plugin",
+        id: `mcp/${mcp.label}`,
+        allowed_tools: mcp.allowedTools,
+      }],
+    };
+
+    let resp = await fetch(`${baseUrl}/api/v1/chat`, {
+      method: "POST", headers, body: JSON.stringify(body),
+    });
+    // Some models reject `reasoning: "off"` — retry without it (same fallback the
+    // main inference path uses). The MCP plumbing is what we're verifying here.
+    if (resp.status === 400) {
+      const errText = await resp.text().catch(() => "");
+      if (/reasoning/i.test(errText)) {
+        delete body.reasoning;
+        resp = await fetch(`${baseUrl}/api/v1/chat`, {
+          method: "POST", headers, body: JSON.stringify(body),
+        });
+      } else if (/plugin|integration|mcp/i.test(errText)) {
+        // Unknown-plugin error from LM Studio — surface clearly.
+        return {
+          success: true,
+          ok: false,
+          error: `LM Studio cannot find an mcp.json entry named "${mcp.label}". Add the configuration shown in the setup panel and restart LM Studio. Raw error: ${errText.substring(0, 300)}`,
+        };
+      } else {
+        return { success: true, ok: false, error: `HTTP 400: ${errText.substring(0, 300)}` };
+      }
+    }
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "");
+      const looksLikeMissingPlugin = /plugin|integration|mcp|unknown|not.found/i.test(errText);
+      return {
+        success: true,
+        ok: false,
+        error: looksLikeMissingPlugin
+          ? `LM Studio rejected the integration "${mcp.label}". Most likely cause: it's not in your mcp.json (or the label doesn't match). Raw: HTTP ${resp.status} ${errText.substring(0, 200)}`
+          : `HTTP ${resp.status}: ${errText.substring(0, 300)}`,
+      };
+    }
+    return { success: true, ok: true, message: `MCP "${mcp.label}" is reachable from LM Studio.` };
+  } catch (error) {
+    console.error("MCP ping failed:", error);
+    return { success: false, error: error.message };
+  }
+});
+
 // === Post-Function Configuration Resolvers ===
 
 /**
@@ -3591,6 +3758,46 @@ const PROVIDERS = {
  *
  * Reference: https://lmstudio.ai/docs/developer/rest
  */
+/**
+ * Read enabled-MCP flags from KVS, return the LM Studio `integrations` array.
+ * Empty array when nothing's enabled, so callers can unconditionally spread it.
+ */
+const buildLmStudioIntegrations = async () => {
+  try {
+    const stored = (await storage.get(LMSTUDIO_MCPS_KVS_KEY)) || {};
+    const integrations = [];
+    for (const [key, info] of Object.entries(SUPPORTED_MCPS)) {
+      if (stored[key] === true) {
+        integrations.push({
+          type: "plugin",
+          id: `mcp/${info.label}`,
+          allowed_tools: info.allowedTools,
+        });
+      }
+    }
+    return integrations;
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Build the suffix appended to system_prompt explaining when each enabled MCP
+ * is appropriate. Phrased to nudge — not force — the model's tool choice.
+ */
+const buildMcpSystemPrompt = (integrations) => {
+  if (!integrations || integrations.length === 0) return "";
+  const lines = ["", "## External tools available", ""];
+  for (const int of integrations) {
+    // Look up guidance by label (we always emit "mcp/<label>")
+    const entry = Object.values(SUPPORTED_MCPS).find((m) => `mcp/${m.label}` === int.id);
+    if (entry) lines.push(`- **${entry.label}**: ${entry.guidance}`);
+  }
+  lines.push("");
+  lines.push("Call these tools only when their use is genuinely warranted by the prompt — they cost extra round-trips and tokens. Skip them for self-contained tasks.");
+  return lines.join("\n");
+};
+
 const callLmStudioNative = async ({ apiKey, model, messages, jsonMode, baseUrl }) => {
   // 1. Strip file blocks (LM Studio's REST API doesn't accept type:"file" anywhere
   //    — its document support is GUI-only via RAG).
@@ -3619,6 +3826,14 @@ const callLmStudioNative = async ({ apiKey, model, messages, jsonMode, baseUrl }
   if (jsonMode) {
     systemPrompt = (systemPrompt ? systemPrompt + "\n\n" : "")
       + "Respond with ONLY a valid JSON object. No markdown fences, no surrounding prose, no explanation outside the JSON.";
+  }
+
+  // 3b. MCP integrations — read enabled MCPs from KVS, append usage guidance
+  //     to system_prompt so the model knows when to reach for each tool.
+  //     `integrations` (sent below in the body) tells LM Studio to load the plugins.
+  const integrations = await buildLmStudioIntegrations();
+  if (integrations.length > 0) {
+    systemPrompt = (systemPrompt ? systemPrompt : "") + buildMcpSystemPrompt(integrations);
   }
 
   // 4. Convert non-system messages → native `input` array of typed blocks.
@@ -3656,6 +3871,12 @@ const callLmStudioNative = async ({ apiKey, model, messages, jsonMode, baseUrl }
     reasoning: "off",
   };
   if (systemPrompt) body.system_prompt = systemPrompt;
+  // When MCPs are enabled, attach them and bump context_length per LM Studio's
+  // recommendation (MCP tool defs eat into context).
+  if (integrations.length > 0) {
+    body.integrations = integrations;
+    body.context_length = 8000;
+  }
 
   const headers = { "Content-Type": "application/json", Accept: "application/json" };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
