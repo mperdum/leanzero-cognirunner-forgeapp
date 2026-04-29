@@ -106,6 +106,14 @@ modules:
       function: serveAttachment
       response:
         type: dynamic
+    # Symmetric WRITE side of attachment-bridge: doc-processor POSTs a JSON
+    # envelope ({data:base64, filename, mimeType, size}) here under a one-shot
+    # capability (?t=token + Authorization: Bearer <bearer>); we attach the
+    # bytes to the bound issueKey via api.asApp().requestJira().
+    - key: attachment-upload
+      function: serveAttachmentUpload
+      response:
+        type: dynamic
 
   # Lambda function for validation logic
   function:
@@ -120,6 +128,8 @@ modules:
       handler: index.handler
     - key: serveAttachment
       handler: index.serveAttachment
+    - key: serveAttachmentUpload
+      handler: index.serveAttachmentUpload
 
 resources:
   - key: config-ui-resource

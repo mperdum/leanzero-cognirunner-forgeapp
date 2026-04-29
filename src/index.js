@@ -22,6 +22,8 @@ import api, { route, fetch, getAppContext, webTrigger } from "@forge/api";
 import storage from "@forge/kvs";
 import Resolver from "@forge/resolver";
 import { randomBytes, timingSafeEqual } from "node:crypto";
+import path from "node:path";
+import FormData from "form-data";
 
 const resolver = new Resolver();
 
@@ -2314,7 +2316,14 @@ const SUPPORTED_MCPS = {
   docReader: {
     label: "doc-reader",
     allowedTools: ["read-doc", "list-documents"],
+    // Composed onto allowedTools by buildLmStudioIntegrations only when the
+    // docWriter sub-toggle is on AND docReader is on. Tenant defaults: OFF.
+    writeTools: ["create-doc", "create-markdown", "create-excel", "detect-format", "list-templates"],
     guidance: "Use to read PDF, DOCX, or Excel content. Two input variants: (a) `filePath` for files on the LM Studio host, or (b) `url` + `authHeader` for remote files (Jira attachments come this way — the user prompt lists them). Use the URL variant EXACTLY as shown — don't modify it, don't retry on 404 (the capability is single-use). Action selection: `summary` for \"is this document about X?\" (cheapest); `focused` with a `query` when you need a specific fact; `indepth` ONLY when you need full extraction. The filename's extension determines which parser runs — don't override it. Hard cap of 50 MB per file on the doc-processor side.",
+    // Appended to the MCP system-prompt block ONLY when docWriter is on (see
+    // buildMcpSystemPrompt). The user-prompt also carries the bound uploadUrl
+    // + uploadAuthHeader for THIS issue (see textContextParts assembly).
+    writeGuidance: "When you need to PRODUCE a document for the user, choose by content type: `create-markdown` for technical / code-heavy / implementation docs; `create-doc` for stakeholder / business / legal / report docs (DOCX, modern claude-like style); `create-excel` for tabular / numeric / financial data (XLSX). For each call you MUST pass the EXACT `uploadUrl` and `uploadAuthHeader` provided in the user prompt — they are bound to THIS issue and are single-use (do NOT retry on 404). Use clientHint:\"interactive\" so the response is concise.",
   },
 };
 const LMSTUDIO_MCPS_KVS_KEY = "COGNIRUNNER_LMSTUDIO_MCPS";
@@ -2330,6 +2339,10 @@ resolver.define("getLmStudioMcps", async () => {
       context7: stored.context7 === true,
       webSearch: stored.webSearch === true,
       docReader: stored.docReader === true,
+      // Sub-capability of doc-reader: when ON, the model can call create-doc /
+      // create-markdown / create-excel and have the resulting file attached to
+      // the issue under validation. Defaults OFF for ALL existing tenants.
+      docWriter: stored.docWriter === true,
     };
     const supported = Object.entries(SUPPORTED_MCPS).map(([key, info]) => ({
       key,
@@ -2353,10 +2366,15 @@ resolver.define("saveLmStudioMcps", async ({ payload, context }) => {
   }
   try {
     const incoming = payload?.enabled || {};
+    const docReader = incoming.docReader === true;
     const next = {
       context7: incoming.context7 === true,
       webSearch: incoming.webSearch === true,
-      docReader: incoming.docReader === true,
+      docReader,
+      // Defense in depth: docWriter cannot be true without docReader. The UI
+      // greys out the sub-toggle when docReader is off, and this clamp ensures
+      // a malformed/legacy payload can't smuggle docWriter past that gate.
+      docWriter: incoming.docWriter === true && docReader,
     };
     await storage.set(LMSTUDIO_MCPS_KVS_KEY, next);
     return { success: true, enabled: next };
@@ -2486,30 +2504,43 @@ const ATTACHMENT_TOKEN_PREFIX = "att_token:";
 const ATTACHMENT_TOKEN_TTL_MS = 10 * 60 * 1000;
 const WEBTRIGGER_URL_KVS_KEY = "webtrigger_url:attachment-bridge";
 
+// Symmetric WRITE side of attachment-bridge (see serveAttachmentUpload below).
+// Same security model: separate token (URL) + bearer (header), 10-min TTL,
+// single-use, hard-bound to a SINGLE issueKey at mint time.
+const UPLOAD_TOKEN_PREFIX = "upload_token:";
+const UPLOAD_TOKEN_TTL_MS = 10 * 60 * 1000;
+const UPLOAD_WEBTRIGGER_URL_KVS_KEY = "webtrigger_url:attachment-upload";
+const UPLOAD_MAX_BYTES = 25 * 1024 * 1024;
+const UPLOAD_ALLOWED_EXTENSIONS = new Set([".pdf", ".docx", ".xlsx", ".md", ".txt", ".csv"]);
+
 const redactSecret = (s) =>
   typeof s === "string" && s.length > 6 ? `${s.substring(0, 6)}…` : "***";
 
 /**
- * Get the public URL for the attachment-bridge web trigger. Per-installation,
- * stable across invocations. Cached in KVS after first call.
+ * Get the public URL for a Forge web trigger by key. Per-installation, stable
+ * across invocations. Cached in KVS at `kvsKey` after first call.
+ * Used for both attachment-bridge (read) and attachment-upload (write).
  */
-const getWebtriggerUrl = async () => {
+const getWebtriggerUrlFor = async (key, kvsKey) => {
   try {
-    const cached = await storage.get(WEBTRIGGER_URL_KVS_KEY);
+    const cached = await storage.get(kvsKey);
     if (cached && typeof cached === "string") return cached;
-    const result = await webTrigger.getUrl("attachment-bridge");
+    const result = await webTrigger.getUrl(key);
     // SDK historically returned a string directly; some versions return { url }.
     const url = typeof result === "string" ? result : result?.url;
     if (url && typeof url === "string") {
-      try { await storage.set(WEBTRIGGER_URL_KVS_KEY, url); } catch { /* cache best-effort */ }
+      try { await storage.set(kvsKey, url); } catch { /* cache best-effort */ }
       return url;
     }
     return null;
   } catch (error) {
-    console.error("Failed to get webtrigger URL:", error?.message);
+    console.error(`Failed to get webtrigger URL for ${key}:`, error?.message);
     return null;
   }
 };
+
+const getWebtriggerUrl = () =>
+  getWebtriggerUrlFor("attachment-bridge", WEBTRIGGER_URL_KVS_KEY);
 
 /**
  * Mint a single-use capability for one Jira attachment.
@@ -2562,6 +2593,56 @@ const mintAttachmentToken = async ({ attachmentId, issueKey, actorAccountId }) =
   return {
     url: `${baseUrl}?t=${token}`,
     authHeader: `Bearer ${bearer}`,
+  };
+};
+
+/**
+ * Mint a single-use UPLOAD capability bound HARD to one issueKey. Returns
+ * { uploadUrl, uploadAuthHeader } intended for a model prompt; the caller
+ * (the doc-processor MCP via create-doc / create-markdown / create-excel)
+ * POSTs a JSON envelope of { data:base64, filename, mimeType, size } to
+ * uploadUrl with `Authorization: <uploadAuthHeader>`.
+ *
+ * Security model is the symmetric mirror of mintAttachmentToken: separate
+ * 256-bit token (URL) and 256-bit bearer (header), 10-min KVS TTL with a
+ * defense-in-depth soft expiresAt guard, and a SINGLE issueKey binding
+ * stored on the record so the handler reads issueKey from KVS — never from
+ * the request body — and the model cannot redirect uploads to a different
+ * issue. Filename is decided at upload time by the model and validated
+ * against UPLOAD_ALLOWED_EXTENSIONS in serveAttachmentUpload.
+ *
+ * `allowedFilename` is OPTIONAL audit metadata, not a hard match (the model
+ * doesn't know its own filename until tool-call time).
+ */
+const mintUploadToken = async ({ issueKey, allowedFilename, actorAccountId }) => {
+  if (!issueKey) throw new Error("mintUploadToken requires issueKey");
+  const baseUrl = await getWebtriggerUrlFor("attachment-upload", UPLOAD_WEBTRIGGER_URL_KVS_KEY);
+  if (!baseUrl) throw new Error("Could not resolve attachment-upload web trigger URL");
+  const token = randomBytes(32).toString("base64url");
+  const bearer = randomBytes(32).toString("base64url");
+  const expiresAt = Date.now() + UPLOAD_TOKEN_TTL_MS;
+  const record = {
+    issueKey: String(issueKey),
+    allowedFilename: allowedFilename ? String(allowedFilename) : null,
+    actorAccountId: actorAccountId ? String(actorAccountId) : null,
+    bearer,
+    expiresAt,
+  };
+  try {
+    await storage.set(UPLOAD_TOKEN_PREFIX + token, record, {
+      ttlSeconds: Math.ceil(UPLOAD_TOKEN_TTL_MS / 1000),
+    });
+  } catch {
+    await storage.set(UPLOAD_TOKEN_PREFIX + token, record);
+  }
+  console.log(
+    `MintUploadCapability issue=${issueKey} filename=${allowedFilename || "(any)"} ` +
+    `actor=${actorAccountId || "(unknown)"} token=${redactSecret(token)} ` +
+    `bearer=${redactSecret(bearer)} expiresAt=${new Date(expiresAt).toISOString()}`,
+  );
+  return {
+    uploadUrl: `${baseUrl}?t=${token}`,
+    uploadAuthHeader: `Bearer ${bearer}`,
   };
 };
 
@@ -2678,6 +2759,193 @@ export const serveAttachment = async (req) => {
   } catch (error) {
     console.error("serveAttachment: unexpected error:", error?.message);
     return { statusCode: 500, headers: { "Content-Type": ["text/plain"] }, body: "internal error" };
+  }
+};
+
+// Always-JSON response shape — serveAttachmentUpload's caller (doc-processor)
+// expects to parse JSON for both success and error paths.
+const jsonResp = (statusCode, obj) => ({
+  statusCode,
+  headers: { "Content-Type": ["application/json"] },
+  body: JSON.stringify(obj),
+});
+
+/**
+ * Forge web trigger handler: receives a JSON envelope from doc-processor and
+ * attaches the file to the bound issueKey via Jira's attachments REST endpoint.
+ * Symmetric WRITE side of serveAttachment — same security model.
+ *
+ * Wire contract (input):
+ *   POST <uploadUrl>?t=<token>
+ *   Authorization: Bearer <bearer>
+ *   Content-Type: application/json
+ *   { data: <base64 bytes>, filename, mimeType, size }
+ *
+ * Response codes:
+ *   200 — JSON {success:true, attachment:{id, filename, size, mimeType, content}}
+ *   400 — malformed JSON or missing required fields
+ *   401 — Authorization header missing/malformed/mismatch (KVS entry preserved)
+ *   404 — token missing/expired/already used
+ *   413 — payload exceeds UPLOAD_MAX_BYTES
+ *   415 — filename extension not in UPLOAD_ALLOWED_EXTENSIONS
+ *   502 — Jira upstream error (token already burned)
+ *   500 — unexpected error
+ *
+ * Never logged: bearer (full), token (full — only first 6 chars), binary bytes,
+ * base64 string, Jira upstream response body (may contain sensitive data).
+ */
+export const serveAttachmentUpload = async (req) => {
+  try {
+    // 1. Token from query (Forge wraps query values as string[])
+    const tokenArr = req?.queryParameters?.t;
+    const token = Array.isArray(tokenArr) ? tokenArr[0] : tokenArr;
+    if (!token || typeof token !== "string") {
+      return jsonResp(404, { success: false, error: "not found" });
+    }
+
+    // 2. Authorization header (case-insensitive, Bearer prefix)
+    const headers = req?.headers || {};
+    const authArr = headers.authorization || headers.Authorization;
+    const authValue = Array.isArray(authArr) ? authArr[0] : authArr;
+    if (!authValue || typeof authValue !== "string" || !/^Bearer\s+/.test(authValue)) {
+      return jsonResp(401, { success: false, error: "unauthorized" });
+    }
+    const provided = authValue.replace(/^Bearer\s+/, "").trim();
+
+    // 3. KVS lookup
+    const record = await storage.get(UPLOAD_TOKEN_PREFIX + token);
+    if (!record || !record.bearer || !record.issueKey) {
+      return jsonResp(404, { success: false, error: "not found" });
+    }
+    if (typeof record.expiresAt === "number" && Date.now() > record.expiresAt) {
+      try { await storage.delete(UPLOAD_TOKEN_PREFIX + token); } catch { /* best-effort */ }
+      return jsonResp(404, { success: false, error: "not found" });
+    }
+
+    // 4. Constant-time bearer comparison (equal-length buffers required)
+    const a = Buffer.from(provided, "utf8");
+    const b = Buffer.from(String(record.bearer), "utf8");
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+      // Do NOT delete the KVS entry — protects legitimate tokens against probing.
+      console.warn(`serveAttachmentUpload: bearer mismatch for token=${redactSecret(token)}`);
+      return jsonResp(401, { success: false, error: "unauthorized" });
+    }
+
+    // 5. Burn the token BEFORE Jira upload (single-use guarantee — same
+    // tradeoff serveAttachment makes: a Jira upstream failure consumes the
+    // capability, but a leaked token can never be replayed).
+    try {
+      await storage.delete(UPLOAD_TOKEN_PREFIX + token);
+    } catch (e) {
+      console.error(
+        `serveAttachmentUpload: KVS delete failed for token=${redactSecret(token)} (continuing):`,
+        e?.message,
+      );
+    }
+
+    // 6. Parse JSON body
+    let payload;
+    try {
+      payload = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+    } catch {
+      return jsonResp(400, { success: false, error: "malformed json" });
+    }
+    if (!payload || typeof payload.data !== "string" || typeof payload.filename !== "string") {
+      return jsonResp(400, { success: false, error: "missing required fields: data, filename" });
+    }
+
+    // 7. Extension allowlist (the contract — MIME from clients is unreliable)
+    const ext = path.extname(payload.filename).toLowerCase();
+    if (!UPLOAD_ALLOWED_EXTENSIONS.has(ext)) {
+      console.warn(
+        `serveAttachmentUpload: rejected extension ext=${ext} filename="${payload.filename}" ` +
+        `issue=${record.issueKey} token=${redactSecret(token)}`,
+      );
+      return jsonResp(415, { success: false, error: `extension ${ext || "(none)"} not allowed` });
+    }
+
+    // 8. Decode base64, size cap
+    let buffer;
+    try {
+      buffer = Buffer.from(payload.data, "base64");
+    } catch {
+      return jsonResp(400, { success: false, error: "invalid base64 data" });
+    }
+    if (buffer.length > UPLOAD_MAX_BYTES) {
+      return jsonResp(413, {
+        success: false,
+        error: `payload too large (${buffer.length} bytes, max ${UPLOAD_MAX_BYTES})`,
+      });
+    }
+
+    // 9. Build multipart form (form-data npm package)
+    const mimeType = typeof payload.mimeType === "string" && payload.mimeType
+      ? payload.mimeType
+      : "application/octet-stream";
+    const form = new FormData();
+    form.append("file", buffer, {
+      filename: payload.filename,
+      contentType: mimeType,
+      knownLength: buffer.length,
+    });
+
+    // 10. POST to Jira (issueKey from the KVS record — caller cannot redirect)
+    let jiraResp;
+    try {
+      jiraResp = await api.asApp().requestJira(
+        route`/rest/api/3/issue/${record.issueKey}/attachments`,
+        {
+          method: "POST",
+          body: form,
+          headers: { Accept: "application/json", "X-Atlassian-Token": "no-check" },
+        },
+      );
+    } catch (e) {
+      console.error(
+        `serveAttachmentUpload: Jira upload threw for issue=${record.issueKey}:`,
+        e?.message,
+      );
+      return jsonResp(502, { success: false, error: "jira upstream", status: 0 });
+    }
+    if (!jiraResp.ok) {
+      // Do NOT log Jira response body — may contain sensitive content.
+      console.error(
+        `serveAttachmentUpload: Jira HTTP ${jiraResp.status} for issue=${record.issueKey} ` +
+        `filename="${payload.filename}" token=${redactSecret(token)}`,
+      );
+      return jsonResp(502, { success: false, error: "jira upstream", status: jiraResp.status });
+    }
+
+    // 11. Parse Jira response — POST returns array of attachment metadata
+    let jiraJson;
+    try { jiraJson = await jiraResp.json(); } catch { jiraJson = null; }
+    const first = Array.isArray(jiraJson) && jiraJson.length > 0 ? jiraJson[0] : null;
+    if (!first || !first.id) {
+      console.error(
+        `serveAttachmentUpload: Jira returned 200 but unparseable body for issue=${record.issueKey}`,
+      );
+      return jsonResp(502, { success: false, error: "jira upstream", status: jiraResp.status });
+    }
+
+    console.log(
+      `UploadAttachmentSuccess issue=${record.issueKey} attachmentId=${first.id} ` +
+      `filename="${first.filename || payload.filename}" bytes=${buffer.length} ` +
+      `actor=${record.actorAccountId || "(unknown)"} token=${redactSecret(token)}`,
+    );
+
+    return jsonResp(200, {
+      success: true,
+      attachment: {
+        id: String(first.id),
+        filename: first.filename || payload.filename,
+        size: typeof first.size === "number" ? first.size : buffer.length,
+        mimeType: first.mimeType || mimeType,
+        content: first.content || null,
+      },
+    });
+  } catch (error) {
+    console.error("serveAttachmentUpload: unexpected error:", error?.message);
+    return jsonResp(500, { success: false, error: "internal" });
   }
 };
 
@@ -3996,13 +4264,19 @@ const buildLmStudioIntegrations = async () => {
     const stored = (await storage.get(LMSTUDIO_MCPS_KVS_KEY)) || {};
     const integrations = [];
     for (const [key, info] of Object.entries(SUPPORTED_MCPS)) {
-      if (stored[key] === true) {
-        integrations.push({
-          type: "plugin",
-          id: `mcp/${info.label}`,
-          allowed_tools: info.allowedTools,
-        });
+      if (stored[key] !== true) continue;
+      let tools = info.allowedTools;
+      // doc-reader composes its writeTools when the docWriter sub-toggle is on.
+      // Keeps the integration as a SINGLE mcp/doc-reader entry — we just widen
+      // allowed_tools rather than emitting a duplicate plugin id.
+      if (key === "docReader" && stored.docWriter === true && Array.isArray(info.writeTools)) {
+        tools = [...info.allowedTools, ...info.writeTools];
       }
+      integrations.push({
+        type: "plugin",
+        id: `mcp/${info.label}`,
+        allowed_tools: tools,
+      });
     }
     return integrations;
   } catch {
@@ -4013,14 +4287,21 @@ const buildLmStudioIntegrations = async () => {
 /**
  * Build the suffix appended to system_prompt explaining when each enabled MCP
  * is appropriate. Phrased to nudge — not force — the model's tool choice.
+ * Async because doc-reader's writeGuidance is appended only when the
+ * docWriter sub-toggle is on (KVS read).
  */
-const buildMcpSystemPrompt = (integrations) => {
+const buildMcpSystemPrompt = async (integrations) => {
   if (!integrations || integrations.length === 0) return "";
+  const stored = (await storage.get(LMSTUDIO_MCPS_KVS_KEY).catch(() => null)) || {};
   const lines = ["", "## External tools available", ""];
   for (const int of integrations) {
     // Look up guidance by label (we always emit "mcp/<label>")
     const entry = Object.values(SUPPORTED_MCPS).find((m) => `mcp/${m.label}` === int.id);
-    if (entry) lines.push(`- **${entry.label}**: ${entry.guidance}`);
+    if (!entry) continue;
+    lines.push(`- **${entry.label}**: ${entry.guidance}`);
+    if (entry.label === "doc-reader" && stored.docWriter === true && entry.writeGuidance) {
+      lines.push(`    ${entry.writeGuidance}`);
+    }
   }
   lines.push("");
   lines.push("Call these tools only when their use is genuinely warranted by the prompt — they cost extra round-trips and tokens. Skip them for self-contained tasks.");
@@ -4063,7 +4344,7 @@ const callLmStudioNative = async ({ apiKey, model, messages, jsonMode, baseUrl }
   //     `integrations` (sent below in the body) tells LM Studio to load the plugins.
   const integrations = await buildLmStudioIntegrations();
   if (integrations.length > 0) {
-    systemPrompt = (systemPrompt ? systemPrompt : "") + buildMcpSystemPrompt(integrations);
+    systemPrompt = (systemPrompt ? systemPrompt : "") + (await buildMcpSystemPrompt(integrations));
   }
 
   // 4. Convert non-system messages → native `input` array of typed blocks.
@@ -5762,13 +6043,17 @@ export const validate = async (args) => {
       // way the model can reach a Jira PDF/DOCX/XLSX.
       const { provider: aiProvider } = await getProviderConfig();
       let docReaderEnabled = false;
+      let docWriterEnabled = false;
       if (aiProvider === "lmstudio") {
         try {
           const stored = (await storage.get(LMSTUDIO_MCPS_KVS_KEY)) || {};
           docReaderEnabled = stored.docReader === true;
+          // docWriter requires docReader (defense in depth — UI also enforces).
+          docWriterEnabled = stored.docWriter === true && docReaderEnabled;
         } catch { /* default to disabled on read error */ }
       }
       const useUrlBridge = aiProvider === "lmstudio" && docReaderEnabled;
+      const useUploadBridge = aiProvider === "lmstudio" && docWriterEnabled;
 
       // Filter + classify within size budget. Documents go to URL bridge (when
       // enabled) or inline download; images always go to the inline vision path.
@@ -5827,6 +6112,24 @@ export const validate = async (args) => {
         console.log(`Minted ${urlMintBlocks.length}/${toMintUrlsFor.length} attachment URL capabilities`);
       }
 
+      // Mint a SINGLE upload capability for this issue when the docWriter
+      // sub-toggle is on. Bound HARD to issue.key — the model cannot redirect
+      // to another issue (issueKey is read from the KVS record, not the body).
+      // Skipped on issue CREATE (issue.key === null) since there's nothing to
+      // attach to yet.
+      let uploadCap = null;
+      if (useUploadBridge && issue.key) {
+        try {
+          uploadCap = await mintUploadToken({
+            issueKey: issue.key,
+            allowedFilename: null,
+            actorAccountId: args?.context?.accountId || args?.accountId || null,
+          });
+        } catch (e) {
+          console.error(`Failed to mint upload capability for ${issue.key}:`, e?.message);
+        }
+      }
+
       // Build OpenAI content parts from inline downloads
       const attachmentParts = buildAttachmentContentParts(successfulDownloads);
 
@@ -5857,6 +6160,23 @@ export const validate = async (args) => {
           lines.push(`    authHeader: ${cap.authHeader}`);
         }
         textContextParts.push(lines.join("\n"));
+      }
+      if (uploadCap) {
+        textContextParts.push([
+          "## Document creation (use doc-reader's create-* tools)",
+          "",
+          "If the user asks you to PRODUCE a document, choose the tool by content type " +
+            "(`create-markdown` for technical / code-heavy content; `create-doc` for " +
+            "stakeholder / business / legal / report DOCX; `create-excel` for tabular " +
+            "/ numeric / financial XLSX) and pass the EXACT `uploadUrl` + " +
+            `\`uploadAuthHeader\` below. The capability is bound to THIS issue (${issue.key}) ` +
+            "and is single-use — do NOT retry on 404. Use clientHint:\"interactive\" " +
+            "so your response message stays concise.",
+          "",
+          `    uploadUrl:        ${uploadCap.uploadUrl}`,
+          `    uploadAuthHeader: ${uploadCap.uploadAuthHeader}`,
+          `    issueKey:         ${issue.key} (bound to URL — do not pass as a tool argument)`,
+        ].join("\n"));
       }
       if (skippedAttachments.length > 0) {
         textContextParts.push(

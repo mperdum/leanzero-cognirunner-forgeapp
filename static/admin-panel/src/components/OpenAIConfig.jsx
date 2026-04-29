@@ -61,7 +61,7 @@ export default function OpenAIConfig({ invoke }) {
   const [loadingLmModel, setLoadingLmModel] = useState(false);
   // LM Studio MCP integrations — fixed set of 3 (context7, web-search, doc-reader).
   // Other MCPs in the user's mcp.json are NOT exposed by us per design.
-  const [mcpEnabled, setMcpEnabled] = useState({ context7: false, webSearch: false, docReader: false });
+  const [mcpEnabled, setMcpEnabled] = useState({ context7: false, webSearch: false, docReader: false, docWriter: false });
   const [mcpSavingKey, setMcpSavingKey] = useState(null); // which key is currently saving
   const [mcpExpanded, setMcpExpanded] = useState({}); // which setup panels are open
   const [mcpPingState, setMcpPingState] = useState({}); // {[key]: {loading, ok, error}}
@@ -125,7 +125,7 @@ export default function OpenAIConfig({ invoke }) {
         }
       }
       if (mcpsResult && mcpsResult.success) {
-        setMcpEnabled(mcpsResult.enabled || { context7: false, webSearch: false, docReader: false });
+        setMcpEnabled(mcpsResult.enabled || { context7: false, webSearch: false, docReader: false, docWriter: false });
       }
     } catch (e) {
       console.error("Failed to load AI config status:", e);
@@ -137,7 +137,13 @@ export default function OpenAIConfig({ invoke }) {
   // extra Save button. Optimistic UI: flip locally first, persist, revert on error.
   const handleMcpToggle = async (mcpKey) => {
     if (!invoke) return;
-    const next = { ...mcpEnabled, [mcpKey]: !mcpEnabled[mcpKey] };
+    let next = { ...mcpEnabled, [mcpKey]: !mcpEnabled[mcpKey] };
+    // docWriter is a sub-capability of docReader: turning docReader OFF forces
+    // docWriter OFF too (backend clamps the same way; this keeps the UI synced
+    // without waiting for the round-trip).
+    if (mcpKey === "docReader" && !next.docReader) {
+      next = { ...next, docWriter: false };
+    }
     setMcpEnabled(next);
     setMcpSavingKey(mcpKey);
     setError(null);
@@ -978,6 +984,26 @@ npm install && npm run build`}
                 <>
                   <div style={{ padding: "8px 10px", marginBottom: "10px", background: "rgba(37, 99, 235, 0.08)", border: "1px solid rgba(37, 99, 235, 0.4)", borderRadius: "6px", fontSize: "11px" }}>
                     <strong>Jira attachments:</strong> when this MCP is on, the validator mints a one-shot URL + Bearer token for each attachment and feeds them to the model, so it can call <code style={{ fontSize: "11px" }}>read-doc</code> with <code style={{ fontSize: "11px" }}>url</code> + <code style={{ fontSize: "11px" }}>authHeader</code>. Requires the <strong>URL variant</strong> of <code style={{ fontSize: "11px" }}>read-doc</code> in <code style={{ fontSize: "11px" }}>leanzero-mcp-doc-processor</code> — see <code style={{ fontSize: "11px" }}>docs/doc-processor-extension-spec.md</code> in this repo for the spec to feed your maintainer or AI assistant. Until that variant ships, the model still receives the URLs but gets a clear MCP error from <code style={{ fontSize: "11px" }}>read-doc</code> ("unknown parameter url"); local file paths still work.
+                  </div>
+                  <div style={{ padding: "8px 10px", marginBottom: "10px", background: "rgba(220, 38, 38, 0.06)", border: "1px solid rgba(220, 38, 38, 0.3)", borderRadius: "6px", fontSize: "11px" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: mcpEnabled.docReader ? "pointer" : "not-allowed", opacity: mcpEnabled.docReader ? 1 : 0.5 }}>
+                      <input
+                        type="checkbox"
+                        checked={mcpEnabled.docWriter === true && mcpEnabled.docReader === true}
+                        disabled={!mcpEnabled.docReader || mcpSavingKey === "docWriter"}
+                        onChange={() => handleMcpToggle("docWriter")}
+                      />
+                      <strong>Allow document creation (write / upload)</strong>
+                      {mcpSavingKey === "docWriter" && <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>saving…</span>}
+                    </label>
+                    <div style={{ marginTop: "6px", paddingLeft: "22px", color: "var(--text-secondary)" }}>
+                      When ON, the model can call <code style={{ fontSize: "11px" }}>create-doc</code>,{" "}
+                      <code style={{ fontSize: "11px" }}>create-markdown</code>, and{" "}
+                      <code style={{ fontSize: "11px" }}>create-excel</code>; the resulting file is attached
+                      automatically to the issue under validation. Each upload capability is one-shot, 10-min TTL,
+                      and bound to a single issue (the model cannot redirect uploads). <strong>Defaults OFF</strong> —
+                      enable only if you trust the model with write access. Requires doc-reader (read) to be enabled.
+                    </div>
                   </div>
                   <p style={{ margin: "0 0 8px", fontSize: "12px", color: "var(--text-secondary)" }}>
                     Clone the repo on your LM Studio host:
