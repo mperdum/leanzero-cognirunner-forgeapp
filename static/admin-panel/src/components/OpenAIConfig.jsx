@@ -65,6 +65,14 @@ export default function OpenAIConfig({ invoke }) {
   const [mcpSavingKey, setMcpSavingKey] = useState(null); // which key is currently saving
   const [mcpExpanded, setMcpExpanded] = useState({}); // which setup panels are open
   const [mcpPingState, setMcpPingState] = useState({}); // {[key]: {loading, ok, error}}
+  // Hosted doc-processor (remote MCP). Used by Anthropic natively (mcp_servers
+  // field) and by LM Studio when the user's mcp.json is the remote variant
+  // (no CogniRunner code change for that case — just the same URL+bearer).
+  const [docProcUrl, setDocProcUrl] = useState("");
+  const [docProcBearerInput, setDocProcBearerInput] = useState("");
+  const [docProcHasBearer, setDocProcHasBearer] = useState(false);
+  const [docProcSaving, setDocProcSaving] = useState(false);
+  const [docProcShowBearerInput, setDocProcShowBearerInput] = useState(false);
 
   const pHelp = PROVIDER_HELP[provider] || PROVIDER_HELP.openai;
   const isLmStudio = provider === "lmstudio";
@@ -78,12 +86,13 @@ export default function OpenAIConfig({ invoke }) {
   const loadStatus = async () => {
     if (!invoke) return;
     try {
-      const [keyResult, modelsResult, modelKvs, providerResult, mcpsResult] = await Promise.all([
+      const [keyResult, modelsResult, modelKvs, providerResult, mcpsResult, docProcResult] = await Promise.all([
         invoke("getOpenAIKey"),
         invoke("getOpenAIModels"),
         invoke("getOpenAIModelFromKVS"),
         invoke("getProvider"),
         invoke("getLmStudioMcps").catch(() => ({ success: false })),
+        invoke("getDocProcessorRemote").catch(() => ({ success: false })),
       ]);
 
       if (providerResult.success) {
@@ -126,6 +135,10 @@ export default function OpenAIConfig({ invoke }) {
       }
       if (mcpsResult && mcpsResult.success) {
         setMcpEnabled(mcpsResult.enabled || { context7: false, webSearch: false, docReader: false, docWriter: false });
+      }
+      if (docProcResult && docProcResult.success) {
+        setDocProcUrl(docProcResult.url || "");
+        setDocProcHasBearer(!!docProcResult.hasBearer);
       }
     } catch (e) {
       console.error("Failed to load AI config status:", e);
@@ -181,6 +194,49 @@ export default function OpenAIConfig({ invoke }) {
         [mcpKey]: { loading: false, ok: false, error: e.message },
       }));
     }
+  };
+
+  const handleSaveDocProcRemote = async () => {
+    if (!invoke) return;
+    if (!docProcUrl.trim() || !docProcBearerInput.trim()) return;
+    setDocProcSaving(true);
+    setError(null);
+    try {
+      const result = await invoke("saveDocProcessorRemote", {
+        url: docProcUrl.trim(),
+        bearer: docProcBearerInput.trim(),
+      });
+      if (result.success) {
+        setDocProcHasBearer(true);
+        setDocProcBearerInput("");
+        setDocProcShowBearerInput(false);
+      } else {
+        setError(result.error || "Failed to save doc-processor remote config");
+      }
+    } catch (e) {
+      setError("Failed to save doc-processor remote config: " + e.message);
+    }
+    setDocProcSaving(false);
+  };
+
+  const handleRemoveDocProcRemote = async () => {
+    if (!invoke) return;
+    setDocProcSaving(true);
+    setError(null);
+    try {
+      const result = await invoke("removeDocProcessorRemote");
+      if (result.success) {
+        setDocProcUrl("");
+        setDocProcHasBearer(false);
+        setDocProcBearerInput("");
+        setDocProcShowBearerInput(false);
+      } else {
+        setError(result.error || "Failed to remove doc-processor remote config");
+      }
+    } catch (e) {
+      setError("Failed to remove doc-processor remote config: " + e.message);
+    }
+    setDocProcSaving(false);
   };
 
   useEffect(() => {
@@ -870,11 +926,14 @@ export default function OpenAIConfig({ invoke }) {
         </div>
       </div>
 
-      {/* MCP Integrations — only when LM Studio is the SAVED provider.
-          Three fixed MCPs (context7, web-search, doc-reader). The model gets
-          their tools as additional capabilities; agentic JQL search stays on
-          its own /v1/chat/completions path and is unaffected. */}
-      {isLmStudio && provider === savedProvider && (
+      {/* MCP Integrations.
+          - context7 + web-search are LM-Studio-only (require local stdio
+            MCP processes — not exposed via the hosted-MCP path).
+          - doc-reader works on LM Studio (local stdio OR remote HTTP via
+            mcp.json) AND Anthropic (native mcp_servers field). For Anthropic,
+            it requires the hosted doc-processor URL+bearer below.
+            OpenAI / OpenRouter are deferred — surfaced as "coming soon". */}
+      {provider === savedProvider && (
         <div className="card" style={{ marginTop: "16px" }}>
           <div style={{ padding: "16px" }}>
             <div style={{ marginBottom: "12px" }}>
@@ -882,11 +941,15 @@ export default function OpenAIConfig({ invoke }) {
                 MCP Integrations
               </h3>
               <p style={{ margin: 0, fontSize: "12px", color: "var(--text-secondary)" }}>
-                Extra tools the model can call via your LM Studio's <code style={{ fontSize: "11px" }}>mcp.json</code>. Enable each and follow the setup steps to add the matching entry on your LM Studio host. JQL agentic search is unaffected — it runs on a separate code path.
+                {isLmStudio
+                  ? <>Extra tools the model can call via your LM Studio's <code style={{ fontSize: "11px" }}>mcp.json</code>. Enable each and follow the setup steps. JQL agentic search is unaffected — it runs on a separate code path.</>
+                  : <>Document tools the model can call when this provider supports remote MCP. Configure the hosted <code style={{ fontSize: "11px" }}>doc-processor</code> below, then enable doc-reader. <code style={{ fontSize: "11px" }}>context7</code> and <code style={{ fontSize: "11px" }}>web-search</code> are LM-Studio-only (they require local processes).</>
+                }
               </p>
             </div>
 
-            {/* context7 */}
+            {/* context7 — LM Studio only */}
+            {isLmStudio && (
             <McpCard
               mcpKey="context7"
               title="context7"
@@ -921,8 +984,10 @@ export default function OpenAIConfig({ invoke }) {
                 </>
               )}
             />
+            )}
 
-            {/* web-search */}
+            {/* web-search — LM Studio only */}
+            {isLmStudio && (
             <McpCard
               mcpKey="webSearch"
               title="web-search"
@@ -966,8 +1031,12 @@ npm install && npm run build`}
                 </>
               )}
             />
+            )}
 
-            {/* doc-reader */}
+            {/* doc-reader — visible for ALL providers (LM Studio uses local
+                or remote mcp.json; Anthropic uses native mcp_servers; OpenAI
+                + OpenRouter are deferred — surfaced as "coming soon" in the
+                setup block below). */}
             <McpCard
               mcpKey="docReader"
               title="doc-reader"
@@ -982,9 +1051,86 @@ npm install && npm run build`}
               onPing={() => handleMcpPing("docReader")}
               setupBlock={(
                 <>
-                  <div style={{ padding: "8px 10px", marginBottom: "10px", background: "rgba(37, 99, 235, 0.08)", border: "1px solid rgba(37, 99, 235, 0.4)", borderRadius: "6px", fontSize: "11px" }}>
-                    <strong>Jira attachments:</strong> when this MCP is on, the validator mints a one-shot URL + Bearer token for each attachment and feeds them to the model, so it can call <code style={{ fontSize: "11px" }}>read-doc</code> with <code style={{ fontSize: "11px" }}>url</code> + <code style={{ fontSize: "11px" }}>authHeader</code>. Requires the <strong>URL variant</strong> of <code style={{ fontSize: "11px" }}>read-doc</code> in <code style={{ fontSize: "11px" }}>leanzero-mcp-doc-processor</code> — see <code style={{ fontSize: "11px" }}>docs/doc-processor-extension-spec.md</code> in this repo for the spec to feed your maintainer or AI assistant. Until that variant ships, the model still receives the URLs but gets a clear MCP error from <code style={{ fontSize: "11px" }}>read-doc</code> ("unknown parameter url"); local file paths still work.
+                  {/* Hosted doc-processor remote config — used by Anthropic
+                      natively (mcp_servers field) and by LM Studio when its
+                      local mcp.json is the remote variant. Saved bearer is
+                      never sent back from the backend; we only show "saved". */}
+                  <div style={{ padding: "10px 12px", marginBottom: "10px", background: "rgba(34, 197, 94, 0.06)", border: "1px solid rgba(34, 197, 94, 0.4)", borderRadius: "6px", fontSize: "11px" }}>
+                    <strong>Hosted doc-processor (remote MCP)</strong>
+                    <div style={{ marginTop: "4px", color: "var(--text-secondary)" }}>
+                      Required for {provider === "anthropic" ? "Anthropic" : "non-LM-Studio providers"}. LM Studio can also use it via <code style={{ fontSize: "11px" }}>~/.lmstudio/mcp.json</code> (URL + headers — see below). Self-host on your Mac with Tailscale Funnel; see the <code style={{ fontSize: "11px" }}>leanzero-mcp-doc-processor</code> README for the one-time setup.
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "8px" }}>
+                      <input
+                        type="text"
+                        placeholder="https://your-mac.your-tailnet.ts.net/mcp"
+                        value={docProcUrl}
+                        onChange={(e) => setDocProcUrl(e.target.value)}
+                        style={{ padding: "5px 8px", border: "1px solid var(--border-color)", borderRadius: "4px", background: "var(--input-bg)", color: "var(--text-color)", fontSize: "11px" }}
+                      />
+                      {docProcHasBearer && !docProcShowBearerInput ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span style={{ flex: 1, padding: "5px 8px", border: "1px solid var(--border-color)", borderRadius: "4px", background: "var(--input-bg)", color: "var(--text-muted)", fontFamily: "monospace", fontSize: "11px" }}>
+                            ••••••••  (Bearer saved)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setDocProcShowBearerInput(true)}
+                            disabled={docProcSaving}
+                            style={{ fontSize: "10px", padding: "4px 8px", border: "1px solid var(--border-color)", borderRadius: "4px", background: "var(--input-bg)", color: "var(--text-color)", cursor: "pointer" }}
+                          >Replace</button>
+                        </div>
+                      ) : (
+                        <input
+                          type="password"
+                          placeholder="Tenant Bearer (paste from doc-processor admin)"
+                          value={docProcBearerInput}
+                          onChange={(e) => setDocProcBearerInput(e.target.value)}
+                          style={{ padding: "5px 8px", border: "1px solid var(--border-color)", borderRadius: "4px", background: "var(--input-bg)", color: "var(--text-color)", fontSize: "11px", fontFamily: "monospace" }}
+                        />
+                      )}
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        <button
+                          type="button"
+                          onClick={handleSaveDocProcRemote}
+                          disabled={docProcSaving || !docProcUrl.trim() || (!docProcHasBearer && !docProcBearerInput.trim()) || (docProcShowBearerInput && !docProcBearerInput.trim())}
+                          style={{ fontSize: "11px", padding: "5px 10px", border: "1px solid var(--success-color)", borderRadius: "4px", background: "var(--success-color)", color: "white", cursor: "pointer" }}
+                        >{docProcSaving ? "Saving…" : "Save"}</button>
+                        {(docProcHasBearer || docProcUrl) && (
+                          <button
+                            type="button"
+                            onClick={handleRemoveDocProcRemote}
+                            disabled={docProcSaving}
+                            style={{ fontSize: "11px", padding: "5px 10px", border: "1px solid var(--border-color)", borderRadius: "4px", background: "var(--input-bg)", color: "var(--text-color)", cursor: "pointer" }}
+                          >Clear</button>
+                        )}
+                      </div>
+                    </div>
                   </div>
+
+                  {/* Provider-specific guidance for what happens once saved */}
+                  {provider === "anthropic" && (
+                    <div style={{ padding: "8px 10px", marginBottom: "10px", background: "rgba(37, 99, 235, 0.08)", border: "1px solid rgba(37, 99, 235, 0.4)", borderRadius: "6px", fontSize: "11px" }}>
+                      <strong>Anthropic native MCP:</strong> when this MCP is on AND the hosted doc-processor above is configured, CogniRunner attaches it to every Messages API request via the <code style={{ fontSize: "11px" }}>mcp_servers</code> field with the beta header <code style={{ fontSize: "11px" }}>anthropic-beta: mcp-client-2025-11-20</code>. Claude itself dispatches tool calls — no per-tool plumbing on our side. Single-use upload capability for each Jira issue is bound server-side and passed in the system prompt; the model cannot redirect uploads.
+                    </div>
+                  )}
+                  {(provider === "openai" || provider === "azure") && (
+                    <div style={{ padding: "8px 10px", marginBottom: "10px", background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.4)", borderRadius: "6px", fontSize: "11px" }}>
+                      <strong>{provider === "azure" ? "Azure OpenAI" : "OpenAI"} support: coming soon.</strong> Native remote-MCP requires the OpenAI Responses API (Chat Completions doesn't support it), which is a separate refactor. For now, use Anthropic or LM Studio for doc-reader. The hosted doc-processor URL above is reusable across providers when this lands.
+                    </div>
+                  )}
+                  {provider === "openrouter" && (
+                    <div style={{ padding: "8px 10px", marginBottom: "10px", background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.4)", borderRadius: "6px", fontSize: "11px" }}>
+                      <strong>OpenRouter support: coming soon.</strong> OpenRouter does not have native remote-MCP support yet; a tool-by-tool proxy is doable but separate work. For now, use Anthropic or LM Studio for doc-reader.
+                    </div>
+                  )}
+                  {isLmStudio && (
+                    <div style={{ padding: "8px 10px", marginBottom: "10px", background: "rgba(37, 99, 235, 0.08)", border: "1px solid rgba(37, 99, 235, 0.4)", borderRadius: "6px", fontSize: "11px" }}>
+                      <strong>Jira attachments:</strong> when this MCP is on, the validator mints a one-shot URL + Bearer token for each attachment and feeds them to the model, so it can call <code style={{ fontSize: "11px" }}>read-doc</code> with <code style={{ fontSize: "11px" }}>url</code> + <code style={{ fontSize: "11px" }}>authHeader</code>. Two ways to wire LM Studio to doc-processor: (a) <strong>local stdio</strong> — clone the repo and run <code style={{ fontSize: "11px" }}>node src/index.js</code> from <code style={{ fontSize: "11px" }}>mcp.json</code>; (b) <strong>remote HTTP</strong> (LM Studio &ge;0.3.17) — point <code style={{ fontSize: "11px" }}>mcp.json</code> at the hosted URL above with the Bearer in headers. Either way, the entry name in <code style={{ fontSize: "11px" }}>mcp.json</code> <strong>must</strong> be <code style={{ fontSize: "11px" }}>doc-reader</code>.
+                    </div>
+                  )}
+
+                  {/* docWriter sub-toggle — applies to ALL providers when doc-reader is on */}
                   <div style={{ padding: "8px 10px", marginBottom: "10px", background: "rgba(220, 38, 38, 0.06)", border: "1px solid rgba(220, 38, 38, 0.3)", borderRadius: "6px", fontSize: "11px" }}>
                     <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: mcpEnabled.docReader ? "pointer" : "not-allowed", opacity: mcpEnabled.docReader ? 1 : 0.5 }}>
                       <input
@@ -1005,27 +1151,41 @@ npm install && npm run build`}
                       enable only if you trust the model with write access. Requires doc-reader (read) to be enabled.
                     </div>
                   </div>
-                  <p style={{ margin: "0 0 8px", fontSize: "12px", color: "var(--text-secondary)" }}>
-                    Clone the repo on your LM Studio host:
-                  </p>
-                  <pre style={{ margin: "0 0 8px", padding: "10px", background: "var(--code-bg)", borderRadius: "6px", fontSize: "11px", overflow: "auto", color: "var(--text-color)" }}>
+
+                  {/* Local stdio setup — LM Studio only (and only as one of the two LM Studio options) */}
+                  {isLmStudio && (
+                    <>
+                      <p style={{ margin: "0 0 8px", fontSize: "12px", color: "var(--text-secondary)" }}>
+                        <strong>Option A — local stdio (LM Studio):</strong> clone the repo and add to <code style={{ fontSize: "11px" }}>mcp.json</code>:
+                      </p>
+                      <pre style={{ margin: "0 0 8px", padding: "10px", background: "var(--code-bg)", borderRadius: "6px", fontSize: "11px", overflow: "auto", color: "var(--text-color)" }}>
 {`git clone https://github.com/leanzero-srl/leanzero-mcp-doc-processor
 cd leanzero-mcp-doc-processor
 npm install`}
-                  </pre>
-                  <p style={{ margin: "0 0 8px", fontSize: "12px", color: "var(--text-secondary)" }}>
-                    Add to <code style={{ fontSize: "11px" }}>mcp.json</code> (entry name <strong>must</strong> be <code style={{ fontSize: "11px" }}>doc-reader</code>):
-                  </p>
-                  <pre style={{ margin: 0, padding: "10px", background: "var(--code-bg)", borderRadius: "6px", fontSize: "11px", overflow: "auto", color: "var(--text-color)" }}>
+                      </pre>
+                      <pre style={{ margin: "0 0 8px", padding: "10px", background: "var(--code-bg)", borderRadius: "6px", fontSize: "11px", overflow: "auto", color: "var(--text-color)" }}>
 {`"doc-reader": {
   "command": "node",
   "args": ["/ABSOLUTE/PATH/TO/leanzero-mcp-doc-processor/src/index.js"]
 }`}
-                  </pre>
-                  <p style={{ margin: "8px 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
-                    Optional env <code style={{ fontSize: "11px" }}>Z_AI_API_KEY</code> for vision OCR.{" "}
-                    GitHub: <code style={{ fontSize: "11px" }}>github.com/leanzero-srl/leanzero-mcp-doc-processor</code>
-                  </p>
+                      </pre>
+                      <p style={{ margin: "8px 0 8px", fontSize: "12px", color: "var(--text-secondary)" }}>
+                        <strong>Option B — remote HTTP (LM Studio &ge;0.3.17):</strong> add to <code style={{ fontSize: "11px" }}>mcp.json</code>:
+                      </p>
+                      <pre style={{ margin: 0, padding: "10px", background: "var(--code-bg)", borderRadius: "6px", fontSize: "11px", overflow: "auto", color: "var(--text-color)" }}>
+{`"doc-reader": {
+  "url": "${docProcUrl || "https://your-mac.your-tailnet.ts.net/mcp"}",
+  "headers": {
+    "Authorization": "Bearer <tenant-bearer-from-doc-processor>"
+  }
+}`}
+                      </pre>
+                      <p style={{ margin: "8px 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
+                        Optional env <code style={{ fontSize: "11px" }}>Z_AI_API_KEY</code> for vision OCR.{" "}
+                        GitHub: <code style={{ fontSize: "11px" }}>github.com/leanzero-srl/leanzero-mcp-doc-processor</code>
+                      </p>
+                    </>
+                  )}
                 </>
               )}
             />

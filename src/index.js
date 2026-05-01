@@ -1786,6 +1786,66 @@ resolver.define("removeOpenAIKey", async ({ context }) => {
   }
 });
 
+// === Hosted doc-processor (remote MCP) resolvers ===
+//
+// Used by the admin panel to configure a remote MCP service URL + tenant
+// Bearer. The Bearer is never returned to the UI — getDocProcessorRemote
+// reports presence only, save/remove require admin.
+
+resolver.define("getDocProcessorRemote", async () => {
+  try {
+    const raw = await storage.get(DOC_PROCESSOR_REMOTE_KVS_KEY);
+    if (raw && typeof raw === "object" && raw.url) {
+      return { success: true, url: String(raw.url), hasBearer: !!raw.bearer };
+    }
+    return { success: true, url: "", hasBearer: false };
+  } catch (error) {
+    console.error("Failed to read doc-processor remote config:", error?.message);
+    return { success: false, error: error.message };
+  }
+});
+
+resolver.define("saveDocProcessorRemote", async ({ payload, context }) => {
+  if (!(await requireAdmin(context.accountId))) {
+    return { success: false, error: "Admin access required" };
+  }
+  try {
+    const url = (payload?.url || "").trim();
+    const bearer = (payload?.bearer || "").trim();
+    if (!url) return { success: false, error: "Service URL is required" };
+    if (!/^https:\/\//i.test(url)) {
+      return { success: false, error: "Service URL must start with https:// (Anthropic and OpenAI MCP clients require HTTPS)" };
+    }
+    if (!bearer) return { success: false, error: "Tenant Bearer is required" };
+    if (bearer.length < 16) {
+      return { success: false, error: "Tenant Bearer looks too short (expected ≥16 chars)" };
+    }
+    await storage.set(DOC_PROCESSOR_REMOTE_KVS_KEY, { url, bearer });
+    _cachedDocProcessorRemote = { url, bearer };
+    _cachedDocProcessorRemoteChecked = true;
+    console.log(`saveDocProcessorRemote: configured url=${url} bearer=${bearer.substring(0, 6)}…`);
+    return { success: true, url, hasBearer: true };
+  } catch (error) {
+    console.error("Failed to save doc-processor remote config:", error?.message);
+    return { success: false, error: error.message };
+  }
+});
+
+resolver.define("removeDocProcessorRemote", async ({ context }) => {
+  if (!(await requireAdmin(context.accountId))) {
+    return { success: false, error: "Admin access required" };
+  }
+  try {
+    await storage.delete(DOC_PROCESSOR_REMOTE_KVS_KEY);
+    _cachedDocProcessorRemote = null;
+    _cachedDocProcessorRemoteChecked = true;
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to remove doc-processor remote config:", error?.message);
+    return { success: false, error: error.message };
+  }
+});
+
 /**
  * Save the AI provider and optional custom base URL.
  * Keys are stored per-provider — switching never deletes another provider's key.
@@ -4691,13 +4751,48 @@ const callAnthropicChat = async ({ apiKey, model, messages, tools, tool_choice, 
     // Anthropic defaults to "auto" when tools are present, matching OpenAI's behavior.
   }
 
+  // Native remote MCP support. Anthropic's Messages API can dispatch tool calls
+  // directly to a hosted MCP server when:
+  //   - body.mcp_servers describes the server (url + raw bearer; Anthropic adds
+  //     the "Bearer " prefix when calling our server)
+  //   - body.tools includes a {type:"mcp_toolset", mcp_server_name} entry to
+  //     EXPOSE the server's tools to the model (without it, the server is
+  //     registered but unused)
+  //   - the beta header anthropic-beta: mcp-client-2025-11-20 is sent (without
+  //     it, mcp_servers is silently ignored)
+  // Gate: docReader sub-toggle must be on (treat LMSTUDIO_MCPS_KVS_KEY as the
+  // cross-provider MCP enable record — the LMSTUDIO_ prefix is historical).
+  const headers = {
+    "Content-Type": "application/json",
+    "x-api-key": apiKey,
+    "anthropic-version": "2023-06-01",
+  };
+  try {
+    const docMcps = (await storage.get(LMSTUDIO_MCPS_KVS_KEY)) || {};
+    if (docMcps.docReader === true) {
+      const remote = await getDocProcessorRemoteConfig();
+      if (remote && remote.url && remote.bearer) {
+        body.mcp_servers = [{
+          type: "url",
+          url: remote.url,
+          name: "doc-reader",
+          authorization_token: remote.bearer,
+        }];
+        body.tools = [
+          ...(body.tools || []),
+          { type: "mcp_toolset", mcp_server_name: "doc-reader" },
+        ];
+        headers["anthropic-beta"] = "mcp-client-2025-11-20";
+        console.log("Anthropic: attached doc-reader mcp_server (hosted)");
+      }
+    }
+  } catch (e) {
+    console.warn("Anthropic: failed to read MCP config (continuing without remote MCP):", e?.message);
+  }
+
   const response = await fetch(`${baseUrl}/v1/messages`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
+    headers,
     body: JSON.stringify(body),
   });
 
@@ -4822,6 +4917,41 @@ const providerModelSlot = (provider) => `COGNIRUNNER_MODEL_${provider}`;
 // In-memory key cache — avoids KVS read on every invocation
 let _cachedKey = null;
 let _cachedKeyChecked = false;
+
+// === Remote doc-processor (hosted MCP) configuration ===
+//
+// When set, CogniRunner can route doc-reader / create-* tool calls to a
+// hosted doc-processor instance (typically the operator's own Mac exposed
+// via Tailscale Funnel — see plan in /Users/mihaiperdum/.claude/plans/).
+// Two providers consume this natively today:
+//   - Anthropic Messages API → mcp_servers + mcp_toolset (beta header)
+//   - LM Studio              → user's ~/.lmstudio/mcp.json points at the
+//                              same URL with the bearer in headers (no
+//                              CogniRunner code change for that path)
+// OpenAI (Responses API) and OpenRouter are deferred follow-ups.
+//
+// Bearer is stored plaintext in KVS (Forge KVS is the security boundary,
+// same model as provider API keys above). Resolver-level admin gate keeps
+// the bearer out of the UI; getDocProcessorRemote() never returns it.
+const DOC_PROCESSOR_REMOTE_KVS_KEY = "COGNIRUNNER_DOC_PROCESSOR_REMOTE";
+let _cachedDocProcessorRemote = null;
+let _cachedDocProcessorRemoteChecked = false;
+
+const getDocProcessorRemoteConfig = async () => {
+  if (_cachedDocProcessorRemoteChecked) return _cachedDocProcessorRemote;
+  try {
+    const raw = await storage.get(DOC_PROCESSOR_REMOTE_KVS_KEY);
+    _cachedDocProcessorRemoteChecked = true;
+    if (raw && typeof raw === "object" && raw.url && raw.bearer) {
+      _cachedDocProcessorRemote = { url: String(raw.url), bearer: String(raw.bearer) };
+      return _cachedDocProcessorRemote;
+    }
+  } catch (error) {
+    console.error("Error reading doc-processor remote config:", error?.message);
+  }
+  _cachedDocProcessorRemote = null;
+  return null;
+};
 
 /**
  * Get the active provider's API key. Checks per-provider KVS slot first,
@@ -6035,25 +6165,43 @@ export const validate = async (args) => {
       logFieldValue = summary;
       console.log(`Attachments: ${summary}`);
 
-      // Detect LM Studio + doc-reader: when both are on, document attachments are
-      // delivered to the model as one-shot URLs (consumed by doc-reader's URL
-      // variant via our serveAttachment web trigger) instead of as inline file
-      // blocks. LM Studio's REST API strips type:"file" content anyway, so the
-      // inline path is a dead-end on that provider — the URL bridge is the only
-      // way the model can reach a Jira PDF/DOCX/XLSX.
+      // doc-reader URL bridge / upload bridge gating.
+      //
+      // The user's docReader / docWriter toggles are PROVIDER-AGNOSTIC enable
+      // flags (do you want to expose doc-reader to the model). HOW they're
+      // wired up depends on the provider:
+      //
+      //   - LM Studio: doc-reader is reachable via the user's local mcp.json
+      //     (stdio) OR by editing it to point at the hosted Funnel URL.
+      //     CogniRunner doesn't care which — same code path.
+      //   - Anthropic: requires the hosted doc-processor remote URL+bearer
+      //     (callAnthropicChat injects mcp_servers natively when configured).
+      //   - OpenAI / OpenRouter: NOT YET — deferred follow-up.
+      //
+      // useUrlBridge fires when the model can read attachments via the
+      // bridge URL (LM Studio always, Anthropic when remote configured).
+      // useUploadBridge fires when the model can also create+upload docs.
       const { provider: aiProvider } = await getProviderConfig();
       let docReaderEnabled = false;
       let docWriterEnabled = false;
-      if (aiProvider === "lmstudio") {
-        try {
-          const stored = (await storage.get(LMSTUDIO_MCPS_KVS_KEY)) || {};
-          docReaderEnabled = stored.docReader === true;
-          // docWriter requires docReader (defense in depth — UI also enforces).
-          docWriterEnabled = stored.docWriter === true && docReaderEnabled;
-        } catch { /* default to disabled on read error */ }
+      try {
+        const stored = (await storage.get(LMSTUDIO_MCPS_KVS_KEY)) || {};
+        docReaderEnabled = stored.docReader === true;
+        // docWriter requires docReader (defense in depth — UI also enforces).
+        docWriterEnabled = stored.docWriter === true && docReaderEnabled;
+      } catch { /* default to disabled on read error */ }
+
+      // For non-LM-Studio providers, ALSO require the hosted doc-processor
+      // to be configured — without it there's nowhere for the model to call.
+      let providerSupportsBridge = aiProvider === "lmstudio";
+      if (aiProvider === "anthropic") {
+        const remote = await getDocProcessorRemoteConfig();
+        providerSupportsBridge = !!(remote && remote.url && remote.bearer);
       }
-      const useUrlBridge = aiProvider === "lmstudio" && docReaderEnabled;
-      const useUploadBridge = aiProvider === "lmstudio" && docWriterEnabled;
+      // OpenAI + OpenRouter: providerSupportsBridge stays false → no bridge.
+
+      const useUrlBridge = providerSupportsBridge && docReaderEnabled;
+      const useUploadBridge = providerSupportsBridge && docWriterEnabled;
 
       // Filter + classify within size budget. Documents go to URL bridge (when
       // enabled) or inline download; images always go to the inline vision path.
