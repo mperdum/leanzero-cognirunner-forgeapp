@@ -1846,6 +1846,68 @@ resolver.define("removeDocProcessorRemote", async ({ context }) => {
   }
 });
 
+// === Hosted web-search (remote MCP) resolvers ===
+//
+// Mirror of the doc-processor trio above — separate KVS slot, same admin
+// gate, same masked-bearer surface. Two callers consume this today:
+//   - Anthropic Messages API → mcp_servers entry attached natively
+//   - LM Studio              → user's mcp.json points at the same URL+bearer
+//                              (no CogniRunner code change for that path)
+
+resolver.define("getWebSearchRemote", async () => {
+  try {
+    const raw = await storage.get(WEB_SEARCH_REMOTE_KVS_KEY);
+    if (raw && typeof raw === "object" && raw.url) {
+      return { success: true, url: String(raw.url), hasBearer: !!raw.bearer };
+    }
+    return { success: true, url: "", hasBearer: false };
+  } catch (error) {
+    console.error("Failed to read web-search remote config:", error?.message);
+    return { success: false, error: error.message };
+  }
+});
+
+resolver.define("saveWebSearchRemote", async ({ payload, context }) => {
+  if (!(await requireAdmin(context.accountId))) {
+    return { success: false, error: "Admin access required" };
+  }
+  try {
+    const url = (payload?.url || "").trim();
+    const bearer = (payload?.bearer || "").trim();
+    if (!url) return { success: false, error: "Service URL is required" };
+    if (!/^https:\/\//i.test(url)) {
+      return { success: false, error: "Service URL must start with https:// (Anthropic and OpenAI MCP clients require HTTPS)" };
+    }
+    if (!bearer) return { success: false, error: "Tenant Bearer is required" };
+    if (bearer.length < 16) {
+      return { success: false, error: "Tenant Bearer looks too short (expected ≥16 chars)" };
+    }
+    await storage.set(WEB_SEARCH_REMOTE_KVS_KEY, { url, bearer });
+    _cachedWebSearchRemote = { url, bearer };
+    _cachedWebSearchRemoteChecked = true;
+    console.log(`saveWebSearchRemote: configured url=${url} bearer=${bearer.substring(0, 6)}…`);
+    return { success: true, url, hasBearer: true };
+  } catch (error) {
+    console.error("Failed to save web-search remote config:", error?.message);
+    return { success: false, error: error.message };
+  }
+});
+
+resolver.define("removeWebSearchRemote", async ({ context }) => {
+  if (!(await requireAdmin(context.accountId))) {
+    return { success: false, error: "Admin access required" };
+  }
+  try {
+    await storage.delete(WEB_SEARCH_REMOTE_KVS_KEY);
+    _cachedWebSearchRemote = null;
+    _cachedWebSearchRemoteChecked = true;
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to remove web-search remote config:", error?.message);
+    return { success: false, error: error.message };
+  }
+});
+
 /**
  * Save the AI provider and optional custom base URL.
  * Keys are stored per-provider — switching never deletes another provider's key.
@@ -4753,38 +4815,57 @@ const callAnthropicChat = async ({ apiKey, model, messages, tools, tool_choice, 
 
   // Native remote MCP support. Anthropic's Messages API can dispatch tool calls
   // directly to a hosted MCP server when:
-  //   - body.mcp_servers describes the server (url + raw bearer; Anthropic adds
-  //     the "Bearer " prefix when calling our server)
-  //   - body.tools includes a {type:"mcp_toolset", mcp_server_name} entry to
-  //     EXPOSE the server's tools to the model (without it, the server is
+  //   - body.mcp_servers describes the server(s) (url + raw bearer; Anthropic
+  //     adds the "Bearer " prefix when calling our server)
+  //   - body.tools includes one {type:"mcp_toolset", mcp_server_name} entry per
+  //     server to EXPOSE its tools to the model (without it, the server is
   //     registered but unused)
   //   - the beta header anthropic-beta: mcp-client-2025-11-20 is sent (without
   //     it, mcp_servers is silently ignored)
-  // Gate: docReader sub-toggle must be on (treat LMSTUDIO_MCPS_KVS_KEY as the
-  // cross-provider MCP enable record — the LMSTUDIO_ prefix is historical).
+  // Composes any combination of doc-reader + web-search depending on which
+  // toggles are on AND have a hosted URL+bearer configured. Single beta
+  // header enables MCP support for all attached servers.
   const headers = {
     "Content-Type": "application/json",
     "x-api-key": apiKey,
     "anthropic-version": "2023-06-01",
   };
   try {
-    const docMcps = (await storage.get(LMSTUDIO_MCPS_KVS_KEY)) || {};
-    if (docMcps.docReader === true) {
+    const enabledMcps = (await storage.get(LMSTUDIO_MCPS_KVS_KEY)) || {};
+    const mcpServers = [];
+    const mcpToolsets = [];
+
+    if (enabledMcps.docReader === true) {
       const remote = await getDocProcessorRemoteConfig();
       if (remote && remote.url && remote.bearer) {
-        body.mcp_servers = [{
+        mcpServers.push({
           type: "url",
           url: remote.url,
           name: "doc-reader",
           authorization_token: remote.bearer,
-        }];
-        body.tools = [
-          ...(body.tools || []),
-          { type: "mcp_toolset", mcp_server_name: "doc-reader" },
-        ];
-        headers["anthropic-beta"] = "mcp-client-2025-11-20";
-        console.log("Anthropic: attached doc-reader mcp_server (hosted)");
+        });
+        mcpToolsets.push({ type: "mcp_toolset", mcp_server_name: "doc-reader" });
       }
+    }
+
+    if (enabledMcps.webSearch === true) {
+      const remote = await getWebSearchRemoteConfig();
+      if (remote && remote.url && remote.bearer) {
+        mcpServers.push({
+          type: "url",
+          url: remote.url,
+          name: "web-search",
+          authorization_token: remote.bearer,
+        });
+        mcpToolsets.push({ type: "mcp_toolset", mcp_server_name: "web-search" });
+      }
+    }
+
+    if (mcpServers.length > 0) {
+      body.mcp_servers = mcpServers;
+      body.tools = [...(body.tools || []), ...mcpToolsets];
+      headers["anthropic-beta"] = "mcp-client-2025-11-20";
+      console.log(`Anthropic: attached ${mcpServers.length} hosted MCP server(s): ${mcpServers.map((s) => s.name).join(", ")}`);
     }
   } catch (e) {
     console.warn("Anthropic: failed to read MCP config (continuing without remote MCP):", e?.message);
@@ -4950,6 +5031,33 @@ const getDocProcessorRemoteConfig = async () => {
     console.error("Error reading doc-processor remote config:", error?.message);
   }
   _cachedDocProcessorRemote = null;
+  return null;
+};
+
+// === Hosted web-search (remote MCP) configuration ===
+//
+// Same pattern as DOC_PROCESSOR_REMOTE — separate KVS slot so the two
+// services can be hosted at different URLs with different bearers.
+// Consumers: Anthropic (mcp_servers field) and LM Studio (when the user's
+// mcp.json is the remote variant). OpenAI Responses API + OpenRouter are
+// deferred follow-ups.
+const WEB_SEARCH_REMOTE_KVS_KEY = "COGNIRUNNER_WEB_SEARCH_REMOTE";
+let _cachedWebSearchRemote = null;
+let _cachedWebSearchRemoteChecked = false;
+
+const getWebSearchRemoteConfig = async () => {
+  if (_cachedWebSearchRemoteChecked) return _cachedWebSearchRemote;
+  try {
+    const raw = await storage.get(WEB_SEARCH_REMOTE_KVS_KEY);
+    _cachedWebSearchRemoteChecked = true;
+    if (raw && typeof raw === "object" && raw.url && raw.bearer) {
+      _cachedWebSearchRemote = { url: String(raw.url), bearer: String(raw.bearer) };
+      return _cachedWebSearchRemote;
+    }
+  } catch (error) {
+    console.error("Error reading web-search remote config:", error?.message);
+  }
+  _cachedWebSearchRemote = null;
   return null;
 };
 
